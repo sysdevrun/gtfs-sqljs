@@ -16,8 +16,8 @@ async function init() {
       locateFile: (filename) => `https://sql.js.org/dist/${filename}`
     });
 
-    // Load GTFS data
-    gtfs = await GtfsSqlJs.fromZip('/car-jaune.zip', { SQL });
+    // Load GTFS data (Vite will resolve this from public folder)
+    gtfs = await GtfsSqlJs.fromZip('./car-jaune.zip', { SQL });
 
     // Hide loading, show content
     loadingEl.style.display = 'none';
