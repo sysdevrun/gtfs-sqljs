@@ -18,8 +18,11 @@ Try the live demo to explore GTFS data, view routes with colors, and see trip sc
 ## Features
 
 - ✅ Load GTFS data from ZIP files (URL or local path)
+- ✅ Skip importing specific files (e.g., shapes.txt) to reduce memory usage
 - ✅ Load existing SQLite databases
 - ✅ Export databases to ArrayBuffer for persistence
+- ✅ Flexible filter-based query API - combine multiple filters easily
+- ✅ Agency query support with agency-based filtering
 - ✅ Full TypeScript support with comprehensive types
 - ✅ Works in both browser and Node.js
 - ✅ Efficient querying with indexed SQLite database
@@ -117,6 +120,12 @@ const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip');
 
 // From local file (Node.js)
 const gtfs = await GtfsSqlJs.fromZip('./path/to/gtfs.zip');
+
+// Skip importing specific files to reduce memory usage
+// Tables will be created but data won't be imported
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  skipFiles: ['shapes.txt', 'frequencies.txt']
+});
 ```
 
 #### From an existing SQLite database
@@ -203,14 +212,21 @@ const stopTimes = gtfs.getStopTimes({
 const stop = gtfs.getStopById('STOP_123');
 console.log(stop?.stop_name);
 
-// Get stop by code
-const stop = gtfs.getStopByCode('ABC');
+// Get stop by code (using filters)
+const stops = gtfs.getStops({ stopCode: 'ABC' });
+const stop = stops[0];
 
-// Search stops by name
-const stops = gtfs.searchStopsByName('Main Street');
+// Search stops by name (using filters)
+const stops = gtfs.getStops({ name: 'Main Street' });
 
-// Get all stops
-const allStops = gtfs.getAllStops();
+// Get all stops (using filters with no parameters)
+const allStops = gtfs.getStops();
+
+// Get stops with limit
+const stops = gtfs.getStops({ limit: 10 });
+
+// Get stops for a specific trip
+const stops = gtfs.getStops({ tripId: 'TRIP_123' });
 ```
 
 #### Get Route Information
@@ -219,11 +235,27 @@ const allStops = gtfs.getAllStops();
 // Get route by ID
 const route = gtfs.getRouteById('ROUTE_1');
 
-// Get all routes
-const routes = gtfs.getAllRoutes();
+// Get all routes (using filters with no parameters)
+const routes = gtfs.getRoutes();
 
-// Get routes by agency
-const agencyRoutes = gtfs.getRoutesByAgency('AGENCY_1');
+// Get routes by agency (using filters)
+const agencyRoutes = gtfs.getRoutes({ agencyId: 'AGENCY_1' });
+
+// Get routes with limit
+const routes = gtfs.getRoutes({ limit: 10 });
+```
+
+#### Get Agency Information
+
+```typescript
+// Get agency by ID
+const agency = gtfs.getAgencyById('AGENCY_1');
+
+// Get all agencies
+const agencies = gtfs.getAgencies();
+
+// Get agencies with limit
+const agencies = gtfs.getAgencies({ limit: 5 });
 ```
 
 #### Get Calendar Information
@@ -245,39 +277,61 @@ const exceptions = gtfs.getCalendarDates('WEEKDAY');
 // Get trip by ID
 const trip = gtfs.getTripById('TRIP_123');
 
-// Get trips by route
-const trips = gtfs.getTripsByRoute('ROUTE_1');
+// Get trips by route (using filters)
+const trips = gtfs.getTrips({ routeId: 'ROUTE_1' });
 
-// Get trips by route and date
-const trips = gtfs.getTripsByRouteAndDate('ROUTE_1', '20240115');
+// Get trips by route and date (using filters)
+const trips = gtfs.getTrips({ routeId: 'ROUTE_1', date: '20240115' });
 
-// Get trips by route, date, and direction
-const trips = gtfs.getTripsByRouteAndDateAndDirection('ROUTE_1', '20240115', 0);
+// Get trips by route, date, and direction (using filters)
+const trips = gtfs.getTrips({
+  routeId: 'ROUTE_1',
+  date: '20240115',
+  directionId: 0
+});
+
+// Get all trips for a date
+const trips = gtfs.getTrips({ date: '20240115' });
+
+// Get trips by agency
+const trips = gtfs.getTrips({ agencyId: 'AGENCY_1' });
 ```
 
 #### Get Stop Time Information
 
 ```typescript
-// Get stop times for a trip
+// Get stop times for a trip (ordered by stop_sequence)
 const stopTimes = gtfs.getStopTimesByTrip('TRIP_123');
 
-// Get stop times for a stop
-const stopTimes = gtfs.getStopTimesByStop('STOP_123');
+// Get stop times for a stop (using filters)
+const stopTimes = gtfs.getStopTimes({ stopId: 'STOP_123' });
 
-// Get stop times for a stop, route, and date
-const stopTimes = gtfs.getStopTimesForStopRouteAndDate(
-  'STOP_123',
-  'ROUTE_1',
-  '20240115'
-);
+// Get stop times for a stop and route (using filters)
+const stopTimes = gtfs.getStopTimes({
+  stopId: 'STOP_123',
+  routeId: 'ROUTE_1'
+});
 
-// Get stop times with direction filter
-const stopTimes = gtfs.getStopTimesForStopRouteAndDate(
-  'STOP_123',
-  'ROUTE_1',
-  '20240115',
-  0 // direction_id
-);
+// Get stop times for a stop, route, and date (using filters)
+const stopTimes = gtfs.getStopTimes({
+  stopId: 'STOP_123',
+  routeId: 'ROUTE_1',
+  date: '20240115'
+});
+
+// Get stop times with direction filter (using filters)
+const stopTimes = gtfs.getStopTimes({
+  stopId: 'STOP_123',
+  routeId: 'ROUTE_1',
+  date: '20240115',
+  directionId: 0
+});
+
+// Get stop times by agency
+const stopTimes = gtfs.getStopTimes({
+  agencyId: 'AGENCY_1',
+  date: '20240115'
+});
 ```
 
 ### Export Database
@@ -327,16 +381,18 @@ gtfs.close();
 import { GtfsSqlJs } from 'gtfs-sqljs';
 
 async function example() {
-  // Load GTFS data
-  const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip');
+  // Load GTFS data (skip shapes.txt to reduce memory usage)
+  const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+    skipFiles: ['shapes.txt']
+  });
 
-  // Find a stop
-  const stops = gtfs.searchStopsByName('Central Station');
+  // Find a stop using flexible filters
+  const stops = gtfs.getStops({ name: 'Central Station' });
   const stop = stops[0];
   console.log(`Found stop: ${stop.stop_name}`);
 
   // Find routes serving this stop (via stop_times and trips)
-  const allStopTimes = gtfs.getStopTimesByStop(stop.stop_id);
+  const allStopTimes = gtfs.getStopTimes({ stopId: stop.stop_id });
   const routeIds = new Set(
     allStopTimes.map(st => {
       const trip = gtfs.getTripById(st.trip_id);
@@ -351,9 +407,12 @@ async function example() {
     console.log(`Route: ${route?.route_short_name} - ${route?.route_long_name}`);
   }
 
-  // Get trips for a specific route on a date
+  // Get trips for a specific route on a date using flexible filters
   const today = '20240115'; // YYYYMMDD format
-  const trips = gtfs.getTripsByRouteAndDate(Array.from(routeIds)[0]!, today);
+  const trips = gtfs.getTrips({
+    routeId: Array.from(routeIds)[0]!,
+    date: today
+  });
   console.log(`Found ${trips.length} trips for today`);
 
   // Get stop times for a specific trip
@@ -387,20 +446,15 @@ example();
 #### Flexible Filter-Based Methods (Recommended)
 - `getStops(filters?)` - Get stops with optional filters (stopId, stopCode, name, tripId, limit)
 - `getRoutes(filters?)` - Get routes with optional filters (routeId, agencyId, limit)
-- `getTrips(filters?)` - Get trips with optional filters (tripId, routeId, date, directionId, limit)
-- `getStopTimes(filters?)` - Get stop times with optional filters (tripId, stopId, routeId, date, directionId, limit)
+- `getTrips(filters?)` - Get trips with optional filters (tripId, routeId, date, directionId, agencyId, limit)
+- `getStopTimes(filters?)` - Get stop times with optional filters (tripId, stopId, routeId, date, directionId, agencyId, limit)
+- `getAgencies(filters?)` - Get agencies with optional filters (agencyId, limit)
 
-#### Stop Methods
+#### Direct Lookup Methods
 - `getStopById(stopId)` - Get stop by stop_id
-- `getStopByCode(stopCode)` - Get stop by stop_code
-- `searchStopsByName(name, limit?)` - Search stops by name
-- `getAllStops(limit?)` - Get all stops
-- `getStopsByTrip(tripId)` - Get stops for a trip (ordered by sequence)
-
-#### Route Methods
 - `getRouteById(routeId)` - Get route by route_id
-- `getAllRoutes(limit?)` - Get all routes
-- `getRoutesByAgency(agencyId)` - Get routes by agency
+- `getTripById(tripId)` - Get trip by trip_id
+- `getAgencyById(agencyId)` - Get agency by agency_id
 
 #### Calendar Methods
 - `getActiveServiceIds(date)` - Get active service IDs for a date
@@ -408,17 +462,8 @@ example();
 - `getCalendarDates(serviceId)` - Get calendar date exceptions
 - `getCalendarDatesForDate(date)` - Get exceptions for a specific date
 
-#### Trip Methods
-- `getTripById(tripId)` - Get trip by trip_id
-- `getTripsByRoute(routeId)` - Get trips for a route
-- `getTripsByRouteAndDate(routeId, date)` - Get trips for route and date
-- `getTripsByRouteAndDateAndDirection(routeId, date, directionId)` - Get trips with direction filter
-- `getTripsByDate(date)` - Get all trips for a date
-
-#### Stop Time Methods
-- `getStopTimesByTrip(tripId)` - Get stop times for a trip
-- `getStopTimesByStop(stopId, limit?)` - Get stop times for a stop
-- `getStopTimesForStopRouteAndDate(stopId, routeId, date, directionId?)` - Get stop times with filters
+#### Special Methods
+- `getStopTimesByTrip(tripId)` - Get stop times for a trip (ordered by stop_sequence)
 
 #### Database Methods
 - `export()` - Export database to ArrayBuffer

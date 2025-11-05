@@ -18,7 +18,11 @@ async function init() {
     });
 
     // Load GTFS data (Vite will resolve this from public folder)
-    gtfs = await GtfsSqlJs.fromZip('./car-jaune.zip', { SQL });
+    // Skip shapes.txt to reduce memory usage and improve load time
+    gtfs = await GtfsSqlJs.fromZip('./car-jaune.zip', {
+      SQL,
+      skipFiles: ['shapes.txt']
+    });
 
     // Hide loading, show content
     loadingEl.style.display = 'none';
@@ -26,6 +30,9 @@ async function init() {
 
     // Initialize date picker with today's date
     initDatePicker();
+
+    // Setup download button
+    setupDownloadButton();
 
     // Render initial data
     renderActiveCalendars();
@@ -177,6 +184,13 @@ function renderRoutes() {
     const directionLabel = `Direction ${group.directionId}`;
     const tripCount = group.trips.length;
 
+    // Sort trips by short name within each group
+    const sortedTrips = [...group.trips].sort((a, b) => {
+      const aName = a.trip_short_name || a.trip_id;
+      const bName = b.trip_short_name || b.trip_id;
+      return aName.localeCompare(bName, undefined, { numeric: true });
+    });
+
     return `
       <div class="trip-group">
         <div class="trip-group-header">
@@ -184,15 +198,21 @@ function renderRoutes() {
           <div class="trip-meta">${directionLabel} • ${tripCount} trip${tripCount > 1 ? 's' : ''}</div>
         </div>
         <div class="trip-items">
-          ${group.trips.map(trip => `
-            <div class="trip-card" onclick="showStopTimes('${trip.trip_id}', '${escapeHtml(group.headsign)}')">
-              <div class="trip-info">
-                <div class="trip-id">Trip: ${escapeHtml(trip.trip_id)}</div>
-                <div class="trip-service">Service: ${escapeHtml(trip.service_id)}</div>
+          ${sortedTrips.map(trip => {
+            const tripName = trip.trip_short_name || trip.trip_id;
+            const showTripId = trip.trip_short_name ? trip.trip_id : null;
+
+            return `
+              <div class="trip-card" onclick="showStopTimes('${trip.trip_id}', '${escapeHtml(group.headsign)}')">
+                <div class="trip-info">
+                  <div class="trip-name">${escapeHtml(tripName)}</div>
+                  ${showTripId ? `<div class="trip-id-secondary">ID: ${escapeHtml(showTripId)}</div>` : ''}
+                  <div class="trip-service">Service: ${escapeHtml(trip.service_id)}</div>
+                </div>
+                <div>→</div>
               </div>
-              <div>→</div>
-            </div>
-          `).join('')}
+            `;
+          }).join('')}
         </div>
       </div>
     `;
@@ -243,6 +263,33 @@ function renderRoutes() {
   // Scroll to stop times section
   stopTimesSectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
+
+// Setup download button
+function setupDownloadButton() {
+  const downloadBtn = document.getElementById('download-db-btn') as HTMLButtonElement;
+  if (!downloadBtn) return;
+
+  downloadBtn.addEventListener('click', () => {
+    try {
+      // Export database to ArrayBuffer
+      const dbData = gtfs.export();
+
+      // Create blob and download
+      const blob = new Blob([dbData], { type: 'application/x-sqlite3' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `car-jaune-${selectedDate}.db`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading database:', error);
+      alert('Failed to download database');
+    }
+  });
+}
 
 // Utility functions
 
