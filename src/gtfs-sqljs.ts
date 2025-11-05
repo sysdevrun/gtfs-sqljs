@@ -6,6 +6,8 @@ import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 import { getAllCreateStatements } from './schema/schema';
 import { loadGTFSZip } from './loaders/zip-loader';
 import { loadGTFSData } from './loaders/data-loader';
+import { createRealtimeTables, clearRealtimeData as clearRTData } from './schema/gtfs-rt-schema';
+import { loadRealtimeData } from './loaders/gtfs-rt-loader';
 
 // Query methods
 import { getAgencyById, getAgencies, type AgencyFilters } from './queries/agencies';
@@ -17,14 +19,19 @@ import {
   getCalendarDates,
   getCalendarDatesForDate,
 } from './queries/calendar';
-import { getTripById, getTrips, type TripFilters } from './queries/trips';
-import { getStopTimesByTrip, getStopTimes, type StopTimeFilters } from './queries/stop-times';
+import { getTripById, getTrips, type TripFilters, type TripWithRealtime } from './queries/trips';
+import { getStopTimesByTrip, getStopTimes, type StopTimeFilters, type StopTimeWithRealtime } from './queries/stop-times';
+import { getAlerts as getAlertsQuery, getAlertById, type AlertFilters } from './queries/rt-alerts';
+import { getVehiclePositions as getVehiclePositionsQuery, getVehiclePositionByTripId, type VehiclePositionFilters } from './queries/rt-vehicle-positions';
 
 // Types
 import type { Agency, Stop, Route, Trip, StopTime, Calendar, CalendarDate } from './types/gtfs';
+import type { Alert, VehiclePosition } from './types/gtfs-rt';
 
 // Export filter types for users
-export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters };
+export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, AlertFilters, VehiclePositionFilters };
+// Export RT types
+export type { Alert, VehiclePosition, TripWithRealtime, StopTimeWithRealtime };
 
 export interface GtfsSqlJsOptions {
   /**
@@ -52,11 +59,24 @@ export interface GtfsSqlJsOptions {
    * Tables will be created but no data will be imported for these files
    */
   skipFiles?: string[];
+
+  /**
+   * Optional: Array of GTFS-RT feed URLs for realtime data
+   */
+  realtimeFeedUrls?: string[];
+
+  /**
+   * Optional: Staleness threshold in seconds (default: 120)
+   * Realtime data older than this will be excluded from queries
+   */
+  stalenessThreshold?: number;
 }
 
 export class GtfsSqlJs {
   private db: Database | null = null;
   private SQL: SqlJsStatic | null = null;
+  private realtimeFeedUrls: string[] = [];
+  private stalenessThreshold: number = 120;
 
   /**
    * Private constructor - use static factory methods instead
@@ -97,15 +117,26 @@ export class GtfsSqlJs {
     // Create new database
     this.db = new this.SQL.Database();
 
-    // Create schema
+    // Create GTFS schema
     const createStatements = getAllCreateStatements();
     for (const statement of createStatements) {
       this.db.run(statement);
     }
 
+    // Create GTFS-RT tables
+    createRealtimeTables(this.db);
+
     // Load GTFS data
     const files = await loadGTFSZip(zipPath);
     await loadGTFSData(this.db, files, options.skipFiles);
+
+    // Set RT configuration
+    if (options.realtimeFeedUrls) {
+      this.realtimeFeedUrls = options.realtimeFeedUrls;
+    }
+    if (options.stalenessThreshold !== undefined) {
+      this.stalenessThreshold = options.stalenessThreshold;
+    }
   }
 
   /**
@@ -120,6 +151,17 @@ export class GtfsSqlJs {
 
     // Load existing database
     this.db = new this.SQL.Database(new Uint8Array(database));
+
+    // Ensure RT tables exist (in case loading old database)
+    createRealtimeTables(this.db);
+
+    // Set RT configuration
+    if (options.realtimeFeedUrls) {
+      this.realtimeFeedUrls = options.realtimeFeedUrls;
+    }
+    if (options.stalenessThreshold !== undefined) {
+      this.stalenessThreshold = options.stalenessThreshold;
+    }
   }
 
   /**
@@ -286,7 +328,7 @@ export class GtfsSqlJs {
       finalFilters.serviceIds = serviceIds;
     }
 
-    return getTrips(this.db, finalFilters);
+    return getTrips(this.db, finalFilters, this.stalenessThreshold);
   }
 
   // ==================== Stop Time Methods ====================
@@ -335,6 +377,91 @@ export class GtfsSqlJs {
       finalFilters.serviceIds = serviceIds;
     }
 
-    return getStopTimes(this.db, finalFilters);
+    return getStopTimes(this.db, finalFilters, this.stalenessThreshold);
+  }
+
+  // ==================== Realtime Methods ====================
+
+  /**
+   * Set GTFS-RT feed URLs
+   */
+  setRealtimeFeedUrls(urls: string[]): void {
+    this.realtimeFeedUrls = urls;
+  }
+
+  /**
+   * Get currently configured GTFS-RT feed URLs
+   */
+  getRealtimeFeedUrls(): string[] {
+    return [...this.realtimeFeedUrls];
+  }
+
+  /**
+   * Set staleness threshold in seconds
+   */
+  setStalenessThreshold(seconds: number): void {
+    this.stalenessThreshold = seconds;
+  }
+
+  /**
+   * Get current staleness threshold
+   */
+  getStalenessThreshold(): number {
+    return this.stalenessThreshold;
+  }
+
+  /**
+   * Fetch and load GTFS Realtime data from configured feed URLs or provided URLs
+   * @param urls - Optional array of feed URLs. If not provided, uses configured feed URLs
+   */
+  async fetchRealtimeData(urls?: string[]): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    const feedUrls = urls || this.realtimeFeedUrls;
+    if (feedUrls.length === 0) {
+      throw new Error('No realtime feed URLs configured. Use setRealtimeFeedUrls() or pass urls parameter.');
+    }
+
+    await loadRealtimeData(this.db, feedUrls);
+  }
+
+  /**
+   * Clear all realtime data from the database
+   */
+  clearRealtimeData(): void {
+    if (!this.db) throw new Error('Database not initialized');
+    clearRTData(this.db);
+  }
+
+  /**
+   * Get alerts with optional filters
+   */
+  getAlerts(filters?: AlertFilters): Alert[] {
+    if (!this.db) throw new Error('Database not initialized');
+    return getAlertsQuery(this.db, filters, this.stalenessThreshold);
+  }
+
+  /**
+   * Get alert by ID
+   */
+  getAlertById(alertId: string): Alert | null {
+    if (!this.db) throw new Error('Database not initialized');
+    return getAlertById(this.db, alertId, this.stalenessThreshold);
+  }
+
+  /**
+   * Get vehicle positions with optional filters
+   */
+  getVehiclePositions(filters?: VehiclePositionFilters): VehiclePosition[] {
+    if (!this.db) throw new Error('Database not initialized');
+    return getVehiclePositionsQuery(this.db, filters, this.stalenessThreshold);
+  }
+
+  /**
+   * Get vehicle position by trip ID
+   */
+  getVehiclePositionByTripId(tripId: string): VehiclePosition | null {
+    if (!this.db) throw new Error('Database not initialized');
+    return getVehiclePositionByTripId(this.db, tripId, this.stalenessThreshold);
   }
 }

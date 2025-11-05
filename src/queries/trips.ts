@@ -4,6 +4,8 @@
 
 import type { Database } from 'sql.js';
 import type { Trip } from '../types/gtfs';
+import type { TripRealtime, VehiclePosition } from '../types/gtfs-rt';
+import { getVehiclePositionByTripId } from './rt-vehicle-positions';
 
 export interface TripFilters {
   tripId?: string;
@@ -11,14 +13,131 @@ export interface TripFilters {
   serviceIds?: string[];
   directionId?: number;
   agencyId?: string;
+  includeRealtime?: boolean;
   limit?: number;
+}
+
+export interface TripWithRealtime extends Trip {
+  realtime?: TripRealtime;
+}
+
+/**
+ * Merge realtime data with trips
+ */
+function mergeRealtimeData(
+  trips: Trip[],
+  db: Database,
+  stalenessThreshold: number
+): TripWithRealtime[] {
+  const now = Math.floor(Date.now() / 1000);
+  const staleThreshold = now - stalenessThreshold;
+
+  const tripIds = trips.map(t => t.trip_id);
+  if (tripIds.length === 0) return trips;
+
+  const placeholders = tripIds.map(() => '?').join(', ');
+
+  // Get vehicle positions
+  const vpStmt = db.prepare(`
+    SELECT * FROM rt_vehicle_positions
+    WHERE trip_id IN (${placeholders})
+      AND rt_last_updated >= ?
+  `);
+  vpStmt.bind([...tripIds, staleThreshold]);
+
+  const vpMap = new Map<string, any>();
+  while (vpStmt.step()) {
+    const row = vpStmt.getAsObject() as Record<string, unknown>;
+    vpMap.set(String(row.trip_id), row);
+  }
+  vpStmt.free();
+
+  // Get trip updates
+  const tuStmt = db.prepare(`
+    SELECT * FROM rt_trip_updates
+    WHERE trip_id IN (${placeholders})
+      AND rt_last_updated >= ?
+  `);
+  tuStmt.bind([...tripIds, staleThreshold]);
+
+  const tuMap = new Map<string, any>();
+  while (tuStmt.step()) {
+    const row = tuStmt.getAsObject() as Record<string, unknown>;
+    tuMap.set(String(row.trip_id), row);
+  }
+  tuStmt.free();
+
+  // Merge realtime data
+  return trips.map((trip): TripWithRealtime => {
+    const vpRow = vpMap.get(trip.trip_id);
+    const tuRow = tuMap.get(trip.trip_id);
+
+    if (!vpRow && !tuRow) {
+      return { ...trip, realtime: { vehicle_position: null, trip_update: null } };
+    }
+
+    const realtime: TripRealtime = {
+      vehicle_position: null,
+      trip_update: null
+    };
+
+    // Parse vehicle position
+    if (vpRow) {
+      const vp: VehiclePosition = {
+        trip_id: String(vpRow.trip_id),
+        route_id: vpRow.route_id ? String(vpRow.route_id) : undefined,
+        rt_last_updated: Number(vpRow.rt_last_updated)
+      };
+
+      if (vpRow.vehicle_id || vpRow.vehicle_label || vpRow.vehicle_license_plate) {
+        vp.vehicle = {
+          id: vpRow.vehicle_id ? String(vpRow.vehicle_id) : undefined,
+          label: vpRow.vehicle_label ? String(vpRow.vehicle_label) : undefined,
+          license_plate: vpRow.vehicle_license_plate ? String(vpRow.vehicle_license_plate) : undefined
+        };
+      }
+
+      if (vpRow.latitude !== null && vpRow.longitude !== null) {
+        vp.position = {
+          latitude: Number(vpRow.latitude),
+          longitude: Number(vpRow.longitude),
+          bearing: vpRow.bearing !== null ? Number(vpRow.bearing) : undefined,
+          odometer: vpRow.odometer !== null ? Number(vpRow.odometer) : undefined,
+          speed: vpRow.speed !== null ? Number(vpRow.speed) : undefined
+        };
+      }
+
+      if (vpRow.current_stop_sequence !== null) vp.current_stop_sequence = Number(vpRow.current_stop_sequence);
+      if (vpRow.stop_id) vp.stop_id = String(vpRow.stop_id);
+      if (vpRow.current_status !== null) vp.current_status = Number(vpRow.current_status);
+      if (vpRow.timestamp !== null) vp.timestamp = Number(vpRow.timestamp);
+      if (vpRow.congestion_level !== null) vp.congestion_level = Number(vpRow.congestion_level);
+      if (vpRow.occupancy_status !== null) vp.occupancy_status = Number(vpRow.occupancy_status);
+
+      realtime.vehicle_position = vp;
+    }
+
+    // Parse trip update
+    if (tuRow) {
+      realtime.trip_update = {
+        delay: tuRow.delay !== null ? Number(tuRow.delay) : undefined,
+        schedule_relationship: tuRow.schedule_relationship !== null ? Number(tuRow.schedule_relationship) : undefined
+      };
+    }
+
+    return { ...trip, realtime };
+  });
 }
 
 /**
  * Get trips with optional filters
  */
-export function getTrips(db: Database, filters: TripFilters = {}): Trip[] {
-  const { tripId, routeId, serviceIds, directionId, agencyId, limit } = filters;
+export function getTrips(
+  db: Database,
+  filters: TripFilters = {},
+  stalenessThreshold: number = 120
+): Trip[] | TripWithRealtime[] {
+  const { tripId, routeId, serviceIds, directionId, agencyId, includeRealtime, limit } = filters;
 
   // Determine if we need to join with routes table
   const needsRoutesJoin = agencyId !== undefined;
@@ -78,6 +197,12 @@ export function getTrips(db: Database, filters: TripFilters = {}): Trip[] {
   }
 
   stmt.free();
+
+  // Merge realtime data if requested
+  if (includeRealtime) {
+    return mergeRealtimeData(trips, db, stalenessThreshold);
+  }
+
   return trips;
 }
 
