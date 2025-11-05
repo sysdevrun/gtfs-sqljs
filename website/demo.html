@@ -21,8 +21,16 @@
   <main class="container">
     <section class="demo-header">
       <h1>Interactive Demo</h1>
-      <p>Exploring Car Jaune GTFS data (La Réunion, France)</p>
-      <p class="operator-info">Operated by Transdev Outre-Mer and GIE Activ'</p>
+      <div class="url-input-section">
+        <label for="gtfs-url-input">GTFS ZIP URL (https only):</label>
+        <input
+          type="url"
+          id="gtfs-url-input"
+          placeholder="https://www.data.gouv.fr/api/1/datasets/r/..."
+          value="https://www.data.gouv.fr/api/1/datasets/r/c9c2f609-d0cd-4233-ad1b-cf86b9bf2dc8"
+        />
+        <button id="load-gtfs-btn" class="button button-primary">Load GTFS</button>
+      </div>
     </section>
 
     <div id="loading" class="loading">
@@ -31,23 +39,31 @@
     </div>
 
     <div id="error" class="error" style="display: none;">
-      <p>Error loading GTFS data. Please refresh the page.</p>
+      <p id="error-message">Error loading GTFS data. Please refresh the page.</p>
     </div>
 
     <div id="demo-content" style="display: none;">
-      <section class="demo-section">
+      <section class="demo-section" id="agencies-section">
+        <h2>Transit Agencies</h2>
+        <div id="agencies-list" class="agencies-list">
+          <p>Loading agencies...</p>
+        </div>
+      </section>
+
+      <section class="demo-section download-section">
+        <button id="download-db-btn" class="button button-primary">
+          📥 Download SQLite Database
+        </button>
+        <p class="help-text">Download the processed GTFS data as a SQLite database file</p>
+      </section>
+
+      <section class="demo-section date-section">
         <h2>Select Date</h2>
         <div class="date-selector">
           <input type="date" id="date-input" />
         </div>
         <div id="active-calendars" class="active-calendars">
           <p>Loading...</p>
-        </div>
-        <div class="download-section">
-          <button id="download-db-btn" class="button button-primary">
-            📥 Download SQLite Database
-          </button>
-          <p class="help-text">Download the processed GTFS data as a SQLite database file</p>
         </div>
       </section>
 

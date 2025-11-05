@@ -1,25 +1,46 @@
 import initSqlJs from 'sql.js';
 import { GtfsSqlJs } from 'gtfs-sqljs';
-import type { Route, Trip, StopTime } from 'gtfs-sqljs';
+import type { Route, Trip, StopTime, Agency } from 'gtfs-sqljs';
 
 let gtfs: GtfsSqlJs;
 let selectedDate: string;
+let SQL: any;
 
-// Initialize the demo
-async function init() {
+// Convert https URL to proxy URL
+function getProxyUrl(httpsUrl: string): string {
+  if (!httpsUrl.startsWith('https://')) {
+    throw new Error('URL must start with https://');
+  }
+  // Remove https:// prefix
+  const withoutProtocol = httpsUrl.substring(8);
+  return `https://gtfs-proxy.sys-dev-run.re/proxy/${withoutProtocol}`;
+}
+
+// Load GTFS from URL or default
+async function loadGTFS(url?: string) {
   const loadingEl = document.getElementById('loading')!;
   const errorEl = document.getElementById('error')!;
+  const errorMessageEl = document.getElementById('error-message')!;
   const contentEl = document.getElementById('demo-content')!;
 
   try {
-    // Initialize SQL.js with CDN WASM file
-    const SQL = await initSqlJs({
-      locateFile: (filename) => `https://sql.js.org/dist/${filename}`
-    });
+    // Show loading, hide error and content
+    loadingEl.style.display = 'block';
+    errorEl.style.display = 'none';
+    contentEl.style.display = 'none';
 
-    // Load GTFS data (Vite will resolve this from public folder)
+    // Determine source
+    let source: string;
+    if (url) {
+      source = getProxyUrl(url);
+    } else {
+      // Load default car-jaune.zip from public folder
+      source = './car-jaune.zip';
+    }
+
+    // Load GTFS data
     // Skip shapes.txt to reduce memory usage and improve load time
-    gtfs = await GtfsSqlJs.fromZip('./car-jaune.zip', {
+    gtfs = await GtfsSqlJs.fromZip(source, {
       SQL,
       skipFiles: ['shapes.txt']
     });
@@ -35,10 +56,42 @@ async function init() {
     setupDownloadButton();
 
     // Render initial data
+    renderAgencies();
     renderActiveCalendars();
     renderRoutes();
   } catch (error) {
     console.error('Error loading GTFS data:', error);
+    loadingEl.style.display = 'none';
+    errorEl.style.display = 'block';
+    errorMessageEl.textContent = `Error loading GTFS data: ${error instanceof Error ? error.message : String(error)}`;
+  }
+}
+
+// Initialize the demo
+async function init() {
+  try {
+    // Initialize SQL.js with CDN WASM file
+    SQL = await initSqlJs({
+      locateFile: (filename) => `https://sql.js.org/dist/${filename}`
+    });
+
+    // Setup URL input handler
+    const loadBtn = document.getElementById('load-gtfs-btn')!;
+    const urlInput = document.getElementById('gtfs-url-input') as HTMLInputElement;
+
+    loadBtn.addEventListener('click', () => {
+      const url = urlInput.value.trim();
+      if (url) {
+        loadGTFS(url);
+      }
+    });
+
+    // Load default GTFS (car-jaune.zip)
+    await loadGTFS();
+  } catch (error) {
+    console.error('Error initializing demo:', error);
+    const loadingEl = document.getElementById('loading')!;
+    const errorEl = document.getElementById('error')!;
     loadingEl.style.display = 'none';
     errorEl.style.display = 'block';
   }
@@ -69,6 +122,38 @@ function initDatePicker() {
     document.getElementById('trips-section')!.style.display = 'none';
     document.getElementById('stop-times-section')!.style.display = 'none';
   });
+}
+
+// Render agencies
+function renderAgencies() {
+  const agenciesListEl = document.getElementById('agencies-list')!;
+
+  try {
+    const agencies = gtfs.getAgencies();
+
+    if (agencies.length === 0) {
+      agenciesListEl.innerHTML = '<p>No agency information available</p>';
+      return;
+    }
+
+    const html = agencies.map((agency): string => {
+      return `
+        <div class="agency-card">
+          <h3>${escapeHtml(agency.agency_name)}</h3>
+          ${agency.agency_url ? `<p><a href="${escapeHtml(agency.agency_url)}" target="_blank">${escapeHtml(agency.agency_url)}</a></p>` : ''}
+          ${agency.agency_timezone ? `<p><strong>Timezone:</strong> ${escapeHtml(agency.agency_timezone)}</p>` : ''}
+          ${agency.agency_lang ? `<p><strong>Language:</strong> ${escapeHtml(agency.agency_lang)}</p>` : ''}
+          ${agency.agency_phone ? `<p><strong>Phone:</strong> ${escapeHtml(agency.agency_phone)}</p>` : ''}
+          ${agency.agency_email ? `<p><strong>Email:</strong> ${escapeHtml(agency.agency_email)}</p>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    agenciesListEl.innerHTML = html;
+  } catch (error) {
+    console.error('Error getting agencies:', error);
+    agenciesListEl.innerHTML = '<p>Error loading agency information</p>';
+  }
 }
 
 // Render active calendars for selected date
