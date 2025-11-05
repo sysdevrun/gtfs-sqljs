@@ -97,6 +97,28 @@ export function getTripsByRouteServiceAndDirection(
 }
 
 /**
+ * Get all trips for a service (active on a given date)
+ */
+export function getTripsByService(db: Database, serviceIds: string[]): Trip[] {
+  if (serviceIds.length === 0) {
+    return [];
+  }
+
+  const placeholders = serviceIds.map(() => '?').join(', ');
+  const stmt = db.prepare(`SELECT * FROM trips WHERE service_id IN (${placeholders})`);
+  stmt.bind(serviceIds);
+
+  const trips: Trip[] = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject() as Record<string, unknown>;
+    trips.push(rowToTrip(row));
+  }
+
+  stmt.free();
+  return trips;
+}
+
+/**
  * Convert database row to Trip object
  */
 function rowToTrip(row: Record<string, unknown>): Trip {

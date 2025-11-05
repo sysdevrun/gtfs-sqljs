@@ -50,16 +50,11 @@ export async function loadGTFSZip(source: string | ArrayBuffer | Uint8Array): Pr
  * Fetch ZIP file from URL or file path
  */
 async function fetchZip(source: string): Promise<ArrayBuffer> {
-  // Try to detect environment and use appropriate method
-  if (typeof fetch !== 'undefined') {
-    // Browser or Node.js with fetch support
-    const response = await fetch(source);
-    if (!response.ok) {
-      throw new Error(`Failed to fetch GTFS ZIP: ${response.status} ${response.statusText}`);
-    }
-    return await response.arrayBuffer();
-  } else if (typeof require !== 'undefined') {
-    // Node.js environment without fetch
+  // Check if source is a URL or file path
+  const isUrl = source.startsWith('http://') || source.startsWith('https://');
+
+  // If it's a file path, try to use fs first
+  if (!isUrl) {
     try {
       // Dynamic import for Node.js fs module
       const fs = await import('fs');
@@ -68,9 +63,19 @@ async function fetchZip(source: string): Promise<ArrayBuffer> {
     } catch (error) {
       throw new Error(`Failed to read GTFS ZIP file: ${error}`);
     }
-  } else {
-    throw new Error('No method available to fetch ZIP file');
   }
+
+  // For URLs, use fetch
+  if (typeof fetch !== 'undefined') {
+    // Browser or Node.js with fetch support
+    const response = await fetch(source);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch GTFS ZIP: ${response.status} ${response.statusText}`);
+    }
+    return await response.arrayBuffer();
+  }
+
+  throw new Error('No method available to fetch ZIP file from URL');
 }
 
 /**

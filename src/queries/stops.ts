@@ -79,6 +79,28 @@ export function getAllStops(db: Database, limit?: number): Stop[] {
 }
 
 /**
+ * Get stops for a given trip (ordered by stop_sequence)
+ */
+export function getStopsByTrip(db: Database, tripId: string): Stop[] {
+  const stmt = db.prepare(`
+    SELECT s.* FROM stops s
+    INNER JOIN stop_times st ON s.stop_id = st.stop_id
+    WHERE st.trip_id = ?
+    ORDER BY st.stop_sequence
+  `);
+  stmt.bind([tripId]);
+
+  const stops: Stop[] = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject() as Record<string, unknown>;
+    stops.push(rowToStop(row));
+  }
+
+  stmt.free();
+  return stops;
+}
+
+/**
  * Convert database row to Stop object
  */
 function rowToStop(row: Record<string, unknown>): Stop {

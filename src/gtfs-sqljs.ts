@@ -8,7 +8,7 @@ import { loadGTFSZip } from './loaders/zip-loader';
 import { loadGTFSData } from './loaders/data-loader';
 
 // Query methods
-import { getStopById, getStopByCode, searchStopsByName, getAllStops } from './queries/stops';
+import { getStopById, getStopByCode, searchStopsByName, getAllStops, getStopsByTrip } from './queries/stops';
 import { getRouteById, getAllRoutes, getRoutesByAgency } from './queries/routes';
 import {
   getActiveServiceIds,
@@ -21,6 +21,7 @@ import {
   getTripsByRoute,
   getTripsByRouteAndService,
   getTripsByRouteServiceAndDirection,
+  getTripsByService,
 } from './queries/trips';
 import {
   getStopTimesByTrip,
@@ -284,6 +285,23 @@ export class GtfsSqlJs {
     if (!this.db) throw new Error('Database not initialized');
     const serviceIds = getActiveServiceIds(this.db, date);
     return getTripsByRouteServiceAndDirection(this.db, routeId, serviceIds, directionId);
+  }
+
+  /**
+   * Get all trips for a given date (YYYYMMDD format)
+   */
+  getTripsByDate(date: string): Trip[] {
+    if (!this.db) throw new Error('Database not initialized');
+    const serviceIds = getActiveServiceIds(this.db, date);
+    return getTripsByService(this.db, serviceIds);
+  }
+
+  /**
+   * Get stops for a given trip (ordered by stop_sequence)
+   */
+  getStopsByTrip(tripId: string): Stop[] {
+    if (!this.db) throw new Error('Database not initialized');
+    return getStopsByTrip(this.db, tripId);
   }
 
   // ==================== Stop Time Methods ====================

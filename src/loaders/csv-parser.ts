@@ -1,6 +1,8 @@
 /**
- * CSV Parser for GTFS files
+ * CSV Parser for GTFS files using papaparse
  */
+
+import Papa from 'papaparse';
 
 export interface ParsedCSV {
   headers: string[];
@@ -8,70 +10,24 @@ export interface ParsedCSV {
 }
 
 /**
- * Parse CSV text into structured data
+ * Parse CSV text into structured data using papaparse
  */
 export function parseCSV(text: string): ParsedCSV {
-  const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
+  const result = Papa.parse(text, {
+    header: true,
+    skipEmptyLines: true,
+    transformHeader: (header) => header.trim(),
+    transform: (value) => value.trim(),
+  });
 
-  if (lines.length === 0) {
-    return { headers: [], rows: [] };
+  if (result.errors.length > 0) {
+    console.warn('CSV parsing warnings:', result.errors);
   }
 
-  // Parse headers
-  const headers = parseCSVLine(lines[0]);
-
-  // Parse rows
-  const rows: Record<string, string>[] = [];
-  for (let i = 1; i < lines.length; i++) {
-    const values = parseCSVLine(lines[i]);
-    if (values.length === 0) continue;
-
-    const row: Record<string, string> = {};
-    for (let j = 0; j < headers.length; j++) {
-      const header = headers[j];
-      const value = values[j] || '';
-      row[header] = value;
-    }
-    rows.push(row);
-  }
+  const headers = result.meta.fields || [];
+  const rows = result.data as Record<string, string>[];
 
   return { headers, rows };
-}
-
-/**
- * Parse a single CSV line, handling quoted values
- */
-function parseCSVLine(line: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  let inQuotes = false;
-
-  for (let i = 0; i < line.length; i++) {
-    const char = line[i];
-    const nextChar = line[i + 1];
-
-    if (char === '"') {
-      if (inQuotes && nextChar === '"') {
-        // Escaped quote
-        current += '"';
-        i++; // Skip next quote
-      } else {
-        // Toggle quote state
-        inQuotes = !inQuotes;
-      }
-    } else if (char === ',' && !inQuotes) {
-      // End of field
-      result.push(current.trim());
-      current = '';
-    } else {
-      current += char;
-    }
-  }
-
-  // Add last field
-  result.push(current.trim());
-
-  return result;
 }
 
 /**
@@ -83,14 +39,16 @@ export function convertRowTypes(
 ): Record<string, string | number | null> {
   const result: Record<string, string | number | null> = {};
 
-  for (const [key, value] of Object.entries(row)) {
-    // Empty string means null/undefined
-    if (value === '') {
+  // Iterate over all expected columns, not just the ones present in the row
+  for (const [key, type] of Object.entries(columnTypes)) {
+    const value = row[key];
+
+    // Handle missing or empty values
+    if (value === undefined || value === null || value === '') {
       result[key] = null;
       continue;
     }
 
-    const type = columnTypes[key];
     if (type === 'INTEGER') {
       const parsed = parseInt(value, 10);
       result[key] = isNaN(parsed) ? null : parsed;
