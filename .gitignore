@@ -2,7 +2,7 @@
 node_modules/
 
 # Build outputs
-dist/
+# dist/ - committed to git for git installations
 *.tsbuildinfo
 
 # Test coverage
