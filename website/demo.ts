@@ -98,7 +98,7 @@ function renderActiveCalendars() {
 // Render routes list
 function renderRoutes() {
   const routesListEl = document.getElementById('routes-list')!;
-  const routes = gtfs.getAllRoutes();
+  const routes = gtfs.getRoutes();
 
   if (routes.length === 0) {
     routesListEl.innerHTML = '<p>No routes found</p>';

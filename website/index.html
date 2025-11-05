@@ -67,17 +67,19 @@
       <h2>Quick Start</h2>
       <pre><code>import { GtfsSqlJs } from 'gtfs-sqljs';
 
-// Load from ZIP file
-const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip');
+// Load from ZIP file (skip shapes.txt to reduce memory)
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  skipFiles: ['shapes.txt']
+});
 
-// Get all routes
-const routes = gtfs.getAllRoutes();
+// Get all routes (using flexible API)
+const routes = gtfs.getRoutes();
 
 // Get stops for a trip
-const stops = gtfs.getStopsByTrip('trip_id');
+const stops = gtfs.getStops({ tripId: 'trip_id' });
 
 // Get active trips for a date
-const trips = gtfs.getTripsByDate('20240115');
+const trips = gtfs.getTrips({ date: '20240115' });
 
 // Clean up
 gtfs.close();</code></pre>
@@ -101,20 +103,12 @@ const trips = gtfs.getTrips({
   directionId: 0
 });</code></pre>
 
-      <h3>Stop Methods</h3>
+      <h3>Direct Lookup Methods</h3>
       <ul>
         <li><code>getStopById(stopId)</code> - Get stop by ID</li>
-        <li><code>getStopByCode(stopCode)</code> - Get stop by code</li>
-        <li><code>searchStopsByName(name, limit?)</code> - Search stops by name</li>
-        <li><code>getStopsByTrip(tripId)</code> - Get stops for a trip (ordered)</li>
-        <li><code>getAllStops(limit?)</code> - Get all stops</li>
-      </ul>
-
-      <h3>Route Methods</h3>
-      <ul>
         <li><code>getRouteById(routeId)</code> - Get route by ID</li>
-        <li><code>getAllRoutes(limit?)</code> - Get all routes</li>
-        <li><code>getRoutesByAgency(agencyId)</code> - Get routes by agency</li>
+        <li><code>getTripById(tripId)</code> - Get trip by ID</li>
+        <li><code>getAgencyById(agencyId)</code> - Get agency by ID</li>
       </ul>
 
       <h3>Calendar Methods</h3>
@@ -122,22 +116,12 @@ const trips = gtfs.getTrips({
         <li><code>getActiveServiceIds(date)</code> - Get active services for a date (YYYYMMDD)</li>
         <li><code>getCalendarByServiceId(serviceId)</code> - Get calendar by service ID</li>
         <li><code>getCalendarDates(serviceId)</code> - Get calendar date exceptions</li>
+        <li><code>getCalendarDatesForDate(date)</code> - Get exceptions for a specific date</li>
       </ul>
 
-      <h3>Trip Methods</h3>
+      <h3>Special Methods</h3>
       <ul>
-        <li><code>getTripById(tripId)</code> - Get trip by ID</li>
-        <li><code>getTripsByRoute(routeId)</code> - Get trips for a route</li>
-        <li><code>getTripsByDate(date)</code> - Get all trips for a date</li>
-        <li><code>getTripsByRouteAndDate(routeId, date)</code> - Get trips for route and date</li>
-        <li><code>getTripsByRouteAndDateAndDirection(routeId, date, directionId)</code> - Filter by direction</li>
-      </ul>
-
-      <h3>Stop Time Methods</h3>
-      <ul>
-        <li><code>getStopTimesByTrip(tripId)</code> - Get stop times for a trip</li>
-        <li><code>getStopTimesByStop(stopId, limit?)</code> - Get stop times for a stop</li>
-        <li><code>getStopTimesForStopRouteAndDate(stopId, routeId, date, directionId?)</code> - Complex filtering</li>
+        <li><code>getStopTimesByTrip(tripId)</code> - Get stop times for a trip (ordered by stop_sequence)</li>
       </ul>
 
       <h3>Database Methods</h3>
