@@ -18,7 +18,11 @@ async function init() {
     });
 
     // Load GTFS data (Vite will resolve this from public folder)
-    gtfs = await GtfsSqlJs.fromZip('./car-jaune.zip', { SQL });
+    // Skip shapes.txt to reduce memory usage and improve load time
+    gtfs = await GtfsSqlJs.fromZip('./car-jaune.zip', {
+      SQL,
+      skipFiles: ['shapes.txt']
+    });
 
     // Hide loading, show content
     loadingEl.style.display = 'none';
@@ -26,6 +30,9 @@ async function init() {
 
     // Initialize date picker with today's date
     initDatePicker();
+
+    // Setup download button
+    setupDownloadButton();
 
     // Render initial data
     renderActiveCalendars();
@@ -243,6 +250,33 @@ function renderRoutes() {
   // Scroll to stop times section
   stopTimesSectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
+
+// Setup download button
+function setupDownloadButton() {
+  const downloadBtn = document.getElementById('download-db-btn') as HTMLButtonElement;
+  if (!downloadBtn) return;
+
+  downloadBtn.addEventListener('click', () => {
+    try {
+      // Export database to ArrayBuffer
+      const dbData = gtfs.export();
+
+      // Create blob and download
+      const blob = new Blob([dbData], { type: 'application/x-sqlite3' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `car-jaune-${selectedDate}.db`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('Error downloading database:', error);
+      alert('Failed to download database');
+    }
+  });
+}
 
 // Utility functions
 

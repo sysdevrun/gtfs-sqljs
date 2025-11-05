@@ -11,6 +11,7 @@ export interface StopTimeFilters {
   routeId?: string;
   serviceIds?: string[];
   directionId?: number;
+  agencyId?: string;
   limit?: number;
 }
 
@@ -18,10 +19,11 @@ export interface StopTimeFilters {
  * Get stop times with optional filters
  */
 export function getStopTimes(db: Database, filters: StopTimeFilters = {}): StopTime[] {
-  const { tripId, stopId, routeId, serviceIds, directionId, limit } = filters;
+  const { tripId, stopId, routeId, serviceIds, directionId, agencyId, limit } = filters;
 
-  // Determine if we need to join with trips table
-  const needsTripsJoin = routeId || serviceIds || directionId !== undefined;
+  // Determine if we need to join with trips and/or routes table
+  const needsTripsJoin = routeId || serviceIds || directionId !== undefined || agencyId !== undefined;
+  const needsRoutesJoin = agencyId !== undefined;
 
   // Build WHERE clause dynamically
   const conditions: string[] = [];
@@ -53,10 +55,20 @@ export function getStopTimes(db: Database, filters: StopTimeFilters = {}): StopT
     params.push(directionId);
   }
 
+  if (agencyId) {
+    conditions.push('r.agency_id = ?');
+    params.push(agencyId);
+  }
+
   // Build SQL query
-  let sql = needsTripsJoin
-    ? 'SELECT st.* FROM stop_times st INNER JOIN trips t ON st.trip_id = t.trip_id'
-    : 'SELECT * FROM stop_times';
+  let sql: string;
+  if (needsRoutesJoin) {
+    sql = 'SELECT st.* FROM stop_times st INNER JOIN trips t ON st.trip_id = t.trip_id INNER JOIN routes r ON t.route_id = r.route_id';
+  } else if (needsTripsJoin) {
+    sql = 'SELECT st.* FROM stop_times st INNER JOIN trips t ON st.trip_id = t.trip_id';
+  } else {
+    sql = 'SELECT * FROM stop_times';
+  }
 
   if (conditions.length > 0) {
     sql += ' WHERE ' + conditions.join(' AND ');

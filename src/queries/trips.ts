@@ -10,6 +10,7 @@ export interface TripFilters {
   routeId?: string;
   serviceIds?: string[];
   directionId?: number;
+  agencyId?: string;
   limit?: number;
 }
 
@@ -17,35 +18,46 @@ export interface TripFilters {
  * Get trips with optional filters
  */
 export function getTrips(db: Database, filters: TripFilters = {}): Trip[] {
-  const { tripId, routeId, serviceIds, directionId, limit } = filters;
+  const { tripId, routeId, serviceIds, directionId, agencyId, limit } = filters;
+
+  // Determine if we need to join with routes table
+  const needsRoutesJoin = agencyId !== undefined;
 
   // Build WHERE clause dynamically
   const conditions: string[] = [];
   const params: (string | number)[] = [];
 
   if (tripId) {
-    conditions.push('trip_id = ?');
+    conditions.push(needsRoutesJoin ? 't.trip_id = ?' : 'trip_id = ?');
     params.push(tripId);
   }
 
   if (routeId) {
-    conditions.push('route_id = ?');
+    conditions.push(needsRoutesJoin ? 't.route_id = ?' : 'route_id = ?');
     params.push(routeId);
   }
 
   if (serviceIds && serviceIds.length > 0) {
     const placeholders = serviceIds.map(() => '?').join(', ');
-    conditions.push(`service_id IN (${placeholders})`);
+    conditions.push(needsRoutesJoin ? `t.service_id IN (${placeholders})` : `service_id IN (${placeholders})`);
     params.push(...serviceIds);
   }
 
   if (directionId !== undefined) {
-    conditions.push('direction_id = ?');
+    conditions.push(needsRoutesJoin ? 't.direction_id = ?' : 'direction_id = ?');
     params.push(directionId);
   }
 
+  if (agencyId) {
+    conditions.push('r.agency_id = ?');
+    params.push(agencyId);
+  }
+
   // Build SQL query
-  let sql = 'SELECT * FROM trips';
+  let sql = needsRoutesJoin
+    ? 'SELECT t.* FROM trips t INNER JOIN routes r ON t.route_id = r.route_id'
+    : 'SELECT * FROM trips';
+
   if (conditions.length > 0) {
     sql += ' WHERE ' + conditions.join(' AND ');
   }

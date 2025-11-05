@@ -43,7 +43,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
 
   describe('Stops', () => {
     it('should have 9 stops', () => {
-      const stops = gtfs.getStops();
+      const stops = gtfs.getAllStops();
       expect(stops.length).toBe(9);
     });
 
@@ -68,7 +68,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should find stops when searching for "Airport"', () => {
-      const stops = gtfs.getStops({ name: 'Airport' });
+      const stops = gtfs.searchStopsByName('Airport');
       expect(stops.length).toBeGreaterThanOrEqual(1);
 
       const airportStop = stops.find(s => s.stop_id === 'BEATTY_AIRPORT');
@@ -77,7 +77,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should get stops for trip AB1 in correct order', () => {
-      const stops = gtfs.getStops({ tripId: 'AB1' });
+      const stops = gtfs.getStopsByTrip('AB1');
 
       expect(stops.length).toBe(2);
       expect(stops[0].stop_id).toBe('BEATTY_AIRPORT');
@@ -87,7 +87,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should get stops for trip CITY1 in correct order', () => {
-      const stops = gtfs.getStops({ tripId: 'CITY1' });
+      const stops = gtfs.getStopsByTrip('CITY1');
 
       expect(stops.length).toBe(5);
       expect(stops[0].stop_id).toBe('STAGECOACH');
@@ -100,7 +100,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
 
   describe('Routes', () => {
     it('should have 5 routes', () => {
-      const routes = gtfs.getRoutes();
+      const routes = gtfs.getAllRoutes();
       expect(routes.length).toBe(5);
     });
 
@@ -135,7 +135,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should get all routes for agency DTA', () => {
-      const routes = gtfs.getRoutes({ agencyId: 'DTA' });
+      const routes = gtfs.getRoutesByAgency('DTA');
       expect(routes.length).toBe(5);
     });
   });
@@ -229,7 +229,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should get 2 trips for route AB', () => {
-      const trips = gtfs.getTrips({ routeId: 'AB' });
+      const trips = gtfs.getTripsByRoute('AB');
       expect(trips.length).toBe(2);
 
       const tripIds = trips.map(t => t.trip_id).sort();
@@ -237,19 +237,19 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should get trips for route AB on Monday', () => {
-      const trips = gtfs.getTrips({ routeId: 'AB', date: '20070101' });
+      const trips = gtfs.getTripsByRouteAndDate('AB', '20070101');
       expect(trips.length).toBe(2);
       expect(trips.every(t => t.service_id === 'FULLW')).toBe(true);
     });
 
     it('should get 7 trips for Monday (all FULLW trips)', () => {
-      const trips = gtfs.getTrips({ date: '20070101' });
+      const trips = gtfs.getTripsByDate('20070101');
       expect(trips.length).toBe(7); // AB1, AB2, STBA, CITY1, CITY2, BFC1, BFC2
       expect(trips.every(t => t.service_id === 'FULLW')).toBe(true);
     });
 
     it('should get 11 trips for Saturday (FULLW + WE trips)', () => {
-      const trips = gtfs.getTrips({ date: '20070106' });
+      const trips = gtfs.getTripsByDate('20070106');
       expect(trips.length).toBe(11); // 7 FULLW + 4 AAMV (WE)
 
       const fullwTrips = trips.filter(t => t.service_id === 'FULLW');
@@ -260,8 +260,8 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should get trips by direction', () => {
-      const tripsDir0 = gtfs.getTrips({ routeId: 'AB', date: '20070101', directionId: 0 });
-      const tripsDir1 = gtfs.getTrips({ routeId: 'AB', date: '20070101', directionId: 1 });
+      const tripsDir0 = gtfs.getTripsByRouteAndDateAndDirection('AB', '20070101', 0);
+      const tripsDir1 = gtfs.getTripsByRouteAndDateAndDirection('AB', '20070101', 1);
 
       expect(tripsDir0.length).toBe(1);
       expect(tripsDir0[0].trip_id).toBe('AB1');
@@ -313,7 +313,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should get stop times for BEATTY_AIRPORT', () => {
-      const stopTimes = gtfs.getStopTimes({ stopId: 'BEATTY_AIRPORT', limit: 100 });
+      const stopTimes = gtfs.getStopTimesByStop('BEATTY_AIRPORT', 100);
 
       // BEATTY_AIRPORT appears in: STBA, AB1, AB2, AAMV1, AAMV2, AAMV3, AAMV4 = 7 trips
       expect(stopTimes.length).toBe(7);
@@ -327,7 +327,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should get stop times for route AB at BEATTY_AIRPORT on Monday', () => {
-      const stopTimes = gtfs.getStopTimes({ stopId: 'BEATTY_AIRPORT', routeId: 'AB', date: '20070101' });
+      const stopTimes = gtfs.getStopTimesForStopRouteAndDate('BEATTY_AIRPORT', 'AB', '20070101');
 
       expect(stopTimes.length).toBe(2); // AB1 and AB2
 
@@ -343,7 +343,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should filter by direction', () => {
-      const stopTimes = gtfs.getStopTimes({ stopId: 'BEATTY_AIRPORT', routeId: 'AB', date: '20070101', directionId: 0 });
+      const stopTimes = gtfs.getStopTimesForStopRouteAndDate('BEATTY_AIRPORT', 'AB', '20070101', 0);
 
       expect(stopTimes.length).toBe(1);
       expect(stopTimes[0].trip_id).toBe('AB1');
@@ -365,7 +365,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
       expect(route).not.toBeNull();
 
       // Get trips on a Monday
-      const trips = gtfs.getTrips({ routeId: 'AB', date: '20070101' });
+      const trips = gtfs.getTripsByRouteAndDate('AB', '20070101');
 
       // Trip AB1 goes to Bullfrog (direction 0)
       const trip = trips.find(t => t.trip_headsign === 'to Bullfrog');
@@ -389,7 +389,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should find all routes serving BULLFROG', () => {
-      const stopTimes = gtfs.getStopTimes({ stopId: 'BULLFROG', limit: 100 });
+      const stopTimes = gtfs.getStopTimesByStop('BULLFROG', 100);
 
       // Get unique trip IDs
       const tripIds = [...new Set(stopTimes.map(st => st.trip_id))];
@@ -417,8 +417,8 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
       const trip1 = gtfs.getTripById('CITY1');
       const trip2 = gtfs.getTripById('CITY2');
 
-      const stops1 = gtfs.getStops({ tripId: 'CITY1' });
-      const stops2 = gtfs.getStops({ tripId: 'CITY2' });
+      const stops1 = gtfs.getStopsByTrip('CITY1');
+      const stops2 = gtfs.getStopsByTrip('CITY2');
 
       // Both trips have 5 stops
       expect(stops1.length).toBe(5);

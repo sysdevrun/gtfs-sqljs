@@ -9,8 +9,9 @@ import type { GTFSFiles } from './zip-loader';
 
 /**
  * Load GTFS files into SQLite database
+ * @param skipFiles - Optional array of filenames to skip importing (tables will be created but remain empty)
  */
-export async function loadGTFSData(db: Database, files: GTFSFiles): Promise<void> {
+export async function loadGTFSData(db: Database, files: GTFSFiles, skipFiles?: string[]): Promise<void> {
   // Map of file names to table schemas
   const fileToSchema: Map<string, TableSchema> = new Map();
   for (const schema of GTFS_SCHEMA) {
@@ -18,11 +19,20 @@ export async function loadGTFSData(db: Database, files: GTFSFiles): Promise<void
     fileToSchema.set(`${schema.name}.txt`, schema);
   }
 
+  // Normalize skipFiles to a Set for faster lookup
+  const skipSet = new Set(skipFiles?.map(f => f.toLowerCase()) || []);
+
   // Process each file
   for (const [fileName, content] of Object.entries(files)) {
     const schema = fileToSchema.get(fileName);
     if (!schema) {
       // Skip unknown files
+      continue;
+    }
+
+    // Skip if in skip list
+    if (skipSet.has(fileName.toLowerCase())) {
+      console.log(`Skipping import of ${fileName} (table ${schema.name} created but empty)`);
       continue;
     }
 

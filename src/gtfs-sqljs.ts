@@ -8,36 +8,23 @@ import { loadGTFSZip } from './loaders/zip-loader';
 import { loadGTFSData } from './loaders/data-loader';
 
 // Query methods
-import { getStopById, getStopByCode, searchStopsByName, getAllStops, getStopsByTrip, getStops, type StopFilters } from './queries/stops';
-import { getRouteById, getAllRoutes, getRoutesByAgency, getRoutes, type RouteFilters } from './queries/routes';
+import { getAgencyById, getAgencies, type AgencyFilters } from './queries/agencies';
+import { getStopById, getStops, type StopFilters } from './queries/stops';
+import { getRouteById, getRoutes, type RouteFilters } from './queries/routes';
 import {
   getActiveServiceIds,
   getCalendarByServiceId,
   getCalendarDates,
   getCalendarDatesForDate,
 } from './queries/calendar';
-import {
-  getTripById,
-  getTripsByRoute,
-  getTripsByRouteAndService,
-  getTripsByRouteServiceAndDirection,
-  getTripsByService,
-  getTrips,
-  type TripFilters,
-} from './queries/trips';
-import {
-  getStopTimesByTrip,
-  getStopTimesByStop,
-  getStopTimesForStopRouteDirection,
-  getStopTimes,
-  type StopTimeFilters,
-} from './queries/stop-times';
+import { getTripById, getTrips, type TripFilters } from './queries/trips';
+import { getStopTimesByTrip, getStopTimes, type StopTimeFilters } from './queries/stop-times';
 
 // Types
-import type { Stop, Route, Trip, StopTime, Calendar, CalendarDate } from './types/gtfs';
+import type { Agency, Stop, Route, Trip, StopTime, Calendar, CalendarDate } from './types/gtfs';
 
 // Export filter types for users
-export type { StopFilters, RouteFilters, TripFilters, StopTimeFilters };
+export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters };
 
 export interface GtfsSqlJsOptions {
   /**
@@ -59,6 +46,12 @@ export interface GtfsSqlJsOptions {
    * Optional: Path to SQL.js WASM file (for custom loading)
    */
   locateFile?: (filename: string) => string;
+
+  /**
+   * Optional: Array of GTFS filenames to skip importing (e.g., ['shapes.txt'])
+   * Tables will be created but no data will be imported for these files
+   */
+  skipFiles?: string[];
 }
 
 export class GtfsSqlJs {
@@ -112,7 +105,7 @@ export class GtfsSqlJs {
 
     // Load GTFS data
     const files = await loadGTFSZip(zipPath);
-    await loadGTFSData(this.db, files);
+    await loadGTFSData(this.db, files, options.skipFiles);
   }
 
   /**
@@ -164,6 +157,24 @@ export class GtfsSqlJs {
     return this.db;
   }
 
+  // ==================== Agency Methods ====================
+
+  /**
+   * Get an agency by its agency_id
+   */
+  getAgencyById(agencyId: string): Agency | null {
+    if (!this.db) throw new Error('Database not initialized');
+    return getAgencyById(this.db, agencyId);
+  }
+
+  /**
+   * Get agencies with optional filters
+   */
+  getAgencies(filters?: AgencyFilters): Agency[] {
+    if (!this.db) throw new Error('Database not initialized');
+    return getAgencies(this.db, filters);
+  }
+
   // ==================== Stop Methods ====================
 
   /**
@@ -172,30 +183,6 @@ export class GtfsSqlJs {
   getStopById(stopId: string): Stop | null {
     if (!this.db) throw new Error('Database not initialized');
     return getStopById(this.db, stopId);
-  }
-
-  /**
-   * Get a stop by its stop_code
-   */
-  getStopByCode(stopCode: string): Stop | null {
-    if (!this.db) throw new Error('Database not initialized');
-    return getStopByCode(this.db, stopCode);
-  }
-
-  /**
-   * Search stops by name (case-insensitive, partial match)
-   */
-  searchStopsByName(name: string, limit = 50): Stop[] {
-    if (!this.db) throw new Error('Database not initialized');
-    return searchStopsByName(this.db, name, limit);
-  }
-
-  /**
-   * Get all stops
-   */
-  getAllStops(limit?: number): Stop[] {
-    if (!this.db) throw new Error('Database not initialized');
-    return getAllStops(this.db, limit);
   }
 
   /**
@@ -214,22 +201,6 @@ export class GtfsSqlJs {
   getRouteById(routeId: string): Route | null {
     if (!this.db) throw new Error('Database not initialized');
     return getRouteById(this.db, routeId);
-  }
-
-  /**
-   * Get all routes
-   */
-  getAllRoutes(limit?: number): Route[] {
-    if (!this.db) throw new Error('Database not initialized');
-    return getAllRoutes(this.db, limit);
-  }
-
-  /**
-   * Get routes by agency
-   */
-  getRoutesByAgency(agencyId: string): Route[] {
-    if (!this.db) throw new Error('Database not initialized');
-    return getRoutesByAgency(this.db, agencyId);
   }
 
   /**
@@ -285,49 +256,6 @@ export class GtfsSqlJs {
   }
 
   /**
-   * Get trips for a route
-   */
-  getTripsByRoute(routeId: string): Trip[] {
-    if (!this.db) throw new Error('Database not initialized');
-    return getTripsByRoute(this.db, routeId);
-  }
-
-  /**
-   * Get trips for a route and date
-   */
-  getTripsByRouteAndDate(routeId: string, date: string): Trip[] {
-    if (!this.db) throw new Error('Database not initialized');
-    const serviceIds = getActiveServiceIds(this.db, date);
-    return getTripsByRouteAndService(this.db, routeId, serviceIds);
-  }
-
-  /**
-   * Get trips for a route, date, and direction
-   */
-  getTripsByRouteAndDateAndDirection(routeId: string, date: string, directionId: number): Trip[] {
-    if (!this.db) throw new Error('Database not initialized');
-    const serviceIds = getActiveServiceIds(this.db, date);
-    return getTripsByRouteServiceAndDirection(this.db, routeId, serviceIds, directionId);
-  }
-
-  /**
-   * Get all trips for a given date (YYYYMMDD format)
-   */
-  getTripsByDate(date: string): Trip[] {
-    if (!this.db) throw new Error('Database not initialized');
-    const serviceIds = getActiveServiceIds(this.db, date);
-    return getTripsByService(this.db, serviceIds);
-  }
-
-  /**
-   * Get stops for a given trip (ordered by stop_sequence)
-   */
-  getStopsByTrip(tripId: string): Stop[] {
-    if (!this.db) throw new Error('Database not initialized');
-    return getStopsByTrip(this.db, tripId);
-  }
-
-  /**
    * Get trips with optional filters
    *
    * @param filters - Optional filters
@@ -335,6 +263,7 @@ export class GtfsSqlJs {
    * @param filters.routeId - Filter by route ID
    * @param filters.date - Filter by date (YYYYMMDD format) - will get active services for that date
    * @param filters.directionId - Filter by direction ID
+   * @param filters.agencyId - Filter by agency ID
    * @param filters.limit - Limit number of results
    *
    * @example
@@ -363,28 +292,11 @@ export class GtfsSqlJs {
   // ==================== Stop Time Methods ====================
 
   /**
-   * Get stop times for a trip
+   * Get stop times for a trip (ordered by stop_sequence)
    */
   getStopTimesByTrip(tripId: string): StopTime[] {
     if (!this.db) throw new Error('Database not initialized');
     return getStopTimesByTrip(this.db, tripId);
-  }
-
-  /**
-   * Get stop times for a stop
-   */
-  getStopTimesByStop(stopId: string, limit = 100): StopTime[] {
-    if (!this.db) throw new Error('Database not initialized');
-    return getStopTimesByStop(this.db, stopId, limit);
-  }
-
-  /**
-   * Get stop times for a stop, route, and date
-   */
-  getStopTimesForStopRouteAndDate(stopId: string, routeId: string, date: string, directionId?: number): StopTime[] {
-    if (!this.db) throw new Error('Database not initialized');
-    const serviceIds = getActiveServiceIds(this.db, date);
-    return getStopTimesForStopRouteDirection(this.db, stopId, routeId, serviceIds, directionId);
   }
 
   /**
@@ -396,6 +308,7 @@ export class GtfsSqlJs {
    * @param filters.routeId - Filter by route ID
    * @param filters.date - Filter by date (YYYYMMDD format) - will get active services for that date
    * @param filters.directionId - Filter by direction ID
+   * @param filters.agencyId - Filter by agency ID
    * @param filters.limit - Limit number of results
    *
    * @example

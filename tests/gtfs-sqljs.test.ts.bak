@@ -35,13 +35,13 @@ describe('GtfsSqlJs', () => {
     });
 
     it('should get stop by code', () => {
-      const stops = gtfs.getStops({ stopCode: 'FS' });
-      expect(stops.length).toBe(1);
-      expect(stops[0].stop_id).toBe('STOP1');
+      const stop = gtfs.getStopByCode('FS');
+      expect(stop).toBeDefined();
+      expect(stop?.stop_id).toBe('STOP1');
     });
 
     it('should search stops by name', () => {
-      const stops = gtfs.getStops({ name: 'Street' });
+      const stops = gtfs.searchStopsByName('Street');
       expect(stops.length).toBeGreaterThan(0);
       expect(stops[0].stop_name).toContain('Street');
     });
@@ -52,7 +52,7 @@ describe('GtfsSqlJs', () => {
     });
 
     it('should get all stops', () => {
-      const stops = gtfs.getStops();
+      const stops = gtfs.getAllStops();
       expect(stops.length).toBeGreaterThan(0);
     });
   });
@@ -66,7 +66,7 @@ describe('GtfsSqlJs', () => {
     });
 
     it('should get all routes', () => {
-      const routes = gtfs.getRoutes();
+      const routes = gtfs.getAllRoutes();
       expect(routes.length).toBeGreaterThan(0);
     });
 
@@ -105,17 +105,17 @@ describe('GtfsSqlJs', () => {
     });
 
     it('should get trips by route', () => {
-      const trips = gtfs.getTrips({ routeId: 'ROUTE1' });
+      const trips = gtfs.getTripsByRoute('ROUTE1');
       expect(trips.length).toBeGreaterThan(0);
     });
 
     it('should get trips by route and date', () => {
-      const trips = gtfs.getTrips({ routeId: 'ROUTE1', date: '20240101' });
+      const trips = gtfs.getTripsByRouteAndDate('ROUTE1', '20240101');
       expect(trips.length).toBeGreaterThan(0);
     });
 
     it('should get trips by route, date, and direction', () => {
-      const trips = gtfs.getTrips({ routeId: 'ROUTE1', date: '20240101', directionId: 0 });
+      const trips = gtfs.getTripsByRouteAndDateAndDirection('ROUTE1', '20240101', 0);
       expect(trips.length).toBeGreaterThan(0);
       expect(trips.every(t => t.direction_id === 0)).toBe(true);
     });
@@ -129,17 +129,17 @@ describe('GtfsSqlJs', () => {
     });
 
     it('should get stop times by stop', () => {
-      const stopTimes = gtfs.getStopTimes({ stopId: 'STOP1' });
+      const stopTimes = gtfs.getStopTimesByStop('STOP1');
       expect(stopTimes.length).toBeGreaterThan(0);
     });
 
     it('should get stop times for stop, route, and date', () => {
-      const stopTimes = gtfs.getStopTimes({ stopId: 'STOP1', routeId: 'ROUTE1', date: '20240101' });
+      const stopTimes = gtfs.getStopTimesForStopRouteAndDate('STOP1', 'ROUTE1', '20240101');
       expect(stopTimes.length).toBeGreaterThan(0);
     });
 
     it('should get stop times with direction filter', () => {
-      const stopTimes = gtfs.getStopTimes({ stopId: 'STOP1', routeId: 'ROUTE1', date: '20240101', directionId: 0 });
+      const stopTimes = gtfs.getStopTimesForStopRouteAndDate('STOP1', 'ROUTE1', '20240101', 0);
       expect(stopTimes.length).toBeGreaterThan(0);
     });
   });

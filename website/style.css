@@ -284,6 +284,20 @@ footer {
   line-height: 1.6;
 }
 
+.download-section {
+  margin-top: 2rem;
+  text-align: center;
+}
+
+.download-section .button {
+  margin-bottom: 0.5rem;
+}
+
+.download-section .help-text {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+}
+
 .calendar-info {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
