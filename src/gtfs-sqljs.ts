@@ -25,7 +25,6 @@ import {
 import {
   getStopTimesByTrip,
   getStopTimesByStop,
-  getStopTimesByStopAndTrips,
   getStopTimesForStopRouteDirection,
 } from './queries/stop-times';
 
