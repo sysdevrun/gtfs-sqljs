@@ -1,6 +1,8 @@
-# gtfs-sqljs
-
-A TypeScript library for loading GTFS (General Transit Feed Specification) data into a sql.js SQLite database for querying in both browser and Node.js environments.
+<div align="center">
+  <img src="logo.svg" alt="gtfs-sqljs logo" width="200" height="200">
+  <h1>gtfs-sqljs</h1>
+  <p>A TypeScript library for loading GTFS (General Transit Feed Specification) data into a sql.js SQLite database for querying in both browser and Node.js environments.</p>
+</div>
 
 ## Author
 
