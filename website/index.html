@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>gtfs-sqljs - GTFS Data with SQL.js</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="container">
+      <h1 class="logo">gtfs-sqljs</h1>
+      <ul class="nav-links">
+        <li><a href="/">Documentation</a></li>
+        <li><a href="/demo.html">Demo</a></li>
+        <li><a href="https://github.com/sysdevrun/gtfs-sqljs" target="_blank">GitHub</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="container">
+    <section class="hero">
+      <h1>gtfs-sqljs</h1>
+      <p class="subtitle">Load GTFS data into sql.js SQLite database for querying in browser and Node.js</p>
+      <div class="hero-buttons">
+        <a href="/demo.html" class="button button-primary">Try Demo</a>
+        <a href="https://github.com/sysdevrun/gtfs-sqljs" class="button button-secondary">View on GitHub</a>
+      </div>
+    </section>
+
+    <section class="features">
+      <h2>Features</h2>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <h3>🌐 Universal</h3>
+          <p>Works in both browser and Node.js environments</p>
+        </div>
+        <div class="feature-card">
+          <h3>📦 ZIP Loading</h3>
+          <p>Load GTFS data directly from ZIP files (URL or local path)</p>
+        </div>
+        <div class="feature-card">
+          <h3>🔍 Powerful Queries</h3>
+          <p>Query stops, routes, trips, calendars with efficient SQLite indexes</p>
+        </div>
+        <div class="feature-card">
+          <h3>💾 Export/Import</h3>
+          <p>Export databases to ArrayBuffer for persistence</p>
+        </div>
+        <div class="feature-card">
+          <h3>📘 TypeScript</h3>
+          <p>Full TypeScript support with comprehensive GTFS types</p>
+        </div>
+        <div class="feature-card">
+          <h3>✅ Tested</h3>
+          <p>77+ tests covering all features with real GTFS data</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="installation">
+      <h2>Installation</h2>
+      <pre><code>npm install gtfs-sqljs sql.js</code></pre>
+    </section>
+
+    <section class="quick-start">
+      <h2>Quick Start</h2>
+      <pre><code>import { GtfsSqlJs } from 'gtfs-sqljs';
+
+// Load from ZIP file
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip');
+
+// Get all routes
+const routes = gtfs.getAllRoutes();
+
+// Get stops for a trip
+const stops = gtfs.getStopsByTrip('trip_id');
+
+// Get active trips for a date
+const trips = gtfs.getTripsByDate('20240115');
+
+// Clean up
+gtfs.close();</code></pre>
+    </section>
+
+    <section class="api">
+      <h2>API Methods</h2>
+
+      <h3>Stop Methods</h3>
+      <ul>
+        <li><code>getStopById(stopId)</code> - Get stop by ID</li>
+        <li><code>getStopByCode(stopCode)</code> - Get stop by code</li>
+        <li><code>searchStopsByName(name, limit?)</code> - Search stops by name</li>
+        <li><code>getStopsByTrip(tripId)</code> - Get stops for a trip (ordered)</li>
+        <li><code>getAllStops(limit?)</code> - Get all stops</li>
+      </ul>
+
+      <h3>Route Methods</h3>
+      <ul>
+        <li><code>getRouteById(routeId)</code> - Get route by ID</li>
+        <li><code>getAllRoutes(limit?)</code> - Get all routes</li>
+        <li><code>getRoutesByAgency(agencyId)</code> - Get routes by agency</li>
+      </ul>
+
+      <h3>Calendar Methods</h3>
+      <ul>
+        <li><code>getActiveServiceIds(date)</code> - Get active services for a date (YYYYMMDD)</li>
+        <li><code>getCalendarByServiceId(serviceId)</code> - Get calendar by service ID</li>
+        <li><code>getCalendarDates(serviceId)</code> - Get calendar date exceptions</li>
+      </ul>
+
+      <h3>Trip Methods</h3>
+      <ul>
+        <li><code>getTripById(tripId)</code> - Get trip by ID</li>
+        <li><code>getTripsByRoute(routeId)</code> - Get trips for a route</li>
+        <li><code>getTripsByDate(date)</code> - Get all trips for a date</li>
+        <li><code>getTripsByRouteAndDate(routeId, date)</code> - Get trips for route and date</li>
+        <li><code>getTripsByRouteAndDateAndDirection(routeId, date, directionId)</code> - Filter by direction</li>
+      </ul>
+
+      <h3>Stop Time Methods</h3>
+      <ul>
+        <li><code>getStopTimesByTrip(tripId)</code> - Get stop times for a trip</li>
+        <li><code>getStopTimesByStop(stopId, limit?)</code> - Get stop times for a stop</li>
+        <li><code>getStopTimesForStopRouteAndDate(stopId, routeId, date, directionId?)</code> - Complex filtering</li>
+      </ul>
+
+      <h3>Database Methods</h3>
+      <ul>
+        <li><code>export()</code> - Export database to ArrayBuffer</li>
+        <li><code>getDatabase()</code> - Get direct access to sql.js database</li>
+        <li><code>close()</code> - Close database connection</li>
+      </ul>
+    </section>
+
+    <section class="author">
+      <h2>Author</h2>
+      <p><strong>Théophile Helleboid / SysDevRun</strong></p>
+      <p>Email: <a href="mailto:contact@sys-dev-run.fr">contact@sys-dev-run.fr</a></p>
+      <p>Website: <a href="https://www.sys-dev-run.fr/">www.sys-dev-run.fr</a></p>
+    </section>
+
+    <section class="license">
+      <h2>License</h2>
+      <p>MIT License</p>
+    </section>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>&copy; 2024 Théophile Helleboid / SysDevRun. Licensed under MIT.</p>
+    </div>
+  </footer>
+</body>
+</html>
