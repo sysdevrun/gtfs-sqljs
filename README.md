@@ -9,6 +9,12 @@ A TypeScript library for loading GTFS (General Transit Feed Specification) data 
 - Email: contact@sys-dev-run.fr
 - Website: https://www.sys-dev-run.fr/
 
+## Documentation & Demo
+
+📚 **[View Documentation and Interactive Demo](https://sysdevrun.github.io/gtfs-sqljs/)**
+
+Try the live demo to explore GTFS data, view routes with colors, and see trip schedules in action!
+
 ## Features
 
 - ✅ Load GTFS data from ZIP files (URL or local path)
