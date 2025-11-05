@@ -26,10 +26,21 @@
         <input
           type="url"
           id="gtfs-url-input"
-          placeholder="https://www.data.gouv.fr/api/1/datasets/r/..."
-          value="https://www.data.gouv.fr/api/1/datasets/r/c9c2f609-d0cd-4233-ad1b-cf86b9bf2dc8"
+          placeholder="https://pysae.com/api/v2/groups/car-jaune/gtfs/pub"
+          value="https://pysae.com/api/v2/groups/car-jaune/gtfs/pub"
         />
         <button id="load-gtfs-btn" class="button button-primary">Load GTFS</button>
+      </div>
+      <div class="url-input-section">
+        <label for="gtfs-rt-url-input">GTFS-RT URL (https only, optional):</label>
+        <input
+          type="url"
+          id="gtfs-rt-url-input"
+          placeholder="https://pysae.com/api/v2/groups/car-jaune/gtfs-rt"
+          value="https://pysae.com/api/v2/groups/car-jaune/gtfs-rt"
+        />
+        <button id="fetch-rt-btn" class="button button-secondary" disabled>Fetch RT Data</button>
+        <button id="auto-refresh-btn" class="button button-secondary" disabled>Fetch RT Data Every 10s</button>
       </div>
     </section>
 
@@ -87,6 +98,20 @@
         <h2>Stop Times for <span id="selected-trip-name"></span></h2>
         <div id="stop-times-list" class="stop-times-list">
           <p>Loading stop times...</p>
+        </div>
+      </section>
+
+      <section class="demo-section" id="alerts-section">
+        <h2>Active Alerts</h2>
+        <div id="alerts-list" class="alerts-list">
+          <p class="no-data">No realtime data loaded. Use the "Fetch RT Data" button above.</p>
+        </div>
+      </section>
+
+      <section class="demo-section" id="vehicles-section">
+        <h2>Tracked Vehicles</h2>
+        <div id="vehicles-count" class="vehicles-count">
+          <p class="no-data">No realtime data loaded. Use the "Fetch RT Data" button above.</p>
         </div>
       </section>
     </div>

@@ -7,7 +7,7 @@ export type { AlertFilters };
 /**
  * Parse JSON fields from database
  */
-function parseAlert(row: Record<string, any>): Alert {
+function parseAlert(row: Record<string, unknown>): Alert {
   return {
     id: String(row.id),
     active_period: row.active_period ? JSON.parse(String(row.active_period)) as TimeRange[] : [],

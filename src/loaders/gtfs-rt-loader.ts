@@ -1,6 +1,98 @@
 import type { Database } from 'sql.js';
 import protobuf from 'protobufjs';
 
+// Types for protobuf decoded objects
+interface ProtobufTranslation {
+  text: string;
+  language?: string;
+}
+
+interface ProtobufTranslatedString {
+  translation: ProtobufTranslation[];
+}
+
+interface ProtobufAlert {
+  id: string;
+  activePeriod?: unknown[];
+  active_period?: unknown[];
+  informedEntity?: unknown[];
+  informed_entity?: unknown[];
+  cause?: number;
+  effect?: number;
+  url?: ProtobufTranslatedString;
+  headerText?: ProtobufTranslatedString;
+  header_text?: ProtobufTranslatedString;
+  descriptionText?: ProtobufTranslatedString;
+  description_text?: ProtobufTranslatedString;
+}
+
+interface ProtobufTripDescriptor {
+  tripId?: string;
+  trip_id?: string;
+  routeId?: string;
+  route_id?: string;
+  scheduleRelationship?: number;
+  schedule_relationship?: number;
+}
+
+interface ProtobufVehicleDescriptor {
+  id?: string;
+  label?: string;
+  licensePlate?: string;
+  license_plate?: string;
+}
+
+interface ProtobufPosition {
+  latitude?: number;
+  longitude?: number;
+  bearing?: number;
+  odometer?: number;
+  speed?: number;
+}
+
+interface ProtobufVehiclePosition {
+  trip?: ProtobufTripDescriptor;
+  vehicle?: ProtobufVehicleDescriptor;
+  position?: ProtobufPosition;
+  currentStopSequence?: number;
+  current_stop_sequence?: number;
+  stopId?: string;
+  stop_id?: string;
+  currentStatus?: number;
+  current_status?: number;
+  timestamp?: number;
+  congestionLevel?: number;
+  congestion_level?: number;
+  occupancyStatus?: number;
+  occupancy_status?: number;
+}
+
+interface ProtobufStopTimeEvent {
+  delay?: number;
+  time?: number;
+  uncertainty?: number;
+}
+
+interface ProtobufStopTimeUpdate {
+  stopSequence?: number;
+  stop_sequence?: number;
+  stopId?: string;
+  stop_id?: string;
+  scheduleRelationship?: number;
+  schedule_relationship?: number;
+  arrival?: ProtobufStopTimeEvent;
+  departure?: ProtobufStopTimeEvent;
+}
+
+interface ProtobufTripUpdate {
+  trip?: ProtobufTripDescriptor;
+  vehicle?: ProtobufVehicleDescriptor;
+  timestamp?: number;
+  delay?: number;
+  stopTimeUpdate?: ProtobufStopTimeUpdate[];
+  stop_time_update?: ProtobufStopTimeUpdate[];
+}
+
 // GTFS Realtime protobuf definition (v2.0)
 // Source: https://github.com/google/transit/blob/master/gtfs-realtime/proto/gtfs-realtime.proto
 const GTFS_RT_PROTO = `
@@ -247,7 +339,7 @@ function camelToSnake(str: string): string {
   return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
 }
 
-function convertKeysToSnakeCase(obj: any): any {
+function convertKeysToSnakeCase(obj: unknown): unknown {
   if (obj === null || obj === undefined) {
     return obj;
   }
@@ -255,11 +347,11 @@ function convertKeysToSnakeCase(obj: any): any {
     return obj.map(convertKeysToSnakeCase);
   }
   if (typeof obj === 'object') {
-    const result: any = {};
-    for (const key in obj) {
-      if (obj.hasOwnProperty(key)) {
+    const result: Record<string, unknown> = {};
+    for (const key in obj as Record<string, unknown>) {
+      if (Object.prototype.hasOwnProperty.call(obj, key)) {
         const snakeKey = camelToSnake(key);
-        result[snakeKey] = convertKeysToSnakeCase(obj[key]);
+        result[snakeKey] = convertKeysToSnakeCase((obj as Record<string, unknown>)[key]);
       }
     }
     return result;
@@ -268,12 +360,12 @@ function convertKeysToSnakeCase(obj: any): any {
 }
 
 // Parse TranslatedString to JSON
-function parseTranslatedString(ts: any): string | null {
+function parseTranslatedString(ts: ProtobufTranslatedString | undefined): string | null {
   if (!ts || !ts.translation || ts.translation.length === 0) {
     return null;
   }
   return JSON.stringify({
-    translation: ts.translation.map((t: any) => ({
+    translation: ts.translation.map((t) => ({
       text: t.text,
       language: t.language || undefined
     }))
@@ -281,7 +373,7 @@ function parseTranslatedString(ts: any): string | null {
 }
 
 // Insert alerts into database
-function insertAlerts(db: Database, alerts: any[], timestamp: number): void {
+function insertAlerts(db: Database, alerts: ProtobufAlert[], timestamp: number): void {
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO rt_alerts (
       id, active_period, informed_entity, cause, effect,
@@ -317,7 +409,7 @@ function insertAlerts(db: Database, alerts: any[], timestamp: number): void {
 }
 
 // Insert vehicle positions into database
-function insertVehiclePositions(db: Database, positions: any[], timestamp: number): void {
+function insertVehiclePositions(db: Database, positions: ProtobufVehiclePosition[], timestamp: number): void {
   const stmt = db.prepare(`
     INSERT OR REPLACE INTO rt_vehicle_positions (
       trip_id, route_id, vehicle_id, vehicle_label, vehicle_license_plate,
@@ -368,7 +460,7 @@ function insertVehiclePositions(db: Database, positions: any[], timestamp: numbe
 }
 
 // Insert trip updates into database
-function insertTripUpdates(db: Database, updates: any[], timestamp: number): void {
+function insertTripUpdates(db: Database, updates: ProtobufTripUpdate[], timestamp: number): void {
   const tripStmt = db.prepare(`
     INSERT OR REPLACE INTO rt_trip_updates (
       trip_id, route_id, vehicle_id, vehicle_label, vehicle_license_plate,
@@ -473,9 +565,9 @@ export async function loadRealtimeData(db: Database, feedUrls: string[]): Promis
   const now = Math.floor(Date.now() / 1000);
 
   // Collect all entities by type
-  const allAlerts: any[] = [];
-  const allVehiclePositions: any[] = [];
-  const allTripUpdates: any[] = [];
+  const allAlerts: ProtobufAlert[] = [];
+  const allVehiclePositions: ProtobufVehiclePosition[] = [];
+  const allTripUpdates: ProtobufTripUpdate[] = [];
 
   for (const feed of feeds) {
     if (!feed.entity) continue;

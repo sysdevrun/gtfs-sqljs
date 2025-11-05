@@ -1,10 +1,13 @@
 import initSqlJs from 'sql.js';
+import type { SqlJsStatic } from 'sql.js';
 import { GtfsSqlJs } from 'gtfs-sqljs';
-import type { Route, Trip, StopTime, Agency } from 'gtfs-sqljs';
+import type { Route, Trip, StopTime, Agency, Alert, VehiclePosition, TripWithRealtime, StopTimeWithRealtime } from 'gtfs-sqljs';
 
 let gtfs: GtfsSqlJs;
 let selectedDate: string;
-let SQL: any;
+let SQL: SqlJsStatic | undefined;
+let autoRefreshInterval: number | null = null;
+let isAutoRefreshActive = false;
 
 // Convert https URL to proxy URL
 function getProxyUrl(httpsUrl: string): string {
@@ -16,8 +19,8 @@ function getProxyUrl(httpsUrl: string): string {
   return `https://gtfs-proxy.sys-dev-run.re/proxy/${withoutProtocol}`;
 }
 
-// Load GTFS from URL or default
-async function loadGTFS(url?: string) {
+// Load GTFS from URL
+async function loadGTFS(url: string) {
   const loadingEl = document.getElementById('loading')!;
   const errorEl = document.getElementById('error')!;
   const errorMessageEl = document.getElementById('error-message')!;
@@ -29,14 +32,8 @@ async function loadGTFS(url?: string) {
     errorEl.style.display = 'none';
     contentEl.style.display = 'none';
 
-    // Determine source
-    let source: string;
-    if (url) {
-      source = getProxyUrl(url);
-    } else {
-      // Load default car-jaune.zip from public folder
-      source = './car-jaune.zip';
-    }
+    // Use proxy for the URL
+    const source = getProxyUrl(url);
 
     // Load GTFS data
     // Skip shapes.txt to reduce memory usage and improve load time
@@ -49,16 +46,27 @@ async function loadGTFS(url?: string) {
     loadingEl.style.display = 'none';
     contentEl.style.display = 'block';
 
+    // Enable RT buttons
+    (document.getElementById('fetch-rt-btn') as HTMLButtonElement).disabled = false;
+    (document.getElementById('auto-refresh-btn') as HTMLButtonElement).disabled = false;
+
     // Initialize date picker with today's date
     initDatePicker();
 
     // Setup download button
     setupDownloadButton();
 
+    // Setup RT buttons
+    setupRTButtons();
+
     // Render initial data
     renderAgencies();
     renderActiveCalendars();
     renderRoutes();
+
+    // Clear RT displays
+    renderAlerts();
+    renderVehicleCount();
   } catch (error) {
     console.error('Error loading GTFS data:', error);
     loadingEl.style.display = 'none';
@@ -86,8 +94,9 @@ async function init() {
       }
     });
 
-    // Load default GTFS (car-jaune.zip)
-    await loadGTFS();
+    // Load default GTFS (Car Jaune URL)
+    const defaultUrl = urlInput.value || 'https://pysae.com/api/v2/groups/car-jaune/gtfs/pub';
+    await loadGTFS(defaultUrl);
   } catch (error) {
     console.error('Error initializing demo:', error);
     const loadingEl = document.getElementById('loading')!;
@@ -218,11 +227,12 @@ function renderRoutes() {
   // Hide stop times section
   stopTimesSectionEl.style.display = 'none';
 
-  // Get trips for this route on the selected date
+  // Get trips for this route on the selected date (with realtime data)
   const trips = gtfs.getTrips({
     routeId: routeId,
-    date: selectedDate
-  });
+    date: selectedDate,
+    includeRealtime: true
+  }) as TripWithRealtime[];
 
   if (trips.length === 0) {
     tripsListEl.innerHTML = '<p>No trips found for this route on the selected date</p>';
@@ -235,7 +245,7 @@ function renderRoutes() {
   interface TripGroup {
     headsign: string;
     directionId: number;
-    trips: Trip[];
+    trips: TripWithRealtime[];
   }
 
   const groupMap = new Map<string, TripGroup>();
@@ -287,12 +297,29 @@ function renderRoutes() {
             const tripName = trip.trip_short_name || trip.trip_id;
             const showTripId = trip.trip_short_name ? trip.trip_id : null;
 
+            // Check for realtime data
+            const hasVehicle = trip.realtime?.vehicle_position !== null;
+            const hasTripUpdate = trip.realtime?.trip_update !== null;
+            const delay = trip.realtime?.trip_update?.delay;
+
+            let rtIndicator = '';
+            if (hasVehicle || hasTripUpdate) {
+              rtIndicator = `<span class="rt-indicator" title="Realtime data available">RT</span>`;
+            }
+
+            let delayIndicator = '';
+            if (delay !== undefined && delay !== null) {
+              const delayMin = Math.round(delay / 60);
+              const delayClass = delayMin > 5 ? 'delay-high' : delayMin > 2 ? 'delay-medium' : 'delay-low';
+              delayIndicator = `<span class="delay-indicator ${delayClass}">${delayMin > 0 ? '+' : ''}${delayMin} min</span>`;
+            }
+
             return `
-              <div class="trip-card" onclick="showStopTimes('${trip.trip_id}', '${escapeHtml(group.headsign)}')">
+              <div class="trip-card ${hasVehicle || hasTripUpdate ? 'trip-has-rt' : ''}" onclick="showStopTimes('${trip.trip_id}', '${escapeHtml(group.headsign)}')">
                 <div class="trip-info">
-                  <div class="trip-name">${escapeHtml(tripName)}</div>
+                  <div class="trip-name">${escapeHtml(tripName)} ${rtIndicator}</div>
                   ${showTripId ? `<div class="trip-id-secondary">ID: ${escapeHtml(showTripId)}</div>` : ''}
-                  <div class="trip-service">Service: ${escapeHtml(trip.service_id)}</div>
+                  <div class="trip-service">Service: ${escapeHtml(trip.service_id)} ${delayIndicator}</div>
                 </div>
                 <div>→</div>
               </div>
@@ -317,8 +344,11 @@ function renderRoutes() {
   const stopTimesListEl = document.getElementById('stop-times-list')!;
   const selectedTripNameEl = document.getElementById('selected-trip-name')!;
 
-  // Get stop times for this trip
-  const stopTimes = gtfs.getStopTimesByTrip(tripId);
+  // Get stop times for this trip (with realtime data)
+  const stopTimes = gtfs.getStopTimes({
+    tripId: tripId,
+    includeRealtime: true
+  }) as StopTimeWithRealtime[];
 
   if (stopTimes.length === 0) {
     stopTimesListEl.innerHTML = '<p>No stop times found for this trip</p>';
@@ -327,15 +357,38 @@ function renderRoutes() {
     return;
   }
 
-  // Render stop times with stop names
+  // Render stop times with stop names and realtime data
   const html = stopTimes.map(st => {
     const stop = gtfs.getStopById(st.stop_id);
     const stopName = stop ? stop.stop_name : st.stop_id;
 
+    const hasRealtime = st.realtime !== undefined;
+    const arrivalDelay = st.realtime?.arrival_delay;
+    const departureDelay = st.realtime?.departure_delay;
+
+    // Calculate realtime arrival if delay exists
+    let rtArrivalTime = '';
+    if (arrivalDelay !== undefined && arrivalDelay !== null) {
+      const scheduledSeconds = timeToSeconds(st.arrival_time);
+      const rtSeconds = scheduledSeconds + arrivalDelay;
+      rtArrivalTime = secondsToTime(rtSeconds);
+    }
+
+    const delayClass = arrivalDelay && arrivalDelay > 300 ? 'delay-high' :
+                       arrivalDelay && arrivalDelay > 120 ? 'delay-medium' :
+                       arrivalDelay && arrivalDelay > 0 ? 'delay-low' : '';
+
     return `
-      <div class="stop-time-item">
+      <div class="stop-time-item ${hasRealtime ? 'has-realtime' : ''}">
         <div class="sequence">#${st.stop_sequence}</div>
-        <div class="time">${st.arrival_time}</div>
+        <div class="time">
+          ${hasRealtime && rtArrivalTime ? `
+            <div class="rt-time ${delayClass}">${rtArrivalTime}</div>
+            <div class="scheduled-time">${st.arrival_time}</div>
+          ` : `
+            <div>${st.arrival_time}</div>
+          `}
+        </div>
         <div class="stop-name">${escapeHtml(stopName)}</div>
       </div>
     `;
@@ -348,6 +401,165 @@ function renderRoutes() {
   // Scroll to stop times section
   stopTimesSectionEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
 };
+
+// Fetch realtime data
+async function fetchRealtimeData() {
+  const rtUrlInput = document.getElementById('gtfs-rt-url-input') as HTMLInputElement;
+  const rtUrl = rtUrlInput.value.trim();
+
+  if (!rtUrl) {
+    return;
+  }
+
+  try {
+    const proxyUrl = getProxyUrl(rtUrl);
+    await gtfs.fetchRealtimeData([proxyUrl]);
+
+    // Update displays
+    renderAlerts();
+    renderVehicleCount();
+  } catch (error) {
+    console.error('Error fetching realtime data:', error);
+    alert(`Failed to fetch realtime data: ${error instanceof Error ? error.message : String(error)}`);
+  }
+}
+
+// Setup RT buttons
+function setupRTButtons() {
+  const fetchBtn = document.getElementById('fetch-rt-btn') as HTMLButtonElement;
+  const autoRefreshBtn = document.getElementById('auto-refresh-btn') as HTMLButtonElement;
+
+  fetchBtn.addEventListener('click', async () => {
+    fetchBtn.disabled = true;
+    fetchBtn.textContent = 'Fetching...';
+    await fetchRealtimeData();
+    fetchBtn.disabled = false;
+    fetchBtn.textContent = 'Fetch RT Data';
+  });
+
+  autoRefreshBtn.addEventListener('click', () => {
+    if (isAutoRefreshActive) {
+      // Stop auto-refresh
+      if (autoRefreshInterval !== null) {
+        clearInterval(autoRefreshInterval);
+        autoRefreshInterval = null;
+      }
+      isAutoRefreshActive = false;
+      autoRefreshBtn.textContent = 'Fetch RT Data Every 10s';
+      autoRefreshBtn.classList.remove('button-active');
+    } else {
+      // Start auto-refresh
+      isAutoRefreshActive = true;
+      autoRefreshBtn.textContent = 'Stop Fetching RT Data';
+      autoRefreshBtn.classList.add('button-active');
+
+      // Fetch immediately
+      fetchRealtimeData();
+
+      // Then fetch every 10 seconds
+      autoRefreshInterval = window.setInterval(() => {
+        fetchRealtimeData();
+      }, 10000);
+    }
+  });
+}
+
+// Render alerts
+function renderAlerts() {
+  const alertsListEl = document.getElementById('alerts-list')!;
+
+  try {
+    const alerts = gtfs.getAlerts({ activeOnly: true });
+
+    if (alerts.length === 0) {
+      alertsListEl.innerHTML = '<p class="no-data">No active alerts</p>';
+      return;
+    }
+
+    const html = alerts.map(alert => {
+      let headerText = 'Alert';
+      if (alert.header_text) {
+        try {
+          const parsed = typeof alert.header_text === 'string'
+            ? JSON.parse(alert.header_text)
+            : alert.header_text;
+          headerText = parsed.translation?.[0]?.text || 'Alert';
+        } catch (e) {
+          // Use default
+        }
+      }
+
+      let descriptionText = '';
+      if (alert.description_text) {
+        try {
+          const parsed = typeof alert.description_text === 'string'
+            ? JSON.parse(alert.description_text)
+            : alert.description_text;
+          descriptionText = parsed.translation?.[0]?.text || '';
+        } catch (e) {
+          // No description
+        }
+      }
+
+      // Get affected routes
+      const affectedRoutes = alert.informed_entity
+        .filter(e => e.route_id)
+        .map(e => e.route_id)
+        .slice(0, 10); // Show max 10 routes
+
+      const routesBadges = affectedRoutes.map(routeId => {
+        const route = gtfs.getRouteById(routeId!);
+        if (!route) return '';
+
+        const bgColor = route.route_color ? `#${route.route_color}` : '#64748b';
+        const textColor = route.route_text_color ? `#${route.route_text_color}` : getContrastColor(bgColor);
+
+        return `<span class="route-badge" style="background-color: ${bgColor}; color: ${textColor};">${escapeHtml(route.route_short_name)}</span>`;
+      }).join('');
+
+      const moreRoutes = alert.informed_entity.filter(e => e.route_id).length > 10
+        ? `<span class="route-badge-more">+${alert.informed_entity.filter(e => e.route_id).length - 10} more</span>`
+        : '';
+
+      return `
+        <div class="alert-card">
+          <h4>${escapeHtml(headerText)}</h4>
+          ${descriptionText ? `<p>${escapeHtml(descriptionText.substring(0, 200))}${descriptionText.length > 200 ? '...' : ''}</p>` : ''}
+          ${routesBadges || moreRoutes ? `<div class="alert-routes">Affected routes: ${routesBadges}${moreRoutes}</div>` : ''}
+        </div>
+      `;
+    }).join('');
+
+    alertsListEl.innerHTML = html;
+  } catch (error) {
+    console.error('Error rendering alerts:', error);
+    alertsListEl.innerHTML = '<p class="no-data">Error loading alerts</p>';
+  }
+}
+
+// Render vehicle count
+function renderVehicleCount() {
+  const vehiclesCountEl = document.getElementById('vehicles-count')!;
+
+  try {
+    const vehicles = gtfs.getVehiclePositions();
+
+    if (vehicles.length === 0) {
+      vehiclesCountEl.innerHTML = '<p class="no-data">No tracked vehicles</p>';
+      return;
+    }
+
+    vehiclesCountEl.innerHTML = `
+      <div class="vehicle-count-display">
+        <div class="vehicle-count-number">${vehicles.length}</div>
+        <div class="vehicle-count-label">Active Vehicle${vehicles.length > 1 ? 's' : ''}</div>
+      </div>
+    `;
+  } catch (error) {
+    console.error('Error rendering vehicle count:', error);
+    vehiclesCountEl.innerHTML = '<p class="no-data">Error loading vehicle data</p>';
+  }
+}
 
 // Setup download button
 function setupDownloadButton() {
@@ -398,6 +610,19 @@ function getContrastColor(hexColor: string): string {
 
   // Return black or white based on luminance
   return luminance > 0.5 ? '#000000' : '#ffffff';
+}
+
+// Time conversion helpers
+function timeToSeconds(time: string): number {
+  const [hours, minutes, seconds] = time.split(':').map(Number);
+  return hours * 3600 + minutes * 60 + seconds;
+}
+
+function secondsToTime(seconds: number): string {
+  const hours = Math.floor(seconds / 3600);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = seconds % 60;
+  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
 // Start the demo
