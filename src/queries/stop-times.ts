@@ -4,6 +4,7 @@
 
 import type { Database } from 'sql.js';
 import type { StopTime } from '../types/gtfs';
+import type { StopTimeRealtime } from '../types/gtfs-rt';
 
 export interface StopTimeFilters {
   tripId?: string;
@@ -12,14 +13,73 @@ export interface StopTimeFilters {
   serviceIds?: string[];
   directionId?: number;
   agencyId?: string;
+  includeRealtime?: boolean;
   limit?: number;
+}
+
+export interface StopTimeWithRealtime extends StopTime {
+  realtime?: StopTimeRealtime;
+}
+
+/**
+ * Merge realtime data with stop times
+ */
+function mergeRealtimeData(
+  stopTimes: StopTime[],
+  db: Database,
+  stalenessThreshold: number
+): StopTimeWithRealtime[] {
+  const now = Math.floor(Date.now() / 1000);
+  const staleThreshold = now - stalenessThreshold;
+
+  // Build map of trip_id -> stop times for this query
+  const tripIds = Array.from(new Set(stopTimes.map(st => st.trip_id)));
+  if (tripIds.length === 0) return stopTimes;
+
+  const placeholders = tripIds.map(() => '?').join(', ');
+  const stmt = db.prepare(`
+    SELECT trip_id, stop_sequence, stop_id,
+           arrival_delay, departure_delay, schedule_relationship
+    FROM rt_stop_time_updates
+    WHERE trip_id IN (${placeholders})
+      AND rt_last_updated >= ?
+  `);
+  stmt.bind([...tripIds, staleThreshold]);
+
+  // Build map of trip_id+stop_sequence -> RT data
+  const rtMap = new Map<string, StopTimeRealtime>();
+  while (stmt.step()) {
+    const row = stmt.getAsObject() as Record<string, unknown>;
+    const key = `${row.trip_id}_${row.stop_sequence}`;
+    rtMap.set(key, {
+      arrival_delay: row.arrival_delay !== null ? Number(row.arrival_delay) : undefined,
+      departure_delay: row.departure_delay !== null ? Number(row.departure_delay) : undefined,
+      schedule_relationship: row.schedule_relationship !== null ? Number(row.schedule_relationship) : undefined
+    });
+  }
+  stmt.free();
+
+  // Merge RT data with stop times
+  return stopTimes.map((st): StopTimeWithRealtime => {
+    const key = `${st.trip_id}_${st.stop_sequence}`;
+    const rtData = rtMap.get(key);
+
+    if (rtData) {
+      return { ...st, realtime: rtData };
+    }
+    return st;
+  });
 }
 
 /**
  * Get stop times with optional filters
  */
-export function getStopTimes(db: Database, filters: StopTimeFilters = {}): StopTime[] {
-  const { tripId, stopId, routeId, serviceIds, directionId, agencyId, limit } = filters;
+export function getStopTimes(
+  db: Database,
+  filters: StopTimeFilters = {},
+  stalenessThreshold: number = 120
+): StopTime[] | StopTimeWithRealtime[] {
+  const { tripId, stopId, routeId, serviceIds, directionId, agencyId, includeRealtime, limit } = filters;
 
   // Determine if we need to join with trips and/or routes table
   const needsTripsJoin = routeId || serviceIds || directionId !== undefined || agencyId !== undefined;
@@ -94,6 +154,12 @@ export function getStopTimes(db: Database, filters: StopTimeFilters = {}): StopT
   }
 
   stmt.free();
+
+  // Merge realtime data if requested
+  if (includeRealtime) {
+    return mergeRealtimeData(stopTimes, db, stalenessThreshold);
+  }
+
   return stopTimes;
 }
 
