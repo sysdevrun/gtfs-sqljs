@@ -4,7 +4,7 @@
  * @license MIT
  */
 
-export { GtfsSqlJs, type GtfsSqlJsOptions } from './gtfs-sqljs';
+export { GtfsSqlJs, type GtfsSqlJsOptions, type StopFilters, type RouteFilters, type TripFilters, type StopTimeFilters } from './gtfs-sqljs';
 
 // Export types
 export type {

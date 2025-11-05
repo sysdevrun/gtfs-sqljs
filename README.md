@@ -131,6 +131,71 @@ const gtfs = await GtfsSqlJs.fromDatabase(dbBuffer);
 
 ### Querying Data
 
+The library provides two ways to query GTFS data:
+1. **Flexible filter-based methods** (recommended) - Pass an object with optional filters
+2. **Convenience methods** - Direct methods for common use cases
+
+#### Flexible Filter-Based Queries (Recommended)
+
+The new flexible API allows you to pass multiple optional filters in a single method call:
+
+```typescript
+// Get stops - combine any filters
+const stops = gtfs.getStops({
+  name: 'Station',        // Search by name
+  limit: 10               // Limit results
+});
+
+// Get routes - with or without filters
+const allRoutes = gtfs.getRoutes();
+const agencyRoutes = gtfs.getRoutes({ agencyId: 'AGENCY_1' });
+
+// Get trips - combine multiple filters
+const trips = gtfs.getTrips({
+  routeId: 'ROUTE_1',     // Filter by route
+  date: '20240115',       // Filter by date (gets active services)
+  directionId: 0,         // Filter by direction
+  limit: 50               // Limit results
+});
+
+// Get stop times - flexible filtering
+const stopTimes = gtfs.getStopTimes({
+  stopId: 'STOP_123',     // At a specific stop
+  routeId: 'ROUTE_1',     // For a specific route
+  date: '20240115',       // On a specific date
+  directionId: 0          // In a specific direction
+});
+```
+
+**Available Filter Options:**
+
+- `getStops(filters?)`:
+  - `stopId`: string - Filter by stop ID
+  - `stopCode`: string - Filter by stop code
+  - `name`: string - Search by stop name (partial match)
+  - `tripId`: string - Get stops for a trip
+  - `limit`: number - Limit results
+
+- `getRoutes(filters?)`:
+  - `routeId`: string - Filter by route ID
+  - `agencyId`: string - Filter by agency
+  - `limit`: number - Limit results
+
+- `getTrips(filters?)`:
+  - `tripId`: string - Filter by trip ID
+  - `routeId`: string - Filter by route
+  - `date`: string - Filter by date (YYYYMMDD format)
+  - `directionId`: number - Filter by direction
+  - `limit`: number - Limit results
+
+- `getStopTimes(filters?)`:
+  - `tripId`: string - Filter by trip
+  - `stopId`: string - Filter by stop
+  - `routeId`: string - Filter by route
+  - `date`: string - Filter by date (YYYYMMDD format)
+  - `directionId`: number - Filter by direction
+  - `limit`: number - Limit results
+
 #### Get Stop Information
 
 ```typescript
@@ -319,11 +384,18 @@ example();
 
 ### Instance Methods
 
+#### Flexible Filter-Based Methods (Recommended)
+- `getStops(filters?)` - Get stops with optional filters (stopId, stopCode, name, tripId, limit)
+- `getRoutes(filters?)` - Get routes with optional filters (routeId, agencyId, limit)
+- `getTrips(filters?)` - Get trips with optional filters (tripId, routeId, date, directionId, limit)
+- `getStopTimes(filters?)` - Get stop times with optional filters (tripId, stopId, routeId, date, directionId, limit)
+
 #### Stop Methods
 - `getStopById(stopId)` - Get stop by stop_id
 - `getStopByCode(stopCode)` - Get stop by stop_code
 - `searchStopsByName(name, limit?)` - Search stops by name
 - `getAllStops(limit?)` - Get all stops
+- `getStopsByTrip(tripId)` - Get stops for a trip (ordered by sequence)
 
 #### Route Methods
 - `getRouteById(routeId)` - Get route by route_id
@@ -341,6 +413,7 @@ example();
 - `getTripsByRoute(routeId)` - Get trips for a route
 - `getTripsByRouteAndDate(routeId, date)` - Get trips for route and date
 - `getTripsByRouteAndDateAndDirection(routeId, date, directionId)` - Get trips with direction filter
+- `getTripsByDate(date)` - Get all trips for a date
 
 #### Stop Time Methods
 - `getStopTimesByTrip(tripId)` - Get stop times for a trip
@@ -354,12 +427,19 @@ example();
 
 ## TypeScript Support
 
-This library is written in TypeScript and provides full type definitions for all GTFS entities:
+This library is written in TypeScript and provides full type definitions for all GTFS entities and filter options:
 
 ```typescript
-import type { Stop, Route, Trip, StopTime } from 'gtfs-sqljs';
+import type { Stop, Route, Trip, StopTime, TripFilters, StopTimeFilters } from 'gtfs-sqljs';
 
 const stop: Stop = gtfs.getStopById('STOP_123')!;
+
+// Use filter types for better type safety
+const filters: TripFilters = {
+  routeId: 'ROUTE_1',
+  directionId: 0
+};
+const trips = gtfs.getTrips(filters);
 ```
 
 ## GTFS Specification

@@ -5,6 +5,86 @@
 import type { Database } from 'sql.js';
 import type { StopTime } from '../types/gtfs';
 
+export interface StopTimeFilters {
+  tripId?: string;
+  stopId?: string;
+  routeId?: string;
+  serviceIds?: string[];
+  directionId?: number;
+  limit?: number;
+}
+
+/**
+ * Get stop times with optional filters
+ */
+export function getStopTimes(db: Database, filters: StopTimeFilters = {}): StopTime[] {
+  const { tripId, stopId, routeId, serviceIds, directionId, limit } = filters;
+
+  // Determine if we need to join with trips table
+  const needsTripsJoin = routeId || serviceIds || directionId !== undefined;
+
+  // Build WHERE clause dynamically
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (tripId) {
+    conditions.push(needsTripsJoin ? 'st.trip_id = ?' : 'trip_id = ?');
+    params.push(tripId);
+  }
+
+  if (stopId) {
+    conditions.push(needsTripsJoin ? 'st.stop_id = ?' : 'stop_id = ?');
+    params.push(stopId);
+  }
+
+  if (routeId) {
+    conditions.push('t.route_id = ?');
+    params.push(routeId);
+  }
+
+  if (serviceIds && serviceIds.length > 0) {
+    const placeholders = serviceIds.map(() => '?').join(', ');
+    conditions.push(`t.service_id IN (${placeholders})`);
+    params.push(...serviceIds);
+  }
+
+  if (directionId !== undefined) {
+    conditions.push('t.direction_id = ?');
+    params.push(directionId);
+  }
+
+  // Build SQL query
+  let sql = needsTripsJoin
+    ? 'SELECT st.* FROM stop_times st INNER JOIN trips t ON st.trip_id = t.trip_id'
+    : 'SELECT * FROM stop_times';
+
+  if (conditions.length > 0) {
+    sql += ' WHERE ' + conditions.join(' AND ');
+  }
+
+  // Order by stop_sequence if filtering by trip, otherwise by arrival_time
+  sql += tripId ? ' ORDER BY stop_sequence' : ' ORDER BY arrival_time';
+
+  if (limit) {
+    sql += ' LIMIT ?';
+    params.push(limit);
+  }
+
+  const stmt = db.prepare(sql);
+  if (params.length > 0) {
+    stmt.bind(params);
+  }
+
+  const stopTimes: StopTime[] = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject() as Record<string, unknown>;
+    stopTimes.push(rowToStopTime(row));
+  }
+
+  stmt.free();
+  return stopTimes;
+}
+
 /**
  * Get stop times for a trip
  */
