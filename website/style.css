@@ -432,6 +432,18 @@ footer {
   flex: 1;
 }
 
+.trip-name {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.trip-id-secondary {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 0.25rem;
+}
+
 .trip-id {
   font-size: 0.95rem;
   margin-bottom: 0.25rem;
