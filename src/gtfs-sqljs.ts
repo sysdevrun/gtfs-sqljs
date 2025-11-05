@@ -130,7 +130,10 @@ export class GtfsSqlJs {
     }
 
     const data = this.db.export();
-    return data.buffer;
+    // Create a new ArrayBuffer and copy the data to ensure proper type
+    const buffer = new ArrayBuffer(data.length);
+    new Uint8Array(buffer).set(data);
+    return buffer;
   }
 
   /**
