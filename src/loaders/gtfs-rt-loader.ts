@@ -181,17 +181,51 @@ message TranslatedString {
 }
 `;
 
-// Fetch protobuf data from URL
+// Fetch protobuf data from URL or local file
 // Uses fetch API (available in modern browsers and Node.js 18+)
-async function fetchProtobuf(url: string): Promise<Uint8Array> {
-  const response = await fetch(url, {
+async function fetchProtobuf(source: string): Promise<Uint8Array> {
+  const isUrl = source.startsWith('http://') || source.startsWith('https://');
+
+  if (isUrl) {
+    // Fetch from URL
+    const response = await fetch(source, {
+      headers: {
+        'Accept': 'application/x-protobuf, application/octet-stream'
+      }
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch GTFS-RT feed from ${source}: ${response.status} ${response.statusText}`);
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    return new Uint8Array(arrayBuffer);
+  }
+
+  // Read from local file (Node.js only)
+  const isNode = typeof process !== 'undefined' &&
+                 process.versions != null &&
+                 process.versions.node != null;
+
+  if (isNode) {
+    try {
+      const fs = await import('fs');
+      const buffer = await fs.promises.readFile(source);
+      return new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
+    } catch (error) {
+      throw new Error(`Failed to read GTFS-RT file from ${source}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }
+
+  // In browser, try fetch for relative paths
+  const response = await fetch(source, {
     headers: {
       'Accept': 'application/x-protobuf, application/octet-stream'
     }
   });
 
   if (!response.ok) {
-    throw new Error(`Failed to fetch GTFS-RT feed from ${url}: ${response.status} ${response.statusText}`);
+    throw new Error(`Failed to fetch GTFS-RT feed from ${source}: ${response.status} ${response.statusText}`);
   }
 
   const arrayBuffer = await response.arrayBuffer();
@@ -206,6 +240,31 @@ function loadGtfsRtProto(): protobuf.Root {
     gtfsRtRoot = protobuf.parse(GTFS_RT_PROTO).root;
   }
   return gtfsRtRoot;
+}
+
+// Convert camelCase object keys to snake_case
+function camelToSnake(str: string): string {
+  return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
+}
+
+function convertKeysToSnakeCase(obj: any): any {
+  if (obj === null || obj === undefined) {
+    return obj;
+  }
+  if (Array.isArray(obj)) {
+    return obj.map(convertKeysToSnakeCase);
+  }
+  if (typeof obj === 'object') {
+    const result: any = {};
+    for (const key in obj) {
+      if (obj.hasOwnProperty(key)) {
+        const snakeKey = camelToSnake(key);
+        result[snakeKey] = convertKeysToSnakeCase(obj[key]);
+      }
+    }
+    return result;
+  }
+  return obj;
 }
 
 // Parse TranslatedString to JSON
@@ -231,15 +290,25 @@ function insertAlerts(db: Database, alerts: any[], timestamp: number): void {
   `);
 
   for (const alert of alerts) {
+    // Map camelCase protobuf fields to snake_case
+    const activePeriod = alert.activePeriod || alert.active_period || [];
+    const informedEntity = alert.informedEntity || alert.informed_entity || [];
+    const headerText = alert.headerText || alert.header_text;
+    const descriptionText = alert.descriptionText || alert.description_text;
+
+    // Convert nested objects to snake_case
+    const activePeriodSnake = convertKeysToSnakeCase(activePeriod);
+    const informedEntitySnake = convertKeysToSnakeCase(informedEntity);
+
     stmt.run([
       alert.id,
-      JSON.stringify(alert.active_period || []),
-      JSON.stringify(alert.informed_entity || []),
+      JSON.stringify(activePeriodSnake),
+      JSON.stringify(informedEntitySnake),
       alert.cause || null,
       alert.effect || null,
       parseTranslatedString(alert.url),
-      parseTranslatedString(alert.header_text),
-      parseTranslatedString(alert.description_text),
+      parseTranslatedString(headerText),
+      parseTranslatedString(descriptionText),
       timestamp
     ]);
   }
@@ -259,25 +328,38 @@ function insertVehiclePositions(db: Database, positions: any[], timestamp: numbe
   `);
 
   for (const vp of positions) {
-    if (!vp.trip || !vp.trip.trip_id) continue;
+    const trip = vp.trip;
+    if (!trip || !(trip.tripId || trip.trip_id)) continue;
+
+    // Map camelCase protobuf fields to snake_case
+    const tripId = trip.tripId || trip.trip_id;
+    const routeId = trip.routeId || trip.route_id;
+    const vehicleId = vp.vehicle?.id;
+    const vehicleLabel = vp.vehicle?.label;
+    const vehicleLicensePlate = vp.vehicle?.licensePlate || vp.vehicle?.license_plate;
+    const currentStopSequence = vp.currentStopSequence || vp.current_stop_sequence;
+    const stopId = vp.stopId || vp.stop_id;
+    const currentStatus = vp.currentStatus || vp.current_status;
+    const congestionLevel = vp.congestionLevel || vp.congestion_level;
+    const occupancyStatus = vp.occupancyStatus || vp.occupancy_status;
 
     stmt.run([
-      vp.trip.trip_id,
-      vp.trip.route_id || null,
-      vp.vehicle?.id || null,
-      vp.vehicle?.label || null,
-      vp.vehicle?.license_plate || null,
+      tripId,
+      routeId || null,
+      vehicleId || null,
+      vehicleLabel || null,
+      vehicleLicensePlate || null,
       vp.position?.latitude || null,
       vp.position?.longitude || null,
       vp.position?.bearing || null,
       vp.position?.odometer || null,
       vp.position?.speed || null,
-      vp.current_stop_sequence || null,
-      vp.stop_id || null,
-      vp.current_status || null,
+      currentStopSequence || null,
+      stopId || null,
+      currentStatus || null,
       vp.timestamp || null,
-      vp.congestion_level || null,
-      vp.occupancy_status || null,
+      congestionLevel || null,
+      occupancyStatus || null,
       timestamp
     ]);
   }
@@ -304,35 +386,49 @@ function insertTripUpdates(db: Database, updates: any[], timestamp: number): voi
   `);
 
   for (const tu of updates) {
-    if (!tu.trip || !tu.trip.trip_id) continue;
+    const trip = tu.trip;
+    if (!trip || !(trip.tripId || trip.trip_id)) continue;
+
+    // Map camelCase protobuf fields to snake_case
+    const tripId = trip.tripId || trip.trip_id;
+    const routeId = trip.routeId || trip.route_id;
+    const vehicleId = tu.vehicle?.id;
+    const vehicleLabel = tu.vehicle?.label;
+    const vehicleLicensePlate = tu.vehicle?.licensePlate || tu.vehicle?.license_plate;
+    const scheduleRelationship = trip.scheduleRelationship || trip.schedule_relationship;
+    const stopTimeUpdate = tu.stopTimeUpdate || tu.stop_time_update;
 
     // Insert trip update
     tripStmt.run([
-      tu.trip.trip_id,
-      tu.trip.route_id || null,
-      tu.vehicle?.id || null,
-      tu.vehicle?.label || null,
-      tu.vehicle?.license_plate || null,
+      tripId,
+      routeId || null,
+      vehicleId || null,
+      vehicleLabel || null,
+      vehicleLicensePlate || null,
       tu.timestamp || null,
       tu.delay || null,
-      tu.trip.schedule_relationship || null,
+      scheduleRelationship || null,
       timestamp
     ]);
 
     // Insert stop time updates
-    if (tu.stop_time_update) {
-      for (const stu of tu.stop_time_update) {
+    if (stopTimeUpdate) {
+      for (const stu of stopTimeUpdate) {
+        const stopSequence = stu.stopSequence || stu.stop_sequence;
+        const stopId = stu.stopId || stu.stop_id;
+        const scheduleRel = stu.scheduleRelationship || stu.schedule_relationship;
+
         stopTimeStmt.run([
-          tu.trip.trip_id,
-          stu.stop_sequence || null,
-          stu.stop_id || null,
+          tripId,
+          stopSequence || null,
+          stopId || null,
           stu.arrival?.delay || null,
           stu.arrival?.time || null,
           stu.arrival?.uncertainty || null,
           stu.departure?.delay || null,
           stu.departure?.time || null,
           stu.departure?.uncertainty || null,
-          stu.schedule_relationship || null,
+          scheduleRel || null,
           timestamp
         ]);
       }
