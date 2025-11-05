@@ -424,7 +424,7 @@ function insertVehiclePositions(db: Database, positions: ProtobufVehiclePosition
     if (!trip || !(trip.tripId || trip.trip_id)) continue;
 
     // Map camelCase protobuf fields to snake_case
-    const tripId = trip.tripId || trip.trip_id;
+    const tripId = (trip.tripId || trip.trip_id)!; // Safe: checked above
     const routeId = trip.routeId || trip.route_id;
     const vehicleId = vp.vehicle?.id;
     const vehicleLabel = vp.vehicle?.label;
@@ -482,7 +482,7 @@ function insertTripUpdates(db: Database, updates: ProtobufTripUpdate[], timestam
     if (!trip || !(trip.tripId || trip.trip_id)) continue;
 
     // Map camelCase protobuf fields to snake_case
-    const tripId = trip.tripId || trip.trip_id;
+    const tripId = (trip.tripId || trip.trip_id)!; // Safe: checked above
     const routeId = trip.routeId || trip.route_id;
     const vehicleId = tu.vehicle?.id;
     const vehicleLabel = tu.vehicle?.label;
