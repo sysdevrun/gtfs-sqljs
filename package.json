@@ -1,0 +1,59 @@
+{
+  "name": "gtfs-sqljs",
+  "version": "1.0.0",
+  "description": "Load GTFS data into sql.js SQLite database for querying in browser and Node.js",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.mjs",
+      "require": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsup",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src --ext .ts",
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "gtfs",
+    "transit",
+    "sqlite",
+    "sql.js",
+    "browser",
+    "nodejs"
+  ],
+  "author": "Théophile Helleboid/SysDevRun",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/sysdevrun/gtfs-sqljs.git"
+  },
+  "dependencies": {
+    "jszip": "^3.10.1",
+    "sql.js": "^1.10.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.5",
+    "@types/sql.js": "^1.4.9",
+    "@typescript-eslint/eslint-plugin": "^6.19.0",
+    "@typescript-eslint/parser": "^6.19.0",
+    "eslint": "^8.56.0",
+    "tsup": "^8.0.1",
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
