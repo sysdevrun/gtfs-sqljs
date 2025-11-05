@@ -105,7 +105,7 @@ function renderRoutes() {
     return;
   }
 
-  const html = routes.map(route => {
+  const html = routes.map((route): string => {
     const bgColor = route.route_color ? `#${route.route_color}` : '#64748b';
     const textColor = route.route_text_color ? `#${route.route_text_color}` : getContrastColor(bgColor);
 
