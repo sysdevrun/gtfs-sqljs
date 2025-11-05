@@ -203,6 +203,12 @@ footer {
   margin-bottom: 2rem;
 }
 
+.operator-info {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  margin-top: 0.5rem;
+}
+
 .loading {
   display: flex;
   flex-direction: column;
@@ -246,6 +252,36 @@ footer {
   color: var(--text-secondary);
   font-style: italic;
   margin-bottom: 1rem;
+}
+
+.date-selector {
+  margin-bottom: 1.5rem;
+}
+
+.date-selector input[type="date"] {
+  padding: 0.75rem 1rem;
+  border: 2px solid var(--border);
+  border-radius: 0.5rem;
+  font-size: 1rem;
+  font-family: inherit;
+  width: 100%;
+  max-width: 300px;
+  transition: border-color 0.2s;
+}
+
+.date-selector input[type="date"]:focus {
+  outline: none;
+  border-color: var(--primary-color);
+}
+
+.active-calendars {
+  margin-top: 1rem;
+}
+
+.info-text {
+  color: var(--text-secondary);
+  font-size: 0.95rem;
+  line-height: 1.6;
 }
 
 .calendar-info {
@@ -327,14 +363,42 @@ footer {
 
 .trips-list {
   display: grid;
-  gap: 0.5rem;
+  gap: 1.5rem;
+}
+
+.trip-group {
+  background: white;
+  border-radius: 0.5rem;
+  border: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.trip-group-header {
+  background: var(--surface);
+  padding: 1rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.trip-headsign {
+  font-weight: 600;
+  font-size: 1.1rem;
+  margin-bottom: 0.25rem;
+}
+
+.trip-meta {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.trip-items {
+  display: grid;
+  gap: 0;
 }
 
 .trip-card {
   background: white;
   padding: 1rem;
-  border-radius: 0.5rem;
-  border: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
   cursor: pointer;
   transition: all 0.2s;
   display: flex;
@@ -342,21 +406,24 @@ footer {
   align-items: center;
 }
 
+.trip-card:last-child {
+  border-bottom: none;
+}
+
 .trip-card:hover {
-  border-color: var(--primary-color);
-  box-shadow: var(--shadow);
+  background: var(--surface);
 }
 
 .trip-info {
   flex: 1;
 }
 
-.trip-headsign {
-  font-weight: 600;
+.trip-id {
+  font-size: 0.95rem;
   margin-bottom: 0.25rem;
 }
 
-.trip-meta {
+.trip-service {
   font-size: 0.875rem;
   color: var(--text-secondary);
 }
