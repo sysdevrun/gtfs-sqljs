@@ -1,5 +1,5 @@
 import type { Database} from 'sql.js';
-import type { VehiclePosition, Position, VehicleDescriptor } from '../types/gtfs-rt';
+import type { VehiclePosition } from '../types/gtfs-rt';
 import type { VehiclePositionFilters } from '../types/gtfs-rt';
 
 export type { VehiclePositionFilters };
@@ -7,7 +7,7 @@ export type { VehiclePositionFilters };
 /**
  * Parse vehicle position from database row
  */
-function parseVehiclePosition(row: Record<string, any>): VehiclePosition {
+function parseVehiclePosition(row: Record<string, unknown>): VehiclePosition {
   const vp: VehiclePosition = {
     trip_id: String(row.trip_id),
     route_id: row.route_id ? String(row.route_id) : undefined,

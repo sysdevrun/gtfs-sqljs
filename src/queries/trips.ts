@@ -5,7 +5,6 @@
 import type { Database } from 'sql.js';
 import type { Trip } from '../types/gtfs';
 import type { TripRealtime, VehiclePosition } from '../types/gtfs-rt';
-import { getVehiclePositionByTripId } from './rt-vehicle-positions';
 
 export interface TripFilters {
   tripId?: string;
@@ -45,7 +44,7 @@ function mergeRealtimeData(
   `);
   vpStmt.bind([...tripIds, staleThreshold]);
 
-  const vpMap = new Map<string, any>();
+  const vpMap = new Map<string, Record<string, unknown>>();
   while (vpStmt.step()) {
     const row = vpStmt.getAsObject() as Record<string, unknown>;
     vpMap.set(String(row.trip_id), row);
@@ -60,7 +59,7 @@ function mergeRealtimeData(
   `);
   tuStmt.bind([...tripIds, staleThreshold]);
 
-  const tuMap = new Map<string, any>();
+  const tuMap = new Map<string, Record<string, unknown>>();
   while (tuStmt.step()) {
     const row = tuStmt.getAsObject() as Record<string, unknown>;
     tuMap.set(String(row.trip_id), row);

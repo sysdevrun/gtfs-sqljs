@@ -17,6 +17,7 @@ Try the live demo to explore GTFS data, view routes with colors, and see trip sc
 
 ## Features
 
+### GTFS Static Data
 - ✅ Load GTFS data from ZIP files (URL or local path)
 - ✅ Skip importing specific files (e.g., shapes.txt) to reduce memory usage
 - ✅ Load existing SQLite databases
@@ -28,6 +29,16 @@ Try the live demo to explore GTFS data, view routes with colors, and see trip sc
 - ✅ Efficient querying with indexed SQLite database
 - ✅ Proper handling of GTFS required/optional fields
 - ✅ Active service detection based on calendar/calendar_dates
+
+### GTFS Realtime Support
+- ✅ Load GTFS-RT data from protobuf feeds (URLs or local files)
+- ✅ Support for Alerts, Trip Updates, and Vehicle Positions
+- ✅ Automatic staleness filtering (configurable threshold)
+- ✅ Active alert period checking
+- ✅ Merge realtime data with static schedules
+- ✅ Filter alerts and vehicle positions by route, stop, or trip
+- ✅ Store RT data in SQLite for consistent querying
+- ✅ Include RT data in database exports
 
 ## Installation
 
@@ -334,10 +345,170 @@ const stopTimes = gtfs.getStopTimes({
 });
 ```
 
+### GTFS Realtime Support
+
+This library supports GTFS Realtime data (alerts, trip updates, and vehicle positions) with automatic merging into static schedule data.
+
+#### Loading Realtime Data
+
+```typescript
+// Configure RT feed URLs (optional - can also pass directly to fetchRealtimeData)
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  realtimeFeedUrls: [
+    'https://example.com/gtfs-rt/alerts',
+    'https://example.com/gtfs-rt/trip-updates',
+    'https://example.com/gtfs-rt/vehicle-positions'
+  ],
+  stalenessThreshold: 120 // seconds (default: 120)
+});
+
+// Fetch RT data (uses configured URLs or pass custom URLs)
+await gtfs.fetchRealtimeData();
+
+// Or fetch from specific URLs
+await gtfs.fetchRealtimeData([
+  'https://example.com/gtfs-rt/combined-feed'
+]);
+
+// Support local files in Node.js
+await gtfs.fetchRealtimeData(['./path/to/feed.pb']);
+
+// Update configuration
+gtfs.setRealtimeFeedUrls(['https://example.com/new-feed']);
+gtfs.setStalenessThreshold(60); // 60 seconds
+```
+
+#### Querying Alerts
+
+```typescript
+// Get all active alerts
+const activeAlerts = gtfs.getAlerts({ activeOnly: true });
+
+// Filter alerts by route
+const routeAlerts = gtfs.getAlerts({
+  routeId: 'ROUTE_1',
+  activeOnly: true
+});
+
+// Filter alerts by stop
+const stopAlerts = gtfs.getAlerts({
+  stopId: 'STOP_123',
+  activeOnly: true
+});
+
+// Filter alerts by trip
+const tripAlerts = gtfs.getAlerts({
+  tripId: 'TRIP_456'
+});
+
+// Get alert by ID
+const alert = gtfs.getAlertById('alert:12345');
+
+// Alert structure
+console.log(alert.header_text);      // TranslatedString
+console.log(alert.description_text); // TranslatedString
+console.log(alert.cause);            // AlertCause enum
+console.log(alert.effect);           // AlertEffect enum
+console.log(alert.active_period);    // TimeRange[]
+console.log(alert.informed_entity);  // EntitySelector[]
+```
+
+#### Querying Vehicle Positions
+
+```typescript
+// Get all vehicle positions
+const vehicles = gtfs.getVehiclePositions();
+
+// Filter by route
+const routeVehicles = gtfs.getVehiclePositions({
+  routeId: 'ROUTE_1'
+});
+
+// Filter by trip
+const tripVehicle = gtfs.getVehiclePositions({
+  tripId: 'TRIP_123'
+});
+
+// Get vehicle by trip ID
+const vehicle = gtfs.getVehiclePositionByTripId('TRIP_123');
+
+// Vehicle structure
+console.log(vehicle.position);           // { latitude, longitude, bearing, speed }
+console.log(vehicle.current_stop_sequence);
+console.log(vehicle.current_status);     // VehicleStopStatus enum
+console.log(vehicle.timestamp);
+```
+
+#### Merging Realtime with Static Data
+
+The library automatically merges realtime data with static schedules when requested:
+
+```typescript
+// Get trips with realtime data
+const tripsWithRT = gtfs.getTrips({
+  routeId: 'ROUTE_1',
+  date: '20240115',
+  includeRealtime: true  // Include RT data
+});
+
+for (const trip of tripsWithRT) {
+  if (trip.realtime?.vehicle_position) {
+    console.log('Vehicle location:', trip.realtime.vehicle_position.position);
+  }
+  if (trip.realtime?.trip_update) {
+    console.log('Trip delay:', trip.realtime.trip_update.delay, 'seconds');
+  }
+}
+
+// Get stop times with realtime delays
+const stopTimesWithRT = gtfs.getStopTimes({
+  tripId: 'TRIP_123',
+  includeRealtime: true  // Include RT data
+});
+
+for (const st of stopTimesWithRT) {
+  console.log(`Stop: ${st.stop_id}`);
+  console.log(`Scheduled: ${st.arrival_time}`);
+  if (st.realtime?.arrival_delay) {
+    console.log(`Delay: ${st.realtime.arrival_delay} seconds`);
+  }
+}
+```
+
+#### Clearing Realtime Data
+
+```typescript
+// Clear all realtime data
+gtfs.clearRealtimeData();
+
+// Then fetch fresh data
+await gtfs.fetchRealtimeData();
+```
+
+#### GTFS-RT Enums
+
+The library exports all GTFS-RT enums for type checking:
+
+```typescript
+import {
+  AlertCause,
+  AlertEffect,
+  ScheduleRelationship,
+  VehicleStopStatus,
+  CongestionLevel,
+  OccupancyStatus
+} from 'gtfs-sqljs';
+
+// Use enums for filtering or comparison
+if (alert.cause === AlertCause.ACCIDENT) {
+  console.log('Alert is due to an accident');
+}
+```
+
 ### Export Database
 
 ```typescript
-// Export to ArrayBuffer for storage
+// Export to ArrayBuffer for storage (includes RT data)
 const buffer = gtfs.export();
 
 // Save to file (Node.js)
@@ -465,31 +636,59 @@ example();
 #### Special Methods
 - `getStopTimesByTrip(tripId)` - Get stop times for a trip (ordered by stop_sequence)
 
+#### GTFS Realtime Methods
+- `fetchRealtimeData(urls?)` - Fetch and load RT data from protobuf feeds
+- `clearRealtimeData()` - Clear all realtime data from database
+- `setRealtimeFeedUrls(urls)` - Configure RT feed URLs
+- `getRealtimeFeedUrls()` - Get configured RT feed URLs
+- `setStalenessThreshold(seconds)` - Set staleness threshold (default: 120)
+- `getStalenessThreshold()` - Get staleness threshold
+- `getAlerts(filters?)` - Get alerts with optional filters (routeId, stopId, tripId, activeOnly)
+- `getAlertById(alertId)` - Get alert by ID
+- `getVehiclePositions(filters?)` - Get vehicle positions with optional filters (routeId, tripId, vehicleId)
+- `getVehiclePositionByTripId(tripId)` - Get vehicle position by trip ID
+
 #### Database Methods
-- `export()` - Export database to ArrayBuffer
+- `export()` - Export database to ArrayBuffer (includes RT data)
 - `getDatabase()` - Get direct access to sql.js database
 - `close()` - Close database connection
 
 ## TypeScript Support
 
-This library is written in TypeScript and provides full type definitions for all GTFS entities and filter options:
+This library is written in TypeScript and provides full type definitions for all GTFS entities, filter options, and GTFS-RT types:
 
 ```typescript
-import type { Stop, Route, Trip, StopTime, TripFilters, StopTimeFilters } from 'gtfs-sqljs';
+import type {
+  // Static GTFS types
+  Stop, Route, Trip, StopTime,
+  TripFilters, StopTimeFilters,
+  // GTFS-RT types
+  Alert, VehiclePosition, TripWithRealtime, StopTimeWithRealtime,
+  AlertFilters, VehiclePositionFilters,
+  // GTFS-RT enums
+  AlertCause, AlertEffect, ScheduleRelationship
+} from 'gtfs-sqljs';
 
 const stop: Stop = gtfs.getStopById('STOP_123')!;
 
 // Use filter types for better type safety
 const filters: TripFilters = {
   routeId: 'ROUTE_1',
-  directionId: 0
+  directionId: 0,
+  includeRealtime: true
 };
 const trips = gtfs.getTrips(filters);
+
+// RT types
+const alerts: Alert[] = gtfs.getAlerts({ activeOnly: true });
+const vehicles: VehiclePosition[] = gtfs.getVehiclePositions();
 ```
 
 ## GTFS Specification
 
-This library implements the [GTFS Schedule Reference](https://gtfs.org/schedule/reference/) with proper handling of required and optional fields.
+This library implements:
+- [GTFS Schedule Reference](https://gtfs.org/schedule/reference/) with proper handling of required and optional fields
+- [GTFS Realtime Reference v2.0](https://gtfs.org/realtime/reference/) with support for Alerts, Trip Updates, and Vehicle Positions
 
 ## License
 
