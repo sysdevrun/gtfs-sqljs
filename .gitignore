@@ -37,3 +37,10 @@ yarn-error.log*
 
 # Extracted GTFS files from ZIP
 tests/fixtures/*.txt
+
+# Downloaded GTFS-RT test files
+*.pb
+
+# Debug/temporary test scripts
+test-*-debug.ts
+test-protobuf-decode.ts
