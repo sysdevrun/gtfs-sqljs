@@ -6,6 +6,9 @@ A TypeScript library for loading GTFS (General Transit Feed Specification) data 
 
 **Théophile Helleboid / SysDevRun**
 
+- Email: contact@sys-dev-run.fr
+- Website: https://www.sys-dev-run.fr/
+
 ## Features
 
 - ✅ Load GTFS data from ZIP files (URL or local path)

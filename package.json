@@ -41,10 +41,12 @@
   },
   "dependencies": {
     "jszip": "^3.10.1",
+    "papaparse": "^5.5.3",
     "sql.js": "^1.10.3"
   },
   "devDependencies": {
     "@types/node": "^20.11.5",
+    "@types/papaparse": "^5.5.0",
     "@types/sql.js": "^1.4.9",
     "@typescript-eslint/eslint-plugin": "^6.19.0",
     "@typescript-eslint/parser": "^6.19.0",

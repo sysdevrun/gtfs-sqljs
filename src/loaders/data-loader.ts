@@ -58,7 +58,8 @@ async function loadTableData(db: Database, schema: TableSchema, csvContent: stri
     const typedRow = convertRowTypes(row, columnTypes);
     const values = columns.map((col) => {
       const value = typedRow[col];
-      return value === null ? null : value;
+      // Handle undefined, null, or empty values
+      return value === null || value === undefined ? null : value;
     });
 
     try {
