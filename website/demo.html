@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Demo - gtfs-sqljs</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <nav class="navbar">
+    <div class="container">
+      <h1 class="logo">gtfs-sqljs</h1>
+      <ul class="nav-links">
+        <li><a href="/">Documentation</a></li>
+        <li><a href="/demo.html" class="active">Demo</a></li>
+        <li><a href="https://github.com/sysdevrun/gtfs-sqljs" target="_blank">GitHub</a></li>
+      </ul>
+    </div>
+  </nav>
+
+  <main class="container">
+    <section class="demo-header">
+      <h1>Interactive Demo</h1>
+      <p>Exploring Car Jaune GTFS data (Martinique, France)</p>
+    </section>
+
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Loading GTFS data...</p>
+    </div>
+
+    <div id="error" class="error" style="display: none;">
+      <p>Error loading GTFS data. Please refresh the page.</p>
+    </div>
+
+    <div id="demo-content" style="display: none;">
+      <section class="demo-section">
+        <h2>Calendar Information</h2>
+        <div id="calendar-info" class="calendar-info">
+          <p>Loading...</p>
+        </div>
+      </section>
+
+      <section class="demo-section">
+        <h2>Routes</h2>
+        <p class="help-text">Click on a route to see its trips</p>
+        <div id="routes-list" class="routes-list">
+          <p>Loading routes...</p>
+        </div>
+      </section>
+
+      <section class="demo-section" id="trips-section" style="display: none;">
+        <h2>Trips for <span id="selected-route-name"></span></h2>
+        <p class="help-text">Click on a trip to see stop times</p>
+        <div id="trips-list" class="trips-list">
+          <p>Loading trips...</p>
+        </div>
+      </section>
+
+      <section class="demo-section" id="stop-times-section" style="display: none;">
+        <h2>Stop Times for <span id="selected-trip-name"></span></h2>
+        <div id="stop-times-list" class="stop-times-list">
+          <p>Loading stop times...</p>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <div class="container">
+      <p>&copy; 2024 Théophile Helleboid / SysDevRun. Licensed under MIT.</p>
+    </div>
+  </footer>
+
+  <script type="module" src="/demo.ts"></script>
+</body>
+</html>
