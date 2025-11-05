@@ -5,6 +5,70 @@
 import type { Database } from 'sql.js';
 import type { Trip } from '../types/gtfs';
 
+export interface TripFilters {
+  tripId?: string;
+  routeId?: string;
+  serviceIds?: string[];
+  directionId?: number;
+  limit?: number;
+}
+
+/**
+ * Get trips with optional filters
+ */
+export function getTrips(db: Database, filters: TripFilters = {}): Trip[] {
+  const { tripId, routeId, serviceIds, directionId, limit } = filters;
+
+  // Build WHERE clause dynamically
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (tripId) {
+    conditions.push('trip_id = ?');
+    params.push(tripId);
+  }
+
+  if (routeId) {
+    conditions.push('route_id = ?');
+    params.push(routeId);
+  }
+
+  if (serviceIds && serviceIds.length > 0) {
+    const placeholders = serviceIds.map(() => '?').join(', ');
+    conditions.push(`service_id IN (${placeholders})`);
+    params.push(...serviceIds);
+  }
+
+  if (directionId !== undefined) {
+    conditions.push('direction_id = ?');
+    params.push(directionId);
+  }
+
+  // Build SQL query
+  let sql = 'SELECT * FROM trips';
+  if (conditions.length > 0) {
+    sql += ' WHERE ' + conditions.join(' AND ');
+  }
+  if (limit) {
+    sql += ' LIMIT ?';
+    params.push(limit);
+  }
+
+  const stmt = db.prepare(sql);
+  if (params.length > 0) {
+    stmt.bind(params);
+  }
+
+  const trips: Trip[] = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject() as Record<string, unknown>;
+    trips.push(rowToTrip(row));
+  }
+
+  stmt.free();
+  return trips;
+}
+
 /**
  * Get a trip by its trip_id
  */

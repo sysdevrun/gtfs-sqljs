@@ -86,6 +86,21 @@ gtfs.close();</code></pre>
     <section class="api">
       <h2>API Methods</h2>
 
+      <h3>⭐ Flexible Filter-Based Methods (Recommended)</h3>
+      <p>Pass optional filter objects to combine multiple criteria:</p>
+      <ul>
+        <li><code>getStops(filters?)</code> - Filter by: stopId, stopCode, name, tripId, limit</li>
+        <li><code>getRoutes(filters?)</code> - Filter by: routeId, agencyId, limit</li>
+        <li><code>getTrips(filters?)</code> - Filter by: tripId, routeId, date, directionId, limit</li>
+        <li><code>getStopTimes(filters?)</code> - Filter by: tripId, stopId, routeId, date, directionId, limit</li>
+      </ul>
+      <pre><code>// Example: Get trips for a route on a specific date going one direction
+const trips = gtfs.getTrips({
+  routeId: 'ROUTE_1',
+  date: '20240115',
+  directionId: 0
+});</code></pre>
+
       <h3>Stop Methods</h3>
       <ul>
         <li><code>getStopById(stopId)</code> - Get stop by ID</li>

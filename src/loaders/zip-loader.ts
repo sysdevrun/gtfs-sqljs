@@ -50,13 +50,30 @@ export async function loadGTFSZip(source: string | ArrayBuffer | Uint8Array): Pr
  * Fetch ZIP file from URL or file path
  */
 async function fetchZip(source: string): Promise<ArrayBuffer> {
-  // Check if source is a URL or file path
+  // Check if source is a URL
   const isUrl = source.startsWith('http://') || source.startsWith('https://');
 
-  // If it's a file path, try to use fs first
-  if (!isUrl) {
+  // For URLs, always use fetch
+  if (isUrl) {
+    if (typeof fetch !== 'undefined') {
+      const response = await fetch(source);
+      if (!response.ok) {
+        throw new Error(`Failed to fetch GTFS ZIP: ${response.status} ${response.statusText}`);
+      }
+      return await response.arrayBuffer();
+    }
+    throw new Error('fetch is not available to load URL');
+  }
+
+  // For non-URLs, try Node.js fs first, fall back to fetch for browser
+  // Check if we're in Node.js environment
+  const isNode = typeof process !== 'undefined' &&
+                 process.versions != null &&
+                 process.versions.node != null;
+
+  if (isNode) {
+    // In Node.js, treat as file path
     try {
-      // Dynamic import for Node.js fs module
       const fs = await import('fs');
       const buffer = await fs.promises.readFile(source);
       return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
@@ -65,9 +82,8 @@ async function fetchZip(source: string): Promise<ArrayBuffer> {
     }
   }
 
-  // For URLs, use fetch
+  // In browser, treat as relative URL and use fetch
   if (typeof fetch !== 'undefined') {
-    // Browser or Node.js with fetch support
     const response = await fetch(source);
     if (!response.ok) {
       throw new Error(`Failed to fetch GTFS ZIP: ${response.status} ${response.statusText}`);
@@ -75,7 +91,7 @@ async function fetchZip(source: string): Promise<ArrayBuffer> {
     return await response.arrayBuffer();
   }
 
-  throw new Error('No method available to fetch ZIP file from URL');
+  throw new Error('No method available to load ZIP file');
 }
 
 /**

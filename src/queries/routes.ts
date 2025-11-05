@@ -5,6 +5,58 @@
 import type { Database } from 'sql.js';
 import type { Route } from '../types/gtfs';
 
+export interface RouteFilters {
+  routeId?: string;
+  agencyId?: string;
+  limit?: number;
+}
+
+/**
+ * Get routes with optional filters
+ */
+export function getRoutes(db: Database, filters: RouteFilters = {}): Route[] {
+  const { routeId, agencyId, limit } = filters;
+
+  // Build WHERE clause dynamically
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (routeId) {
+    conditions.push('route_id = ?');
+    params.push(routeId);
+  }
+
+  if (agencyId) {
+    conditions.push('agency_id = ?');
+    params.push(agencyId);
+  }
+
+  // Build SQL query
+  let sql = 'SELECT * FROM routes';
+  if (conditions.length > 0) {
+    sql += ' WHERE ' + conditions.join(' AND ');
+  }
+  sql += ' ORDER BY route_short_name, route_long_name';
+  if (limit) {
+    sql += ' LIMIT ?';
+    params.push(limit);
+  }
+
+  const stmt = db.prepare(sql);
+  if (params.length > 0) {
+    stmt.bind(params);
+  }
+
+  const routes: Route[] = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject() as Record<string, unknown>;
+    routes.push(rowToRoute(row));
+  }
+
+  stmt.free();
+  return routes;
+}
+
 /**
  * Get a route by its route_id
  */

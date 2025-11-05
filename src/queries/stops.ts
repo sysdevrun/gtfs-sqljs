@@ -5,6 +5,70 @@
 import type { Database } from 'sql.js';
 import type { Stop } from '../types/gtfs';
 
+export interface StopFilters {
+  stopId?: string;
+  stopCode?: string;
+  name?: string;
+  tripId?: string;
+  limit?: number;
+}
+
+/**
+ * Get stops with optional filters
+ */
+export function getStops(db: Database, filters: StopFilters = {}): Stop[] {
+  const { stopId, stopCode, name, tripId, limit } = filters;
+
+  // Handle special case: get stops by trip (requires JOIN)
+  if (tripId) {
+    return getStopsByTrip(db, tripId);
+  }
+
+  // Build WHERE clause dynamically
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (stopId) {
+    conditions.push('stop_id = ?');
+    params.push(stopId);
+  }
+
+  if (stopCode) {
+    conditions.push('stop_code = ?');
+    params.push(stopCode);
+  }
+
+  if (name) {
+    conditions.push('stop_name LIKE ?');
+    params.push(`%${name}%`);
+  }
+
+  // Build SQL query
+  let sql = 'SELECT * FROM stops';
+  if (conditions.length > 0) {
+    sql += ' WHERE ' + conditions.join(' AND ');
+  }
+  sql += ' ORDER BY stop_name';
+  if (limit) {
+    sql += ' LIMIT ?';
+    params.push(limit);
+  }
+
+  const stmt = db.prepare(sql);
+  if (params.length > 0) {
+    stmt.bind(params);
+  }
+
+  const stops: Stop[] = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject() as Record<string, unknown>;
+    stops.push(rowToStop(row));
+  }
+
+  stmt.free();
+  return stops;
+}
+
 /**
  * Get a stop by its stop_id
  */
