@@ -1,8 +1,9 @@
 import initSqlJs from 'sql.js';
 import { GtfsSqlJs } from 'gtfs-sqljs';
-import type { Route, Trip, StopTime, Calendar } from 'gtfs-sqljs';
+import type { Route, Trip, StopTime } from 'gtfs-sqljs';
 
 let gtfs: GtfsSqlJs;
+let selectedDate: string;
 
 // Initialize the demo
 async function init() {
@@ -23,8 +24,11 @@ async function init() {
     loadingEl.style.display = 'none';
     contentEl.style.display = 'block';
 
+    // Initialize date picker with today's date
+    initDatePicker();
+
     // Render initial data
-    renderCalendarInfo();
+    renderActiveCalendars();
     renderRoutes();
   } catch (error) {
     console.error('Error loading GTFS data:', error);
@@ -33,64 +37,55 @@ async function init() {
   }
 }
 
-// Render calendar information
-function renderCalendarInfo() {
-  const calendarInfoEl = document.getElementById('calendar-info')!;
+// Initialize date picker
+function initDatePicker() {
+  const dateInput = document.getElementById('date-input') as HTMLInputElement;
 
-  const db = gtfs.getDatabase();
-  const stmt = db.prepare('SELECT * FROM calendar');
+  // Set to today's date
+  const today = new Date();
+  const year = today.getFullYear();
+  const month = String(today.getMonth() + 1).padStart(2, '0');
+  const day = String(today.getDate()).padStart(2, '0');
+  const todayStr = `${year}-${month}-${day}`;
 
-  const calendars: Calendar[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
-    calendars.push({
-      service_id: String(row.service_id),
-      monday: Number(row.monday),
-      tuesday: Number(row.tuesday),
-      wednesday: Number(row.wednesday),
-      thursday: Number(row.thursday),
-      friday: Number(row.friday),
-      saturday: Number(row.saturday),
-      sunday: Number(row.sunday),
-      start_date: String(row.start_date),
-      end_date: String(row.end_date),
-    });
-  }
-  stmt.free();
+  dateInput.value = todayStr;
+  selectedDate = `${year}${month}${day}`; // YYYYMMDD format for GTFS
 
-  if (calendars.length === 0) {
-    calendarInfoEl.innerHTML = '<p>No calendar data available</p>';
-    return;
-  }
+  // Listen for date changes
+  dateInput.addEventListener('change', (e) => {
+    const target = e.target as HTMLInputElement;
+    const [y, m, d] = target.value.split('-');
+    selectedDate = `${y}${m}${d}`;
+    renderActiveCalendars();
 
-  const html = calendars.map(cal => {
-    const days = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
-    const values = [
-      cal.monday,
-      cal.tuesday,
-      cal.wednesday,
-      cal.thursday,
-      cal.friday,
-      cal.saturday,
-      cal.sunday
-    ];
+    // Reset trips section
+    document.getElementById('trips-section')!.style.display = 'none';
+    document.getElementById('stop-times-section')!.style.display = 'none';
+  });
+}
 
-    const daysHtml = days.map((day, i) =>
-      `<div class="day ${values[i] ? 'active' : 'inactive'}">${day}</div>`
-    ).join('');
+// Render active calendars for selected date
+function renderActiveCalendars() {
+  const activeCalendarsEl = document.getElementById('active-calendars')!;
 
-    return `
-      <div class="calendar-card">
-        <h3>${cal.service_id}</h3>
-        <div class="calendar-days">${daysHtml}</div>
-        <p style="font-size: 0.875rem; color: var(--text-secondary); margin-top: 0.5rem;">
-          ${formatDate(cal.start_date)} - ${formatDate(cal.end_date)}
-        </p>
-      </div>
+  try {
+    const serviceIds = gtfs.getActiveServiceIds(selectedDate);
+
+    if (serviceIds.length === 0) {
+      activeCalendarsEl.innerHTML = '<p class="info-text">No active service calendars for this date</p>';
+      return;
+    }
+
+    const html = `
+      <p class="info-text">
+        <strong>Active calendars:</strong> ${serviceIds.join(', ')}
+      </p>
     `;
-  }).join('');
-
-  calendarInfoEl.innerHTML = html;
+    activeCalendarsEl.innerHTML = html;
+  } catch (error) {
+    console.error('Error getting active calendars:', error);
+    activeCalendarsEl.innerHTML = '<p class="info-text">Error loading calendar information</p>';
+  }
 }
 
 // Render routes list
@@ -131,33 +126,74 @@ function renderRoutes() {
   // Hide stop times section
   stopTimesSectionEl.style.display = 'none';
 
-  // Get trips for this route
-  const trips = gtfs.getTripsByRoute(routeId);
+  // Get trips for this route on the selected date
+  const trips = gtfs.getTrips({
+    routeId: routeId,
+    date: selectedDate
+  });
 
   if (trips.length === 0) {
-    tripsListEl.innerHTML = '<p>No trips found for this route</p>';
+    tripsListEl.innerHTML = '<p>No trips found for this route on the selected date</p>';
     tripsSectionEl.style.display = 'block';
     selectedRouteNameEl.textContent = routeName;
     return;
   }
 
-  // Render trips
-  const html = trips.map(trip => {
+  // Group trips by headsign and direction
+  interface TripGroup {
+    headsign: string;
+    directionId: number;
+    trips: Trip[];
+  }
+
+  const groupMap = new Map<string, TripGroup>();
+
+  trips.forEach(trip => {
     const headsign = trip.trip_headsign || 'No headsign';
-    const direction = trip.direction_id !== undefined ? `Direction ${trip.direction_id}` : '';
-    const service = trip.service_id;
+    const directionId = trip.direction_id ?? 0;
+    const key = `${headsign}|${directionId}`;
+
+    if (!groupMap.has(key)) {
+      groupMap.set(key, {
+        headsign,
+        directionId,
+        trips: []
+      });
+    }
+
+    groupMap.get(key)!.trips.push(trip);
+  });
+
+  // Sort groups by direction, then by headsign
+  const groups = Array.from(groupMap.values()).sort((a, b) => {
+    if (a.directionId !== b.directionId) {
+      return a.directionId - b.directionId;
+    }
+    return a.headsign.localeCompare(b.headsign);
+  });
+
+  // Render grouped trips
+  const html = groups.map(group => {
+    const directionLabel = `Direction ${group.directionId}`;
+    const tripCount = group.trips.length;
 
     return `
-      <div class="trip-card" onclick="showStopTimes('${trip.trip_id}', '${escapeHtml(headsign)}')">
-        <div class="trip-info">
-          <div class="trip-headsign">${escapeHtml(headsign)}</div>
-          <div class="trip-meta">
-            Trip ID: ${escapeHtml(trip.trip_id)}
-            ${direction ? `• ${direction}` : ''}
-            • Service: ${escapeHtml(service)}
-          </div>
+      <div class="trip-group">
+        <div class="trip-group-header">
+          <div class="trip-headsign">${escapeHtml(group.headsign)}</div>
+          <div class="trip-meta">${directionLabel} • ${tripCount} trip${tripCount > 1 ? 's' : ''}</div>
         </div>
-        <div>→</div>
+        <div class="trip-items">
+          ${group.trips.map(trip => `
+            <div class="trip-card" onclick="showStopTimes('${trip.trip_id}', '${escapeHtml(group.headsign)}')">
+              <div class="trip-info">
+                <div class="trip-id">Trip: ${escapeHtml(trip.trip_id)}</div>
+                <div class="trip-service">Service: ${escapeHtml(trip.service_id)}</div>
+              </div>
+              <div>→</div>
+            </div>
+          `).join('')}
+        </div>
       </div>
     `;
   }).join('');
@@ -209,17 +245,6 @@ function renderRoutes() {
 };
 
 // Utility functions
-
-function formatDate(dateStr: string): string {
-  // YYYYMMDD -> DD/MM/YYYY
-  if (dateStr.length === 8) {
-    const year = dateStr.substring(0, 4);
-    const month = dateStr.substring(4, 6);
-    const day = dateStr.substring(6, 8);
-    return `${day}/${month}/${year}`;
-  }
-  return dateStr;
-}
 
 function escapeHtml(text: string): string {
   const div = document.createElement('div');

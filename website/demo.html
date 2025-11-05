@@ -21,7 +21,8 @@
   <main class="container">
     <section class="demo-header">
       <h1>Interactive Demo</h1>
-      <p>Exploring Car Jaune GTFS data (Martinique, France)</p>
+      <p>Exploring Car Jaune GTFS data (La Réunion, France)</p>
+      <p class="operator-info">Operated by Transdev Outre-Mer and GIE Activ'</p>
     </section>
 
     <div id="loading" class="loading">
@@ -35,15 +36,18 @@
 
     <div id="demo-content" style="display: none;">
       <section class="demo-section">
-        <h2>Calendar Information</h2>
-        <div id="calendar-info" class="calendar-info">
+        <h2>Select Date</h2>
+        <div class="date-selector">
+          <input type="date" id="date-input" />
+        </div>
+        <div id="active-calendars" class="active-calendars">
           <p>Loading...</p>
         </div>
       </section>
 
       <section class="demo-section">
         <h2>Routes</h2>
-        <p class="help-text">Click on a route to see its trips</p>
+        <p class="help-text">Click on a route to see its trips for the selected date</p>
         <div id="routes-list" class="routes-list">
           <p>Loading routes...</p>
         </div>
