@@ -3,13 +3,15 @@
  *
  * This test file uses the real sample feed from:
  * https://developers.google.com/transit/gtfs/examples/gtfs-feed
+ *
+ * The tests validate specific known data from the feed.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { GtfsSqlJs } from '../src/gtfs-sqljs';
 import path from 'path';
 
-describe('Sample GTFS Feed Tests', () => {
+describe('Sample GTFS Feed Tests - Actual Data', () => {
   let gtfs: GtfsSqlJs;
 
   beforeAll(async () => {
@@ -23,259 +25,416 @@ describe('Sample GTFS Feed Tests', () => {
   });
 
   describe('Agency', () => {
-    it('should load agency information', () => {
+    it('should have DTA (Demo Transit Authority)', () => {
       const db = gtfs.getDatabase();
-      const stmt = db.prepare('SELECT * FROM agency');
+      const stmt = db.prepare('SELECT * FROM agency WHERE agency_id = ?');
+      stmt.bind(['DTA']);
 
-      const agencies: any[] = [];
-      while (stmt.step()) {
-        agencies.push(stmt.getAsObject());
-      }
+      expect(stmt.step()).toBe(true);
+      const agency = stmt.getAsObject();
       stmt.free();
 
-      expect(agencies.length).toBeGreaterThan(0);
-      expect(agencies[0]).toHaveProperty('agency_name');
-      expect(agencies[0]).toHaveProperty('agency_url');
-      expect(agencies[0]).toHaveProperty('agency_timezone');
+      expect(agency.agency_id).toBe('DTA');
+      expect(agency.agency_name).toBe('Demo Transit Authority');
+      expect(agency.agency_url).toBe('http://google.com');
+      expect(agency.agency_timezone).toBe('America/Los_Angeles');
     });
   });
 
   describe('Stops', () => {
-    it('should load all stops', () => {
+    it('should have 9 stops', () => {
       const stops = gtfs.getAllStops();
-      expect(stops.length).toBeGreaterThan(0);
-
-      // Verify stop structure
-      const stop = stops[0];
-      expect(stop).toHaveProperty('stop_id');
-      expect(stop).toHaveProperty('stop_name');
-      expect(stop).toHaveProperty('stop_lat');
-      expect(stop).toHaveProperty('stop_lon');
+      expect(stops.length).toBe(9);
     });
 
-    it('should get stop by ID', () => {
-      const allStops = gtfs.getAllStops();
-      const firstStop = allStops[0];
+    it('should have BEATTY_AIRPORT with correct details', () => {
+      const stop = gtfs.getStopById('BEATTY_AIRPORT');
 
-      const stop = gtfs.getStopById(firstStop.stop_id);
       expect(stop).not.toBeNull();
-      expect(stop?.stop_id).toBe(firstStop.stop_id);
-      expect(stop?.stop_name).toBe(firstStop.stop_name);
+      expect(stop!.stop_id).toBe('BEATTY_AIRPORT');
+      expect(stop!.stop_name).toBe('Nye County Airport (Demo)');
+      expect(stop!.stop_lat).toBeCloseTo(36.868446, 5);
+      expect(stop!.stop_lon).toBeCloseTo(-116.784582, 5);
     });
 
-    it('should search stops by name', () => {
-      const allStops = gtfs.getAllStops();
-      if (allStops.length > 0) {
-        // Search for first word of first stop name
-        const searchTerm = allStops[0].stop_name.split(' ')[0];
-        const results = gtfs.searchStopsByName(searchTerm);
-        expect(results.length).toBeGreaterThan(0);
-      }
+    it('should have BULLFROG with correct details', () => {
+      const stop = gtfs.getStopById('BULLFROG');
+
+      expect(stop).not.toBeNull();
+      expect(stop!.stop_id).toBe('BULLFROG');
+      expect(stop!.stop_name).toBe('Bullfrog (Demo)');
+      expect(stop!.stop_lat).toBeCloseTo(36.88108, 5);
+      expect(stop!.stop_lon).toBeCloseTo(-116.81797, 5);
     });
 
-    it('should get stops for a trip', () => {
-      // Get a trip first
-      const trips = gtfs.getAllRoutes()[0] ?
-        gtfs.getTripsByRoute(gtfs.getAllRoutes()[0].route_id) : [];
+    it('should find stops when searching for "Airport"', () => {
+      const stops = gtfs.searchStopsByName('Airport');
+      expect(stops.length).toBeGreaterThanOrEqual(1);
 
-      if (trips.length > 0) {
-        const stops = gtfs.getStopsByTrip(trips[0].trip_id);
-        expect(stops.length).toBeGreaterThan(0);
+      const airportStop = stops.find(s => s.stop_id === 'BEATTY_AIRPORT');
+      expect(airportStop).toBeDefined();
+      expect(airportStop!.stop_name).toBe('Nye County Airport (Demo)');
+    });
 
-        // Verify stops are in order (should have coordinates)
-        stops.forEach(stop => {
-          expect(stop.stop_lat).toBeDefined();
-          expect(stop.stop_lon).toBeDefined();
-        });
-      }
+    it('should get stops for trip AB1 in correct order', () => {
+      const stops = gtfs.getStopsByTrip('AB1');
+
+      expect(stops.length).toBe(2);
+      expect(stops[0].stop_id).toBe('BEATTY_AIRPORT');
+      expect(stops[0].stop_name).toBe('Nye County Airport (Demo)');
+      expect(stops[1].stop_id).toBe('BULLFROG');
+      expect(stops[1].stop_name).toBe('Bullfrog (Demo)');
+    });
+
+    it('should get stops for trip CITY1 in correct order', () => {
+      const stops = gtfs.getStopsByTrip('CITY1');
+
+      expect(stops.length).toBe(5);
+      expect(stops[0].stop_id).toBe('STAGECOACH');
+      expect(stops[1].stop_id).toBe('NANAA');
+      expect(stops[2].stop_id).toBe('NADAV');
+      expect(stops[3].stop_id).toBe('DADAN');
+      expect(stops[4].stop_id).toBe('EMSI');
     });
   });
 
   describe('Routes', () => {
-    it('should load all routes', () => {
+    it('should have 5 routes', () => {
       const routes = gtfs.getAllRoutes();
-      expect(routes.length).toBeGreaterThan(0);
-
-      // Verify route structure
-      const route = routes[0];
-      expect(route).toHaveProperty('route_id');
-      expect(route).toHaveProperty('route_short_name');
-      expect(route).toHaveProperty('route_long_name');
-      expect(route).toHaveProperty('route_type');
+      expect(routes.length).toBe(5);
     });
 
-    it('should get route by ID', () => {
-      const allRoutes = gtfs.getAllRoutes();
-      const firstRoute = allRoutes[0];
+    it('should have route AB (Airport - Bullfrog)', () => {
+      const route = gtfs.getRouteById('AB');
 
-      const route = gtfs.getRouteById(firstRoute.route_id);
       expect(route).not.toBeNull();
-      expect(route?.route_id).toBe(firstRoute.route_id);
+      expect(route!.route_id).toBe('AB');
+      expect(route!.agency_id).toBe('DTA');
+      expect(route!.route_short_name).toBe('10');
+      expect(route!.route_long_name).toBe('Airport - Bullfrog');
+      expect(route!.route_type).toBe(3); // Bus
+    });
+
+    it('should have route BFC (Bullfrog - Furnace Creek Resort)', () => {
+      const route = gtfs.getRouteById('BFC');
+
+      expect(route).not.toBeNull();
+      expect(route!.route_id).toBe('BFC');
+      expect(route!.route_short_name).toBe('20');
+      expect(route!.route_long_name).toBe('Bullfrog - Furnace Creek Resort');
+      expect(route!.route_type).toBe(3);
+    });
+
+    it('should have route CITY (City)', () => {
+      const route = gtfs.getRouteById('CITY');
+
+      expect(route).not.toBeNull();
+      expect(route!.route_id).toBe('CITY');
+      expect(route!.route_short_name).toBe('40');
+      expect(route!.route_long_name).toBe('City');
+    });
+
+    it('should get all routes for agency DTA', () => {
+      const routes = gtfs.getRoutesByAgency('DTA');
+      expect(routes.length).toBe(5);
     });
   });
 
   describe('Calendar', () => {
-    it('should have calendar data', () => {
-      const db = gtfs.getDatabase();
-      const stmt = db.prepare('SELECT * FROM calendar');
+    it('should have FULLW service (full week)', () => {
+      const calendar = gtfs.getCalendarByServiceId('FULLW');
 
-      const calendars: any[] = [];
-      while (stmt.step()) {
-        calendars.push(stmt.getAsObject());
-      }
-      stmt.free();
-
-      expect(calendars.length).toBeGreaterThan(0);
-
-      const calendar = calendars[0];
-      expect(calendar).toHaveProperty('service_id');
-      expect(calendar).toHaveProperty('monday');
-      expect(calendar).toHaveProperty('start_date');
-      expect(calendar).toHaveProperty('end_date');
+      expect(calendar).not.toBeNull();
+      expect(calendar!.service_id).toBe('FULLW');
+      expect(calendar!.monday).toBe(1);
+      expect(calendar!.tuesday).toBe(1);
+      expect(calendar!.wednesday).toBe(1);
+      expect(calendar!.thursday).toBe(1);
+      expect(calendar!.friday).toBe(1);
+      expect(calendar!.saturday).toBe(1);
+      expect(calendar!.sunday).toBe(1);
+      expect(calendar!.start_date).toBe('20070101');
+      expect(calendar!.end_date).toBe('20101231');
     });
 
-    it('should get active service IDs for a date', () => {
-      // Get a valid date from calendar
-      const db = gtfs.getDatabase();
-      const stmt = db.prepare('SELECT start_date FROM calendar LIMIT 1');
+    it('should have WE service (weekend only)', () => {
+      const calendar = gtfs.getCalendarByServiceId('WE');
 
-      let testDate = '20070101';
-      if (stmt.step()) {
-        const row = stmt.getAsObject() as any;
-        testDate = String(row.start_date);
-      }
-      stmt.free();
+      expect(calendar).not.toBeNull();
+      expect(calendar!.service_id).toBe('WE');
+      expect(calendar!.monday).toBe(0);
+      expect(calendar!.tuesday).toBe(0);
+      expect(calendar!.wednesday).toBe(0);
+      expect(calendar!.thursday).toBe(0);
+      expect(calendar!.friday).toBe(0);
+      expect(calendar!.saturday).toBe(1);
+      expect(calendar!.sunday).toBe(1);
+      expect(calendar!.start_date).toBe('20070101');
+      expect(calendar!.end_date).toBe('20101231');
+    });
 
-      const serviceIds = gtfs.getActiveServiceIds(testDate);
-      // May or may not have active services depending on day of week
-      expect(Array.isArray(serviceIds)).toBe(true);
+    it('should return FULLW service for Monday 2007-01-01', () => {
+      // 2007-01-01 was a Monday
+      const serviceIds = gtfs.getActiveServiceIds('20070101');
+
+      expect(serviceIds).toContain('FULLW');
+      expect(serviceIds).not.toContain('WE'); // Weekend service not active on Monday
+    });
+
+    it('should return both FULLW and WE services for Saturday 2007-01-06', () => {
+      // 2007-01-06 was a Saturday
+      const serviceIds = gtfs.getActiveServiceIds('20070106');
+
+      expect(serviceIds).toContain('FULLW');
+      expect(serviceIds).toContain('WE');
+    });
+
+    it('should return both services for Sunday 2007-01-07', () => {
+      // 2007-01-07 was a Sunday
+      const serviceIds = gtfs.getActiveServiceIds('20070107');
+
+      expect(serviceIds).toContain('FULLW');
+      expect(serviceIds).toContain('WE');
+    });
+
+    it('should return no services for date outside range', () => {
+      const serviceIds = gtfs.getActiveServiceIds('20110101');
+      expect(serviceIds.length).toBe(0);
     });
   });
 
   describe('Trips', () => {
-    it('should load trips', () => {
-      const routes = gtfs.getAllRoutes();
-      expect(routes.length).toBeGreaterThan(0);
+    it('should have trip AB1 (to Bullfrog)', () => {
+      const trip = gtfs.getTripById('AB1');
 
-      const trips = gtfs.getTripsByRoute(routes[0].route_id);
-      expect(trips.length).toBeGreaterThan(0);
-
-      const trip = trips[0];
-      expect(trip).toHaveProperty('trip_id');
-      expect(trip).toHaveProperty('route_id');
-      expect(trip).toHaveProperty('service_id');
+      expect(trip).not.toBeNull();
+      expect(trip!.trip_id).toBe('AB1');
+      expect(trip!.route_id).toBe('AB');
+      expect(trip!.service_id).toBe('FULLW');
+      expect(trip!.trip_headsign).toBe('to Bullfrog');
+      expect(trip!.direction_id).toBe(0);
+      expect(trip!.block_id).toBe('1');
     });
 
-    it('should get trips for a date', () => {
-      // Get a valid weekday date from calendar
-      const db = gtfs.getDatabase();
-      const stmt = db.prepare('SELECT start_date, monday FROM calendar WHERE monday = 1 LIMIT 1');
+    it('should have trip AB2 (to Airport)', () => {
+      const trip = gtfs.getTripById('AB2');
 
-      if (stmt.step()) {
-        const row = stmt.getAsObject() as any;
-        const testDate = String(row.start_date);
-        stmt.free();
-
-        const trips = gtfs.getTripsByDate(testDate);
-        expect(trips.length).toBeGreaterThan(0);
-
-        // Verify all trips have service_id
-        trips.forEach(trip => {
-          expect(trip.service_id).toBeDefined();
-        });
-      } else {
-        stmt.free();
-      }
+      expect(trip).not.toBeNull();
+      expect(trip!.trip_id).toBe('AB2');
+      expect(trip!.route_id).toBe('AB');
+      expect(trip!.service_id).toBe('FULLW');
+      expect(trip!.trip_headsign).toBe('to Airport');
+      expect(trip!.direction_id).toBe(1);
+      expect(trip!.block_id).toBe('2');
     });
 
-    it('should get trips by route and date', () => {
-      const routes = gtfs.getAllRoutes();
-      if (routes.length > 0) {
-        const db = gtfs.getDatabase();
-        const stmt = db.prepare('SELECT start_date FROM calendar LIMIT 1');
+    it('should get 2 trips for route AB', () => {
+      const trips = gtfs.getTripsByRoute('AB');
+      expect(trips.length).toBe(2);
 
-        if (stmt.step()) {
-          const row = stmt.getAsObject() as any;
-          const testDate = String(row.start_date);
-          stmt.free();
+      const tripIds = trips.map(t => t.trip_id).sort();
+      expect(tripIds).toEqual(['AB1', 'AB2']);
+    });
 
-          const trips = gtfs.getTripsByRouteAndDate(routes[0].route_id, testDate);
-          expect(Array.isArray(trips)).toBe(true);
-        } else {
-          stmt.free();
-        }
-      }
+    it('should get trips for route AB on Monday', () => {
+      const trips = gtfs.getTripsByRouteAndDate('AB', '20070101');
+      expect(trips.length).toBe(2);
+      expect(trips.every(t => t.service_id === 'FULLW')).toBe(true);
+    });
+
+    it('should get 7 trips for Monday (all FULLW trips)', () => {
+      const trips = gtfs.getTripsByDate('20070101');
+      expect(trips.length).toBe(7); // AB1, AB2, STBA, CITY1, CITY2, BFC1, BFC2
+      expect(trips.every(t => t.service_id === 'FULLW')).toBe(true);
+    });
+
+    it('should get 11 trips for Saturday (FULLW + WE trips)', () => {
+      const trips = gtfs.getTripsByDate('20070106');
+      expect(trips.length).toBe(11); // 7 FULLW + 4 AAMV (WE)
+
+      const fullwTrips = trips.filter(t => t.service_id === 'FULLW');
+      const weTrips = trips.filter(t => t.service_id === 'WE');
+
+      expect(fullwTrips.length).toBe(7);
+      expect(weTrips.length).toBe(4);
+    });
+
+    it('should get trips by direction', () => {
+      const tripsDir0 = gtfs.getTripsByRouteAndDateAndDirection('AB', '20070101', 0);
+      const tripsDir1 = gtfs.getTripsByRouteAndDateAndDirection('AB', '20070101', 1);
+
+      expect(tripsDir0.length).toBe(1);
+      expect(tripsDir0[0].trip_id).toBe('AB1');
+      expect(tripsDir0[0].trip_headsign).toBe('to Bullfrog');
+
+      expect(tripsDir1.length).toBe(1);
+      expect(tripsDir1[0].trip_id).toBe('AB2');
+      expect(tripsDir1[0].trip_headsign).toBe('to Airport');
     });
   });
 
   describe('Stop Times', () => {
-    it('should load stop times for a trip', () => {
-      const routes = gtfs.getAllRoutes();
-      const trips = routes.length > 0 ? gtfs.getTripsByRoute(routes[0].route_id) : [];
+    it('should have correct stop times for trip AB1', () => {
+      const stopTimes = gtfs.getStopTimesByTrip('AB1');
 
-      if (trips.length > 0) {
-        const stopTimes = gtfs.getStopTimesByTrip(trips[0].trip_id);
-        expect(stopTimes.length).toBeGreaterThan(0);
+      expect(stopTimes.length).toBe(2);
 
-        const stopTime = stopTimes[0];
-        expect(stopTime).toHaveProperty('trip_id');
-        expect(stopTime).toHaveProperty('arrival_time');
-        expect(stopTime).toHaveProperty('departure_time');
-        expect(stopTime).toHaveProperty('stop_id');
-        expect(stopTime).toHaveProperty('stop_sequence');
+      // First stop
+      expect(stopTimes[0].trip_id).toBe('AB1');
+      expect(stopTimes[0].stop_id).toBe('BEATTY_AIRPORT');
+      expect(stopTimes[0].arrival_time).toBe('8:00:00');
+      expect(stopTimes[0].departure_time).toBe('8:00:00');
+      expect(stopTimes[0].stop_sequence).toBe(1);
 
-        // Verify stop times are ordered by sequence
-        for (let i = 1; i < stopTimes.length; i++) {
-          expect(stopTimes[i].stop_sequence).toBeGreaterThan(stopTimes[i-1].stop_sequence);
-        }
-      }
+      // Second stop
+      expect(stopTimes[1].trip_id).toBe('AB1');
+      expect(stopTimes[1].stop_id).toBe('BULLFROG');
+      expect(stopTimes[1].arrival_time).toBe('8:10:00');
+      expect(stopTimes[1].departure_time).toBe('8:15:00');
+      expect(stopTimes[1].stop_sequence).toBe(2);
     });
 
-    it('should get stop times for a stop', () => {
-      const stops = gtfs.getAllStops();
-      if (stops.length > 0) {
-        const stopTimes = gtfs.getStopTimesByStop(stops[0].stop_id, 10);
-        // May or may not have stop times
-        expect(Array.isArray(stopTimes)).toBe(true);
-      }
+    it('should have correct stop times for trip CITY1', () => {
+      const stopTimes = gtfs.getStopTimesByTrip('CITY1');
+
+      expect(stopTimes.length).toBe(5);
+
+      // Verify all stops in sequence
+      expect(stopTimes[0].stop_id).toBe('STAGECOACH');
+      expect(stopTimes[0].arrival_time).toBe('6:00:00');
+
+      expect(stopTimes[1].stop_id).toBe('NANAA');
+      expect(stopTimes[1].arrival_time).toBe('6:05:00');
+      expect(stopTimes[1].departure_time).toBe('6:07:00');
+
+      expect(stopTimes[2].stop_id).toBe('NADAV');
+      expect(stopTimes[3].stop_id).toBe('DADAN');
+      expect(stopTimes[4].stop_id).toBe('EMSI');
+    });
+
+    it('should get stop times for BEATTY_AIRPORT', () => {
+      const stopTimes = gtfs.getStopTimesByStop('BEATTY_AIRPORT', 100);
+
+      // BEATTY_AIRPORT appears in: STBA, AB1, AB2, AAMV1, AAMV2, AAMV3, AAMV4 = 7 trips
+      expect(stopTimes.length).toBe(7);
+
+      // Should be ordered by arrival_time (as strings)
+      // Note: SQL ORDER BY treats times as strings, so "11:00:00" < "6:20:00" alphabetically
+      const times = stopTimes.map(st => st.arrival_time);
+      expect(times).toContain('6:20:00'); // STBA
+      expect(times).toContain('8:00:00'); // AB1 or AAMV1
+      expect(times).toContain('12:15:00'); // AB2
+    });
+
+    it('should get stop times for route AB at BEATTY_AIRPORT on Monday', () => {
+      const stopTimes = gtfs.getStopTimesForStopRouteAndDate('BEATTY_AIRPORT', 'AB', '20070101');
+
+      expect(stopTimes.length).toBe(2); // AB1 and AB2
+
+      // Check specific times
+      const ab1Time = stopTimes.find(st => st.trip_id === 'AB1');
+      const ab2Time = stopTimes.find(st => st.trip_id === 'AB2');
+
+      expect(ab1Time).toBeDefined();
+      expect(ab1Time!.arrival_time).toBe('8:00:00');
+
+      expect(ab2Time).toBeDefined();
+      expect(ab2Time!.arrival_time).toBe('12:15:00');
+    });
+
+    it('should filter by direction', () => {
+      const stopTimes = gtfs.getStopTimesForStopRouteAndDate('BEATTY_AIRPORT', 'AB', '20070101', 0);
+
+      expect(stopTimes.length).toBe(1);
+      expect(stopTimes[0].trip_id).toBe('AB1');
+      expect(stopTimes[0].arrival_time).toBe('8:00:00');
     });
   });
 
-  describe('Complete Journey Test', () => {
-    it('should be able to plan a simple journey', () => {
-      // 1. Get all routes
-      const routes = gtfs.getAllRoutes();
-      expect(routes.length).toBeGreaterThan(0);
+  describe('Complete Journey Scenarios', () => {
+    it('should plan journey from Airport to Bullfrog at 8am', () => {
+      // User wants to go from BEATTY_AIRPORT to BULLFROG
+      const origin = gtfs.getStopById('BEATTY_AIRPORT');
+      const destination = gtfs.getStopById('BULLFROG');
 
-      // 2. Pick a route and get its trips
-      const route = routes[0];
-      const trips = gtfs.getTripsByRoute(route.route_id);
-      expect(trips.length).toBeGreaterThan(0);
+      expect(origin).not.toBeNull();
+      expect(destination).not.toBeNull();
 
-      // 3. Get stop times for the trip
-      const trip = trips[0];
-      const stopTimes = gtfs.getStopTimesByTrip(trip.trip_id);
-      expect(stopTimes.length).toBeGreaterThan(1);
+      // Find route AB
+      const route = gtfs.getRouteById('AB');
+      expect(route).not.toBeNull();
 
-      // 4. Get stop details
-      const firstStop = gtfs.getStopById(stopTimes[0].stop_id);
-      const lastStop = gtfs.getStopById(stopTimes[stopTimes.length - 1].stop_id);
+      // Get trips on a Monday
+      const trips = gtfs.getTripsByRouteAndDate('AB', '20070101');
 
-      expect(firstStop).not.toBeNull();
-      expect(lastStop).not.toBeNull();
+      // Trip AB1 goes to Bullfrog (direction 0)
+      const trip = trips.find(t => t.trip_headsign === 'to Bullfrog');
+      expect(trip).toBeDefined();
+      expect(trip!.trip_id).toBe('AB1');
 
-      // 5. Verify journey details
-      console.log('\nSample Journey:');
-      console.log(`Route: ${route.route_short_name} - ${route.route_long_name}`);
-      console.log(`Trip: ${trip.trip_id}${trip.trip_headsign ? ' (' + trip.trip_headsign + ')' : ''}`);
-      console.log(`From: ${firstStop?.stop_name} at ${stopTimes[0].departure_time}`);
-      console.log(`To: ${lastStop?.stop_name} at ${stopTimes[stopTimes.length - 1].arrival_time}`);
-      console.log(`Stops: ${stopTimes.length}`);
+      // Get stop times
+      const stopTimes = gtfs.getStopTimesByTrip('AB1');
+      expect(stopTimes[0].stop_id).toBe('BEATTY_AIRPORT');
+      expect(stopTimes[0].departure_time).toBe('8:00:00');
+      expect(stopTimes[1].stop_id).toBe('BULLFROG');
+      expect(stopTimes[1].arrival_time).toBe('8:10:00');
+
+      console.log('\nJourney Plan:');
+      console.log(`From: ${origin!.stop_name}`);
+      console.log(`To: ${destination!.stop_name}`);
+      console.log(`Route: ${route!.route_short_name} - ${route!.route_long_name}`);
+      console.log(`Depart: ${stopTimes[0].departure_time}`);
+      console.log(`Arrive: ${stopTimes[1].arrival_time}`);
+      console.log(`Duration: 10 minutes`);
+    });
+
+    it('should find all routes serving BULLFROG', () => {
+      const stopTimes = gtfs.getStopTimesByStop('BULLFROG', 100);
+
+      // Get unique trip IDs
+      const tripIds = [...new Set(stopTimes.map(st => st.trip_id))];
+
+      // Get routes for these trips
+      const routes = new Set<string>();
+      for (const tripId of tripIds) {
+        const trip = gtfs.getTripById(tripId);
+        if (trip) {
+          routes.add(trip.route_id);
+        }
+      }
+
+      // BULLFROG is served by routes AB and BFC
+      expect(routes.size).toBe(2);
+      expect(routes.has('AB')).toBe(true);
+      expect(routes.has('BFC')).toBe(true);
+    });
+
+    it('should find city circuit route with all stops', () => {
+      const route = gtfs.getRouteById('CITY');
+      expect(route).not.toBeNull();
+
+      // Get both directions
+      const trip1 = gtfs.getTripById('CITY1');
+      const trip2 = gtfs.getTripById('CITY2');
+
+      const stops1 = gtfs.getStopsByTrip('CITY1');
+      const stops2 = gtfs.getStopsByTrip('CITY2');
+
+      // Both trips have 5 stops
+      expect(stops1.length).toBe(5);
+      expect(stops2.length).toBe(5);
+
+      // They visit the same stops in reverse order
+      expect(stops1[0].stop_id).toBe('STAGECOACH');
+      expect(stops2[4].stop_id).toBe('STAGECOACH');
+
+      expect(stops1[4].stop_id).toBe('EMSI');
+      expect(stops2[0].stop_id).toBe('EMSI');
     });
   });
 
   describe('Database Export/Import', () => {
-    it('should export and re-import database', async () => {
+    it('should export and re-import database with all data intact', async () => {
       // Export database
       const buffer = gtfs.export();
       expect(buffer.byteLength).toBeGreaterThan(0);
@@ -283,12 +442,24 @@ describe('Sample GTFS Feed Tests', () => {
       // Create new instance from exported buffer
       const gtfs2 = await GtfsSqlJs.fromDatabase(buffer);
 
-      // Verify data is intact
-      const originalStops = gtfs.getAllStops();
-      const importedStops = gtfs2.getAllStops();
+      // Verify specific data is intact
+      const db = gtfs2.getDatabase();
+      const agency = db.prepare('SELECT * FROM agency WHERE agency_id = ?');
+      agency.bind(['DTA']);
+      expect(agency.step()).toBe(true);
+      const agencyData = agency.getAsObject();
+      agency.free();
+      expect(agencyData.agency_name).toBe('Demo Transit Authority');
 
-      expect(importedStops.length).toBe(originalStops.length);
-      expect(importedStops[0].stop_id).toBe(originalStops[0].stop_id);
+      // Verify route
+      const route = gtfs2.getRouteById('AB');
+      expect(route).not.toBeNull();
+      expect(route!.route_long_name).toBe('Airport - Bullfrog');
+
+      // Verify trip
+      const trip = gtfs2.getTripById('AB1');
+      expect(trip).not.toBeNull();
+      expect(trip!.trip_headsign).toBe('to Bullfrog');
 
       gtfs2.close();
     });
