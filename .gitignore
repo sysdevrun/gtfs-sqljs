@@ -32,6 +32,7 @@ yarn-error.log*
 
 # Temporary files
 *.tmp
+*.bak
 .cache/
 
 # Extracted GTFS files from ZIP
