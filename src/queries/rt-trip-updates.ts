@@ -1,5 +1,5 @@
 import type { Database } from 'sql.js';
-import type { TripUpdate, VehicleDescriptor } from '../types/gtfs-rt';
+import type { TripUpdate } from '../types/gtfs-rt';
 
 export interface TripUpdateFilters {
   tripId?: string;

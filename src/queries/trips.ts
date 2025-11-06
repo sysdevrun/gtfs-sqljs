@@ -6,7 +6,6 @@ import type { Database } from 'sql.js';
 import type { Trip } from '../types/gtfs';
 import type { TripRealtime, VehiclePosition } from '../types/gtfs-rt';
 import { parseVehiclePosition } from './rt-vehicle-positions';
-import { parseTripUpdate } from './rt-trip-updates';
 
 export interface TripFilters {
   tripId?: string;

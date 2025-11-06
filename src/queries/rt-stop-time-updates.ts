@@ -1,5 +1,5 @@
 import type { Database } from 'sql.js';
-import type { StopTimeUpdate, StopTimeEvent } from '../types/gtfs-rt';
+import type { StopTimeUpdate } from '../types/gtfs-rt';
 
 export interface StopTimeUpdateFilters {
   tripId?: string;
