@@ -21,17 +21,19 @@ import {
 } from './queries/calendar';
 import { getTripById, getTrips, type TripFilters, type TripWithRealtime } from './queries/trips';
 import { getStopTimesByTrip, getStopTimes, type StopTimeFilters, type StopTimeWithRealtime } from './queries/stop-times';
-import { getAlerts as getAlertsQuery, getAlertById, type AlertFilters } from './queries/rt-alerts';
-import { getVehiclePositions as getVehiclePositionsQuery, getVehiclePositionByTripId, type VehiclePositionFilters } from './queries/rt-vehicle-positions';
+import { getAlerts as getAlertsQuery, getAlertById, getAllAlerts, type AlertFilters } from './queries/rt-alerts';
+import { getVehiclePositions as getVehiclePositionsQuery, getVehiclePositionByTripId, getAllVehiclePositions, type VehiclePositionFilters } from './queries/rt-vehicle-positions';
+import { getTripUpdates, getTripUpdateByTripId, getAllTripUpdates, type TripUpdateFilters } from './queries/rt-trip-updates';
+import { getStopTimeUpdates, getStopTimeUpdatesByTripId, getAllStopTimeUpdates, type StopTimeUpdateFilters, type StopTimeUpdateWithMetadata } from './queries/rt-stop-time-updates';
 
 // Types
 import type { Agency, Stop, Route, Trip, StopTime, Calendar, CalendarDate } from './types/gtfs';
-import type { Alert, VehiclePosition } from './types/gtfs-rt';
+import type { Alert, VehiclePosition, TripUpdate } from './types/gtfs-rt';
 
 // Export filter types for users
-export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, AlertFilters, VehiclePositionFilters };
+export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters };
 // Export RT types
-export type { Alert, VehiclePosition, TripWithRealtime, StopTimeWithRealtime };
+export type { Alert, VehiclePosition, TripUpdate, StopTimeUpdateWithMetadata, TripWithRealtime, StopTimeWithRealtime };
 
 export interface GtfsSqlJsOptions {
   /**
@@ -463,5 +465,74 @@ export class GtfsSqlJs {
   getVehiclePositionByTripId(tripId: string): VehiclePosition | null {
     if (!this.db) throw new Error('Database not initialized');
     return getVehiclePositionByTripId(this.db, tripId, this.stalenessThreshold);
+  }
+
+  /**
+   * Get trip updates with optional filters
+   */
+  getTripUpdates(filters?: TripUpdateFilters): TripUpdate[] {
+    if (!this.db) throw new Error('Database not initialized');
+    return getTripUpdates(this.db, filters, this.stalenessThreshold);
+  }
+
+  /**
+   * Get trip update by trip ID
+   */
+  getTripUpdateByTripId(tripId: string): TripUpdate | null {
+    if (!this.db) throw new Error('Database not initialized');
+    return getTripUpdateByTripId(this.db, tripId, this.stalenessThreshold);
+  }
+
+  /**
+   * Get stop time updates with optional filters
+   */
+  getStopTimeUpdates(filters?: StopTimeUpdateFilters): import('./types/gtfs-rt').StopTimeUpdate[] {
+    if (!this.db) throw new Error('Database not initialized');
+    return getStopTimeUpdates(this.db, filters, this.stalenessThreshold);
+  }
+
+  /**
+   * Get stop time updates for a specific trip
+   */
+  getStopTimeUpdatesByTripId(tripId: string): import('./types/gtfs-rt').StopTimeUpdate[] {
+    if (!this.db) throw new Error('Database not initialized');
+    return getStopTimeUpdatesByTripId(this.db, tripId, this.stalenessThreshold);
+  }
+
+  // ==================== Debug Export Methods ====================
+  // These methods export all realtime data without staleness filtering
+  // for debugging purposes
+
+  /**
+   * Export all alerts without staleness filtering (for debugging)
+   */
+  debugExportAllAlerts(): Alert[] {
+    if (!this.db) throw new Error('Database not initialized');
+    return getAllAlerts(this.db);
+  }
+
+  /**
+   * Export all vehicle positions without staleness filtering (for debugging)
+   */
+  debugExportAllVehiclePositions(): VehiclePosition[] {
+    if (!this.db) throw new Error('Database not initialized');
+    return getAllVehiclePositions(this.db);
+  }
+
+  /**
+   * Export all trip updates without staleness filtering (for debugging)
+   */
+  debugExportAllTripUpdates(): TripUpdate[] {
+    if (!this.db) throw new Error('Database not initialized');
+    return getAllTripUpdates(this.db);
+  }
+
+  /**
+   * Export all stop time updates without staleness filtering (for debugging)
+   * Returns extended type with trip_id and rt_last_updated for debugging purposes
+   */
+  debugExportAllStopTimeUpdates(): StopTimeUpdateWithMetadata[] {
+    if (!this.db) throw new Error('Database not initialized');
+    return getAllStopTimeUpdates(this.db);
   }
 }

@@ -162,3 +162,20 @@ export function getAlertById(db: Database, alertId: string, stalenessThreshold: 
   const alerts = getAlerts(db, { alertId, limit: 1 }, stalenessThreshold);
   return alerts.length > 0 ? alerts[0] : null;
 }
+
+/**
+ * Get all alerts without staleness filtering (for debugging)
+ */
+export function getAllAlerts(db: Database): Alert[] {
+  const sql = 'SELECT * FROM rt_alerts ORDER BY rt_last_updated DESC';
+  const stmt = db.prepare(sql);
+
+  const alerts: Alert[] = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject() as Record<string, unknown>;
+    alerts.push(parseAlert(row));
+  }
+
+  stmt.free();
+  return alerts;
+}

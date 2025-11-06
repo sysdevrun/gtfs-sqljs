@@ -1280,6 +1280,106 @@ function rowToCalendarDate(row) {
   };
 }
 
+// src/queries/rt-vehicle-positions.ts
+function parseVehiclePosition(row) {
+  const vp = {
+    trip_id: String(row.trip_id),
+    route_id: row.route_id ? String(row.route_id) : void 0,
+    rt_last_updated: Number(row.rt_last_updated)
+  };
+  if (row.vehicle_id || row.vehicle_label || row.vehicle_license_plate) {
+    vp.vehicle = {
+      id: row.vehicle_id ? String(row.vehicle_id) : void 0,
+      label: row.vehicle_label ? String(row.vehicle_label) : void 0,
+      license_plate: row.vehicle_license_plate ? String(row.vehicle_license_plate) : void 0
+    };
+  }
+  if (row.latitude !== null && row.longitude !== null) {
+    vp.position = {
+      latitude: Number(row.latitude),
+      longitude: Number(row.longitude),
+      bearing: row.bearing !== null ? Number(row.bearing) : void 0,
+      odometer: row.odometer !== null ? Number(row.odometer) : void 0,
+      speed: row.speed !== null ? Number(row.speed) : void 0
+    };
+  }
+  if (row.current_stop_sequence !== null) {
+    vp.current_stop_sequence = Number(row.current_stop_sequence);
+  }
+  if (row.stop_id) {
+    vp.stop_id = String(row.stop_id);
+  }
+  if (row.current_status !== null) {
+    vp.current_status = Number(row.current_status);
+  }
+  if (row.timestamp !== null) {
+    vp.timestamp = Number(row.timestamp);
+  }
+  if (row.congestion_level !== null) {
+    vp.congestion_level = Number(row.congestion_level);
+  }
+  if (row.occupancy_status !== null) {
+    vp.occupancy_status = Number(row.occupancy_status);
+  }
+  return vp;
+}
+function getVehiclePositions(db, filters = {}, stalenessThreshold = 120) {
+  const { tripId, routeId, vehicleId, limit } = filters;
+  const conditions = [];
+  const params = [];
+  if (tripId) {
+    conditions.push("trip_id = ?");
+    params.push(tripId);
+  }
+  if (routeId) {
+    conditions.push("route_id = ?");
+    params.push(routeId);
+  }
+  if (vehicleId) {
+    conditions.push("vehicle_id = ?");
+    params.push(vehicleId);
+  }
+  const now = Math.floor(Date.now() / 1e3);
+  const staleThreshold = now - stalenessThreshold;
+  conditions.push("rt_last_updated >= ?");
+  params.push(staleThreshold);
+  let sql = "SELECT * FROM rt_vehicle_positions";
+  if (conditions.length > 0) {
+    sql += " WHERE " + conditions.join(" AND ");
+  }
+  sql += " ORDER BY rt_last_updated DESC";
+  if (limit) {
+    sql += " LIMIT ?";
+    params.push(limit);
+  }
+  const stmt = db.prepare(sql);
+  if (params.length > 0) {
+    stmt.bind(params);
+  }
+  const positions = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    positions.push(parseVehiclePosition(row));
+  }
+  stmt.free();
+  return positions;
+}
+function getVehiclePositionByTripId(db, tripId, stalenessThreshold = 120) {
+  const positions = getVehiclePositions(db, { tripId, limit: 1 }, stalenessThreshold);
+  return positions.length > 0 ? positions[0] : null;
+}
+function getAllVehiclePositions(db) {
+  const sql = "SELECT * FROM rt_vehicle_positions ORDER BY rt_last_updated DESC";
+  const stmt = db.prepare(sql);
+  const positions = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    positions.push(parseVehiclePosition(row));
+  }
+  stmt.free();
+  return positions;
+}
+
 // src/queries/trips.ts
 function mergeRealtimeData(trips, db, stalenessThreshold) {
   const now = Math.floor(Date.now() / 1e3);
@@ -1296,7 +1396,8 @@ function mergeRealtimeData(trips, db, stalenessThreshold) {
   const vpMap = /* @__PURE__ */ new Map();
   while (vpStmt.step()) {
     const row = vpStmt.getAsObject();
-    vpMap.set(String(row.trip_id), row);
+    const vp = parseVehiclePosition(row);
+    vpMap.set(vp.trip_id, vp);
   }
   vpStmt.free();
   const tuStmt = db.prepare(`
@@ -1308,56 +1409,26 @@ function mergeRealtimeData(trips, db, stalenessThreshold) {
   const tuMap = /* @__PURE__ */ new Map();
   while (tuStmt.step()) {
     const row = tuStmt.getAsObject();
-    tuMap.set(String(row.trip_id), row);
+    const tripId = String(row.trip_id);
+    tuMap.set(tripId, {
+      delay: row.delay !== null ? Number(row.delay) : void 0,
+      schedule_relationship: row.schedule_relationship !== null ? Number(row.schedule_relationship) : void 0
+    });
   }
   tuStmt.free();
   return trips.map((trip) => {
-    const vpRow = vpMap.get(trip.trip_id);
-    const tuRow = tuMap.get(trip.trip_id);
-    if (!vpRow && !tuRow) {
+    const vp = vpMap.get(trip.trip_id);
+    const tu = tuMap.get(trip.trip_id);
+    if (!vp && !tu) {
       return { ...trip, realtime: { vehicle_position: null, trip_update: null } };
     }
-    const realtime = {
-      vehicle_position: null,
-      trip_update: null
+    return {
+      ...trip,
+      realtime: {
+        vehicle_position: vp || null,
+        trip_update: tu || null
+      }
     };
-    if (vpRow) {
-      const vp = {
-        trip_id: String(vpRow.trip_id),
-        route_id: vpRow.route_id ? String(vpRow.route_id) : void 0,
-        rt_last_updated: Number(vpRow.rt_last_updated)
-      };
-      if (vpRow.vehicle_id || vpRow.vehicle_label || vpRow.vehicle_license_plate) {
-        vp.vehicle = {
-          id: vpRow.vehicle_id ? String(vpRow.vehicle_id) : void 0,
-          label: vpRow.vehicle_label ? String(vpRow.vehicle_label) : void 0,
-          license_plate: vpRow.vehicle_license_plate ? String(vpRow.vehicle_license_plate) : void 0
-        };
-      }
-      if (vpRow.latitude !== null && vpRow.longitude !== null) {
-        vp.position = {
-          latitude: Number(vpRow.latitude),
-          longitude: Number(vpRow.longitude),
-          bearing: vpRow.bearing !== null ? Number(vpRow.bearing) : void 0,
-          odometer: vpRow.odometer !== null ? Number(vpRow.odometer) : void 0,
-          speed: vpRow.speed !== null ? Number(vpRow.speed) : void 0
-        };
-      }
-      if (vpRow.current_stop_sequence !== null) vp.current_stop_sequence = Number(vpRow.current_stop_sequence);
-      if (vpRow.stop_id) vp.stop_id = String(vpRow.stop_id);
-      if (vpRow.current_status !== null) vp.current_status = Number(vpRow.current_status);
-      if (vpRow.timestamp !== null) vp.timestamp = Number(vpRow.timestamp);
-      if (vpRow.congestion_level !== null) vp.congestion_level = Number(vpRow.congestion_level);
-      if (vpRow.occupancy_status !== null) vp.occupancy_status = Number(vpRow.occupancy_status);
-      realtime.vehicle_position = vp;
-    }
-    if (tuRow) {
-      realtime.trip_update = {
-        delay: tuRow.delay !== null ? Number(tuRow.delay) : void 0,
-        schedule_relationship: tuRow.schedule_relationship !== null ? Number(tuRow.schedule_relationship) : void 0
-      };
-    }
-    return { ...trip, realtime };
   });
 }
 function getTrips(db, filters = {}, stalenessThreshold = 120) {
@@ -1667,51 +1738,40 @@ function getAlertById(db, alertId, stalenessThreshold = 120) {
   const alerts = getAlerts(db, { alertId, limit: 1 }, stalenessThreshold);
   return alerts.length > 0 ? alerts[0] : null;
 }
+function getAllAlerts(db) {
+  const sql = "SELECT * FROM rt_alerts ORDER BY rt_last_updated DESC";
+  const stmt = db.prepare(sql);
+  const alerts = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    alerts.push(parseAlert(row));
+  }
+  stmt.free();
+  return alerts;
+}
 
-// src/queries/rt-vehicle-positions.ts
-function parseVehiclePosition(row) {
-  const vp = {
+// src/queries/rt-trip-updates.ts
+function parseTripUpdate(row) {
+  const tu = {
     trip_id: String(row.trip_id),
     route_id: row.route_id ? String(row.route_id) : void 0,
+    stop_time_update: [],
+    // Will be populated separately
+    timestamp: row.timestamp !== null ? Number(row.timestamp) : void 0,
+    delay: row.delay !== null ? Number(row.delay) : void 0,
+    schedule_relationship: row.schedule_relationship !== null ? Number(row.schedule_relationship) : void 0,
     rt_last_updated: Number(row.rt_last_updated)
   };
   if (row.vehicle_id || row.vehicle_label || row.vehicle_license_plate) {
-    vp.vehicle = {
+    tu.vehicle = {
       id: row.vehicle_id ? String(row.vehicle_id) : void 0,
       label: row.vehicle_label ? String(row.vehicle_label) : void 0,
       license_plate: row.vehicle_license_plate ? String(row.vehicle_license_plate) : void 0
     };
   }
-  if (row.latitude !== null && row.longitude !== null) {
-    vp.position = {
-      latitude: Number(row.latitude),
-      longitude: Number(row.longitude),
-      bearing: row.bearing !== null ? Number(row.bearing) : void 0,
-      odometer: row.odometer !== null ? Number(row.odometer) : void 0,
-      speed: row.speed !== null ? Number(row.speed) : void 0
-    };
-  }
-  if (row.current_stop_sequence !== null) {
-    vp.current_stop_sequence = Number(row.current_stop_sequence);
-  }
-  if (row.stop_id) {
-    vp.stop_id = String(row.stop_id);
-  }
-  if (row.current_status !== null) {
-    vp.current_status = Number(row.current_status);
-  }
-  if (row.timestamp !== null) {
-    vp.timestamp = Number(row.timestamp);
-  }
-  if (row.congestion_level !== null) {
-    vp.congestion_level = Number(row.congestion_level);
-  }
-  if (row.occupancy_status !== null) {
-    vp.occupancy_status = Number(row.occupancy_status);
-  }
-  return vp;
+  return tu;
 }
-function getVehiclePositions(db, filters = {}, stalenessThreshold = 120) {
+function getTripUpdates(db, filters = {}, stalenessThreshold = 120) {
   const { tripId, routeId, vehicleId, limit } = filters;
   const conditions = [];
   const params = [];
@@ -1731,7 +1791,7 @@ function getVehiclePositions(db, filters = {}, stalenessThreshold = 120) {
   const staleThreshold = now - stalenessThreshold;
   conditions.push("rt_last_updated >= ?");
   params.push(staleThreshold);
-  let sql = "SELECT * FROM rt_vehicle_positions";
+  let sql = "SELECT * FROM rt_trip_updates";
   if (conditions.length > 0) {
     sql += " WHERE " + conditions.join(" AND ");
   }
@@ -1744,17 +1804,113 @@ function getVehiclePositions(db, filters = {}, stalenessThreshold = 120) {
   if (params.length > 0) {
     stmt.bind(params);
   }
-  const positions = [];
+  const tripUpdates = [];
   while (stmt.step()) {
     const row = stmt.getAsObject();
-    positions.push(parseVehiclePosition(row));
+    tripUpdates.push(parseTripUpdate(row));
   }
   stmt.free();
-  return positions;
+  return tripUpdates;
 }
-function getVehiclePositionByTripId(db, tripId, stalenessThreshold = 120) {
-  const positions = getVehiclePositions(db, { tripId, limit: 1 }, stalenessThreshold);
-  return positions.length > 0 ? positions[0] : null;
+function getTripUpdateByTripId(db, tripId, stalenessThreshold = 120) {
+  const updates = getTripUpdates(db, { tripId, limit: 1 }, stalenessThreshold);
+  return updates.length > 0 ? updates[0] : null;
+}
+function getAllTripUpdates(db) {
+  const sql = "SELECT * FROM rt_trip_updates ORDER BY rt_last_updated DESC";
+  const stmt = db.prepare(sql);
+  const tripUpdates = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    tripUpdates.push(parseTripUpdate(row));
+  }
+  stmt.free();
+  return tripUpdates;
+}
+
+// src/queries/rt-stop-time-updates.ts
+function parseStopTimeUpdate(row) {
+  const stu = {
+    stop_sequence: row.stop_sequence !== null ? Number(row.stop_sequence) : void 0,
+    stop_id: row.stop_id ? String(row.stop_id) : void 0,
+    schedule_relationship: row.schedule_relationship !== null ? Number(row.schedule_relationship) : void 0
+  };
+  if (row.arrival_delay !== null || row.arrival_time !== null || row.arrival_uncertainty !== null) {
+    stu.arrival = {
+      delay: row.arrival_delay !== null ? Number(row.arrival_delay) : void 0,
+      time: row.arrival_time !== null ? Number(row.arrival_time) : void 0,
+      uncertainty: row.arrival_uncertainty !== null ? Number(row.arrival_uncertainty) : void 0
+    };
+  }
+  if (row.departure_delay !== null || row.departure_time !== null || row.departure_uncertainty !== null) {
+    stu.departure = {
+      delay: row.departure_delay !== null ? Number(row.departure_delay) : void 0,
+      time: row.departure_time !== null ? Number(row.departure_time) : void 0,
+      uncertainty: row.departure_uncertainty !== null ? Number(row.departure_uncertainty) : void 0
+    };
+  }
+  return stu;
+}
+function parseStopTimeUpdateWithMetadata(row) {
+  const stu = parseStopTimeUpdate(row);
+  stu.trip_id = String(row.trip_id);
+  stu.rt_last_updated = Number(row.rt_last_updated);
+  return stu;
+}
+function getStopTimeUpdates(db, filters = {}, stalenessThreshold = 120) {
+  const { tripId, stopId, stopSequence, limit } = filters;
+  const conditions = [];
+  const params = [];
+  if (tripId) {
+    conditions.push("trip_id = ?");
+    params.push(tripId);
+  }
+  if (stopId) {
+    conditions.push("stop_id = ?");
+    params.push(stopId);
+  }
+  if (stopSequence !== void 0) {
+    conditions.push("stop_sequence = ?");
+    params.push(stopSequence);
+  }
+  const now = Math.floor(Date.now() / 1e3);
+  const staleThreshold = now - stalenessThreshold;
+  conditions.push("rt_last_updated >= ?");
+  params.push(staleThreshold);
+  let sql = "SELECT * FROM rt_stop_time_updates";
+  if (conditions.length > 0) {
+    sql += " WHERE " + conditions.join(" AND ");
+  }
+  sql += " ORDER BY trip_id, stop_sequence";
+  if (limit) {
+    sql += " LIMIT ?";
+    params.push(limit);
+  }
+  const stmt = db.prepare(sql);
+  if (params.length > 0) {
+    stmt.bind(params);
+  }
+  const stopTimeUpdates = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    stopTimeUpdates.push(parseStopTimeUpdate(row));
+  }
+  stmt.free();
+  return stopTimeUpdates;
+}
+function getStopTimeUpdatesByTripId(db, tripId, stalenessThreshold = 120) {
+  return getStopTimeUpdates(db, { tripId }, stalenessThreshold);
+}
+function getAllStopTimeUpdates(db) {
+  const sql = "SELECT * FROM rt_stop_time_updates ORDER BY trip_id, stop_sequence";
+  const stmt = db.prepare(sql);
+  const stopTimeUpdates = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    stopTimeUpdates.push(parseStopTimeUpdateWithMetadata(row));
+  }
+  stmt.free();
+  return stopTimeUpdates;
 }
 
 // src/gtfs-sqljs.ts
@@ -2072,6 +2228,66 @@ var GtfsSqlJs = class _GtfsSqlJs {
   getVehiclePositionByTripId(tripId) {
     if (!this.db) throw new Error("Database not initialized");
     return getVehiclePositionByTripId(this.db, tripId, this.stalenessThreshold);
+  }
+  /**
+   * Get trip updates with optional filters
+   */
+  getTripUpdates(filters) {
+    if (!this.db) throw new Error("Database not initialized");
+    return getTripUpdates(this.db, filters, this.stalenessThreshold);
+  }
+  /**
+   * Get trip update by trip ID
+   */
+  getTripUpdateByTripId(tripId) {
+    if (!this.db) throw new Error("Database not initialized");
+    return getTripUpdateByTripId(this.db, tripId, this.stalenessThreshold);
+  }
+  /**
+   * Get stop time updates with optional filters
+   */
+  getStopTimeUpdates(filters) {
+    if (!this.db) throw new Error("Database not initialized");
+    return getStopTimeUpdates(this.db, filters, this.stalenessThreshold);
+  }
+  /**
+   * Get stop time updates for a specific trip
+   */
+  getStopTimeUpdatesByTripId(tripId) {
+    if (!this.db) throw new Error("Database not initialized");
+    return getStopTimeUpdatesByTripId(this.db, tripId, this.stalenessThreshold);
+  }
+  // ==================== Debug Export Methods ====================
+  // These methods export all realtime data without staleness filtering
+  // for debugging purposes
+  /**
+   * Export all alerts without staleness filtering (for debugging)
+   */
+  debugExportAllAlerts() {
+    if (!this.db) throw new Error("Database not initialized");
+    return getAllAlerts(this.db);
+  }
+  /**
+   * Export all vehicle positions without staleness filtering (for debugging)
+   */
+  debugExportAllVehiclePositions() {
+    if (!this.db) throw new Error("Database not initialized");
+    return getAllVehiclePositions(this.db);
+  }
+  /**
+   * Export all trip updates without staleness filtering (for debugging)
+   */
+  debugExportAllTripUpdates() {
+    if (!this.db) throw new Error("Database not initialized");
+    return getAllTripUpdates(this.db);
+  }
+  /**
+   * Export all stop time updates without staleness filtering (for debugging)
+   * Returns extended type with trip_id and rt_last_updated for debugging purposes
+   */
+  debugExportAllStopTimeUpdates() {
+    if (!this.db) throw new Error("Database not initialized");
+    return getAllStopTimeUpdates(this.db);
   }
 };
 
