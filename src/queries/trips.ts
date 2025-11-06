@@ -5,6 +5,7 @@
 import type { Database } from 'sql.js';
 import type { Trip } from '../types/gtfs';
 import type { TripRealtime, VehiclePosition } from '../types/gtfs-rt';
+import { parseVehiclePosition } from './rt-vehicle-positions';
 
 export interface TripFilters {
   tripId?: string;
@@ -44,10 +45,11 @@ function mergeRealtimeData(
   `);
   vpStmt.bind([...tripIds, staleThreshold]);
 
-  const vpMap = new Map<string, Record<string, unknown>>();
+  const vpMap = new Map<string, VehiclePosition>();
   while (vpStmt.step()) {
     const row = vpStmt.getAsObject() as Record<string, unknown>;
-    vpMap.set(String(row.trip_id), row);
+    const vp = parseVehiclePosition(row);
+    vpMap.set(vp.trip_id, vp);
   }
   vpStmt.free();
 
@@ -59,72 +61,33 @@ function mergeRealtimeData(
   `);
   tuStmt.bind([...tripIds, staleThreshold]);
 
-  const tuMap = new Map<string, Record<string, unknown>>();
+  const tuMap = new Map<string, { delay?: number; schedule_relationship?: number }>();
   while (tuStmt.step()) {
     const row = tuStmt.getAsObject() as Record<string, unknown>;
-    tuMap.set(String(row.trip_id), row);
+    const tripId = String(row.trip_id);
+    tuMap.set(tripId, {
+      delay: row.delay !== null ? Number(row.delay) : undefined,
+      schedule_relationship: row.schedule_relationship !== null ? Number(row.schedule_relationship) : undefined
+    });
   }
   tuStmt.free();
 
   // Merge realtime data
   return trips.map((trip): TripWithRealtime => {
-    const vpRow = vpMap.get(trip.trip_id);
-    const tuRow = tuMap.get(trip.trip_id);
+    const vp = vpMap.get(trip.trip_id);
+    const tu = tuMap.get(trip.trip_id);
 
-    if (!vpRow && !tuRow) {
+    if (!vp && !tu) {
       return { ...trip, realtime: { vehicle_position: null, trip_update: null } };
     }
 
-    const realtime: TripRealtime = {
-      vehicle_position: null,
-      trip_update: null
+    return {
+      ...trip,
+      realtime: {
+        vehicle_position: vp || null,
+        trip_update: tu || null
+      }
     };
-
-    // Parse vehicle position
-    if (vpRow) {
-      const vp: VehiclePosition = {
-        trip_id: String(vpRow.trip_id),
-        route_id: vpRow.route_id ? String(vpRow.route_id) : undefined,
-        rt_last_updated: Number(vpRow.rt_last_updated)
-      };
-
-      if (vpRow.vehicle_id || vpRow.vehicle_label || vpRow.vehicle_license_plate) {
-        vp.vehicle = {
-          id: vpRow.vehicle_id ? String(vpRow.vehicle_id) : undefined,
-          label: vpRow.vehicle_label ? String(vpRow.vehicle_label) : undefined,
-          license_plate: vpRow.vehicle_license_plate ? String(vpRow.vehicle_license_plate) : undefined
-        };
-      }
-
-      if (vpRow.latitude !== null && vpRow.longitude !== null) {
-        vp.position = {
-          latitude: Number(vpRow.latitude),
-          longitude: Number(vpRow.longitude),
-          bearing: vpRow.bearing !== null ? Number(vpRow.bearing) : undefined,
-          odometer: vpRow.odometer !== null ? Number(vpRow.odometer) : undefined,
-          speed: vpRow.speed !== null ? Number(vpRow.speed) : undefined
-        };
-      }
-
-      if (vpRow.current_stop_sequence !== null) vp.current_stop_sequence = Number(vpRow.current_stop_sequence);
-      if (vpRow.stop_id) vp.stop_id = String(vpRow.stop_id);
-      if (vpRow.current_status !== null) vp.current_status = Number(vpRow.current_status);
-      if (vpRow.timestamp !== null) vp.timestamp = Number(vpRow.timestamp);
-      if (vpRow.congestion_level !== null) vp.congestion_level = Number(vpRow.congestion_level);
-      if (vpRow.occupancy_status !== null) vp.occupancy_status = Number(vpRow.occupancy_status);
-
-      realtime.vehicle_position = vp;
-    }
-
-    // Parse trip update
-    if (tuRow) {
-      realtime.trip_update = {
-        delay: tuRow.delay !== null ? Number(tuRow.delay) : undefined,
-        schedule_relationship: tuRow.schedule_relationship !== null ? Number(tuRow.schedule_relationship) : undefined
-      };
-    }
-
-    return { ...trip, realtime };
   });
 }
 

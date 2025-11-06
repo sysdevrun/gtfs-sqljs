@@ -7,7 +7,7 @@ export type { VehiclePositionFilters };
 /**
  * Parse vehicle position from database row
  */
-function parseVehiclePosition(row: Record<string, unknown>): VehiclePosition {
+export function parseVehiclePosition(row: Record<string, unknown>): VehiclePosition {
   const vp: VehiclePosition = {
     trip_id: String(row.trip_id),
     route_id: row.route_id ? String(row.route_id) : undefined,
@@ -132,4 +132,21 @@ export function getVehiclePositionByTripId(
 ): VehiclePosition | null {
   const positions = getVehiclePositions(db, { tripId, limit: 1 }, stalenessThreshold);
   return positions.length > 0 ? positions[0] : null;
+}
+
+/**
+ * Get all vehicle positions without staleness filtering (for debugging)
+ */
+export function getAllVehiclePositions(db: Database): VehiclePosition[] {
+  const sql = 'SELECT * FROM rt_vehicle_positions ORDER BY rt_last_updated DESC';
+  const stmt = db.prepare(sql);
+
+  const positions: VehiclePosition[] = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject() as Record<string, unknown>;
+    positions.push(parseVehiclePosition(row));
+  }
+
+  stmt.free();
+  return positions;
 }

@@ -14,8 +14,12 @@ export {
   type StopTimeFilters,
   type AlertFilters,
   type VehiclePositionFilters,
+  type TripUpdateFilters,
+  type StopTimeUpdateFilters,
   type Alert,
   type VehiclePosition,
+  type TripUpdate,
+  type StopTimeUpdateWithMetadata,
   type TripWithRealtime,
   type StopTimeWithRealtime
 } from './gtfs-sqljs';
@@ -49,7 +53,6 @@ export type {
   VehicleDescriptor,
   StopTimeEvent,
   StopTimeUpdate,
-  TripUpdate,
   StopTimeRealtime,
   TripRealtime,
   RealtimeConfig
