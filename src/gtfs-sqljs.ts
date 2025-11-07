@@ -10,7 +10,7 @@ import { createRealtimeTables, clearRealtimeData as clearRTData } from './schema
 import { loadRealtimeData } from './loaders/gtfs-rt-loader';
 import type { CacheStore } from './cache/types';
 import { computeZipChecksum, generateCacheKey } from './cache/checksum';
-import { isCacheExpired, DEFAULT_CACHE_EXPIRATION_MS } from './cache/utils';
+import { DEFAULT_CACHE_EXPIRATION_MS } from './cache/utils';
 
 // Library version from package.json
 const LIB_VERSION = '0.1.0';
@@ -175,7 +175,6 @@ export class GtfsSqlJs {
     const {
       cache: userCache,
       cacheVersion = '1.0',
-      cacheExpirationMs = DEFAULT_CACHE_EXPIRATION_MS,
       skipFiles
     } = options;
 

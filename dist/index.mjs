@@ -2402,7 +2402,6 @@ var GtfsSqlJs = class _GtfsSqlJs {
     const {
       cache: userCache,
       cacheVersion = "1.0",
-      cacheExpirationMs = DEFAULT_CACHE_EXPIRATION_MS,
       skipFiles
     } = options;
     this.SQL = options.SQL || await initSqlJs(options.locateFile ? { locateFile: options.locateFile } : {});
