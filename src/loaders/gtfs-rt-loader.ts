@@ -14,32 +14,24 @@ interface ProtobufTranslatedString {
 interface ProtobufAlert {
   id: string;
   activePeriod?: unknown[];
-  active_period?: unknown[];
   informedEntity?: unknown[];
-  informed_entity?: unknown[];
   cause?: number;
   effect?: number;
   url?: ProtobufTranslatedString;
   headerText?: ProtobufTranslatedString;
-  header_text?: ProtobufTranslatedString;
   descriptionText?: ProtobufTranslatedString;
-  description_text?: ProtobufTranslatedString;
 }
 
 interface ProtobufTripDescriptor {
   tripId?: string;
-  trip_id?: string;
   routeId?: string;
-  route_id?: string;
   scheduleRelationship?: number;
-  schedule_relationship?: number;
 }
 
 interface ProtobufVehicleDescriptor {
   id?: string;
   label?: string;
   licensePlate?: string;
-  license_plate?: string;
 }
 
 interface ProtobufPosition {
@@ -55,16 +47,11 @@ interface ProtobufVehiclePosition {
   vehicle?: ProtobufVehicleDescriptor;
   position?: ProtobufPosition;
   currentStopSequence?: number;
-  current_stop_sequence?: number;
   stopId?: string;
-  stop_id?: string;
   currentStatus?: number;
-  current_status?: number;
   timestamp?: number;
   congestionLevel?: number;
-  congestion_level?: number;
   occupancyStatus?: number;
-  occupancy_status?: number;
 }
 
 interface ProtobufStopTimeEvent {
@@ -75,11 +62,8 @@ interface ProtobufStopTimeEvent {
 
 interface ProtobufStopTimeUpdate {
   stopSequence?: number;
-  stop_sequence?: number;
   stopId?: string;
-  stop_id?: string;
   scheduleRelationship?: number;
-  schedule_relationship?: number;
   arrival?: ProtobufStopTimeEvent;
   departure?: ProtobufStopTimeEvent;
 }
@@ -90,7 +74,6 @@ interface ProtobufTripUpdate {
   timestamp?: number;
   delay?: number;
   stopTimeUpdate?: ProtobufStopTimeUpdate[];
-  stop_time_update?: ProtobufStopTimeUpdate[];
 }
 
 // GTFS Realtime protobuf definition (v2.0)
@@ -382,15 +365,9 @@ function insertAlerts(db: Database, alerts: ProtobufAlert[], timestamp: number):
   `);
 
   for (const alert of alerts) {
-    // Map camelCase protobuf fields to snake_case
-    const activePeriod = alert.activePeriod || alert.active_period || [];
-    const informedEntity = alert.informedEntity || alert.informed_entity || [];
-    const headerText = alert.headerText || alert.header_text;
-    const descriptionText = alert.descriptionText || alert.description_text;
-
-    // Convert nested objects to snake_case
-    const activePeriodSnake = convertKeysToSnakeCase(activePeriod);
-    const informedEntitySnake = convertKeysToSnakeCase(informedEntity);
+    // Convert nested objects to snake_case for database storage
+    const activePeriodSnake = convertKeysToSnakeCase(alert.activePeriod || []);
+    const informedEntitySnake = convertKeysToSnakeCase(alert.informedEntity || []);
 
     stmt.run([
       alert.id,
@@ -399,8 +376,8 @@ function insertAlerts(db: Database, alerts: ProtobufAlert[], timestamp: number):
       alert.cause || null,
       alert.effect || null,
       parseTranslatedString(alert.url),
-      parseTranslatedString(headerText),
-      parseTranslatedString(descriptionText),
+      parseTranslatedString(alert.headerText),
+      parseTranslatedString(alert.descriptionText),
       timestamp
     ]);
   }
@@ -421,37 +398,25 @@ function insertVehiclePositions(db: Database, positions: ProtobufVehiclePosition
 
   for (const vp of positions) {
     const trip = vp.trip;
-    if (!trip || !(trip.tripId || trip.trip_id)) continue;
-
-    // Map camelCase protobuf fields to snake_case
-    const tripId = (trip.tripId || trip.trip_id)!; // Safe: checked above
-    const routeId = trip.routeId || trip.route_id;
-    const vehicleId = vp.vehicle?.id;
-    const vehicleLabel = vp.vehicle?.label;
-    const vehicleLicensePlate = vp.vehicle?.licensePlate || vp.vehicle?.license_plate;
-    const currentStopSequence = vp.currentStopSequence || vp.current_stop_sequence;
-    const stopId = vp.stopId || vp.stop_id;
-    const currentStatus = vp.currentStatus || vp.current_status;
-    const congestionLevel = vp.congestionLevel || vp.congestion_level;
-    const occupancyStatus = vp.occupancyStatus || vp.occupancy_status;
+    if (!trip || !trip.tripId) continue;
 
     stmt.run([
-      tripId,
-      routeId || null,
-      vehicleId || null,
-      vehicleLabel || null,
-      vehicleLicensePlate || null,
+      trip.tripId,
+      trip.routeId || null,
+      vp.vehicle?.id || null,
+      vp.vehicle?.label || null,
+      vp.vehicle?.licensePlate || null,
       vp.position?.latitude || null,
       vp.position?.longitude || null,
       vp.position?.bearing || null,
       vp.position?.odometer || null,
       vp.position?.speed || null,
-      currentStopSequence || null,
-      stopId || null,
-      currentStatus || null,
+      vp.currentStopSequence || null,
+      vp.stopId || null,
+      vp.currentStatus || null,
       vp.timestamp || null,
-      congestionLevel || null,
-      occupancyStatus || null,
+      vp.congestionLevel || null,
+      vp.occupancyStatus || null,
       timestamp
     ]);
   }
@@ -479,48 +444,35 @@ function insertTripUpdates(db: Database, updates: ProtobufTripUpdate[], timestam
 
   for (const tu of updates) {
     const trip = tu.trip;
-    if (!trip || !(trip.tripId || trip.trip_id)) continue;
-
-    // Map camelCase protobuf fields to snake_case
-    const tripId = (trip.tripId || trip.trip_id)!; // Safe: checked above
-    const routeId = trip.routeId || trip.route_id;
-    const vehicleId = tu.vehicle?.id;
-    const vehicleLabel = tu.vehicle?.label;
-    const vehicleLicensePlate = tu.vehicle?.licensePlate || tu.vehicle?.license_plate;
-    const scheduleRelationship = trip.scheduleRelationship || trip.schedule_relationship;
-    const stopTimeUpdate = tu.stopTimeUpdate || tu.stop_time_update;
+    if (!trip || !trip.tripId) continue;
 
     // Insert trip update
     tripStmt.run([
-      tripId,
-      routeId || null,
-      vehicleId || null,
-      vehicleLabel || null,
-      vehicleLicensePlate || null,
+      trip.tripId,
+      trip.routeId || null,
+      tu.vehicle?.id || null,
+      tu.vehicle?.label || null,
+      tu.vehicle?.licensePlate || null,
       tu.timestamp || null,
       tu.delay || null,
-      scheduleRelationship || null,
+      trip.scheduleRelationship || null,
       timestamp
     ]);
 
     // Insert stop time updates
-    if (stopTimeUpdate) {
-      for (const stu of stopTimeUpdate) {
-        const stopSequence = stu.stopSequence || stu.stop_sequence;
-        const stopId = stu.stopId || stu.stop_id;
-        const scheduleRel = stu.scheduleRelationship || stu.schedule_relationship;
-
+    if (tu.stopTimeUpdate) {
+      for (const stu of tu.stopTimeUpdate) {
         stopTimeStmt.run([
-          tripId,
-          stopSequence || null,
-          stopId || null,
+          trip.tripId,
+          stu.stopSequence || null,
+          stu.stopId || null,
           stu.arrival?.delay || null,
           stu.arrival?.time || null,
           stu.arrival?.uncertainty || null,
           stu.departure?.delay || null,
           stu.departure?.time || null,
           stu.departure?.uncertainty || null,
-          scheduleRel || null,
+          stu.scheduleRelationship || null,
           timestamp
         ]);
       }
