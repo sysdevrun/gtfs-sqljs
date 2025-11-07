@@ -6,12 +6,13 @@ import type { Database } from 'sql.js';
 import type { Agency } from '../types/gtfs';
 
 export interface AgencyFilters {
-  agencyId?: string;
+  agencyId?: string | string[];
   limit?: number;
 }
 
 /**
  * Get agencies with optional filters
+ * - Filters support both single values and arrays
  */
 export function getAgencies(db: Database, filters: AgencyFilters = {}): Agency[] {
   const { agencyId, limit } = filters;
@@ -21,8 +22,12 @@ export function getAgencies(db: Database, filters: AgencyFilters = {}): Agency[]
   const params: (string | number)[] = [];
 
   if (agencyId) {
-    conditions.push('agency_id = ?');
-    params.push(agencyId);
+    const agencyIds = Array.isArray(agencyId) ? agencyId : [agencyId];
+    if (agencyIds.length > 0) {
+      const placeholders = agencyIds.map(() => '?').join(', ');
+      conditions.push(`agency_id IN (${placeholders})`);
+      params.push(...agencyIds);
+    }
   }
 
   // Build SQL query
@@ -40,43 +45,6 @@ export function getAgencies(db: Database, filters: AgencyFilters = {}): Agency[]
   if (params.length > 0) {
     stmt.bind(params);
   }
-
-  const agencies: Agency[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    agencies.push(rowToAgency(row));
-  }
-
-  stmt.free();
-  return agencies;
-}
-
-/**
- * Get an agency by its agency_id
- */
-export function getAgencyById(db: Database, agencyId: string): Agency | null {
-  const stmt = db.prepare('SELECT * FROM agency WHERE agency_id = ?');
-  stmt.bind([agencyId]);
-
-  if (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stmt.free();
-    return rowToAgency(row);
-  }
-
-  stmt.free();
-  return null;
-}
-
-/**
- * Get all agencies
- */
-export function getAllAgencies(db: Database, limit?: number): Agency[] {
-  const sql = limit
-    ? `SELECT * FROM agency ORDER BY agency_name LIMIT ${limit}`
-    : 'SELECT * FROM agency ORDER BY agency_name';
-
-  const stmt = db.prepare(sql);
 
   const agencies: Agency[] = [];
   while (stmt.step()) {

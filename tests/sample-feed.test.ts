@@ -48,7 +48,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should have BEATTY_AIRPORT with correct details', () => {
-      const stop = gtfs.getStopById('BEATTY_AIRPORT');
+      const stop = gtfs.getStops({ stopId: 'BEATTY_AIRPORT' })[0];
 
       expect(stop).not.toBeNull();
       expect(stop!.stop_id).toBe('BEATTY_AIRPORT');
@@ -58,7 +58,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should have BULLFROG with correct details', () => {
-      const stop = gtfs.getStopById('BULLFROG');
+      const stop = gtfs.getStops({ stopId: 'BULLFROG' })[0];
 
       expect(stop).not.toBeNull();
       expect(stop!.stop_id).toBe('BULLFROG');
@@ -105,7 +105,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should have route AB (Airport - Bullfrog)', () => {
-      const route = gtfs.getRouteById('AB');
+      const route = gtfs.getRoutes({ routeId: 'AB' })[0];
 
       expect(route).not.toBeNull();
       expect(route!.route_id).toBe('AB');
@@ -116,7 +116,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should have route BFC (Bullfrog - Furnace Creek Resort)', () => {
-      const route = gtfs.getRouteById('BFC');
+      const route = gtfs.getRoutes({ routeId: 'BFC' })[0];
 
       expect(route).not.toBeNull();
       expect(route!.route_id).toBe('BFC');
@@ -126,7 +126,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should have route CITY (City)', () => {
-      const route = gtfs.getRouteById('CITY');
+      const route = gtfs.getRoutes({ routeId: 'CITY' })[0];
 
       expect(route).not.toBeNull();
       expect(route!.route_id).toBe('CITY');
@@ -205,7 +205,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
 
   describe('Trips', () => {
     it('should have trip AB1 (to Bullfrog)', () => {
-      const trip = gtfs.getTripById('AB1');
+      const trip = gtfs.getTrips({ tripId: 'AB1' })[0];
 
       expect(trip).not.toBeNull();
       expect(trip!.trip_id).toBe('AB1');
@@ -217,7 +217,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should have trip AB2 (to Airport)', () => {
-      const trip = gtfs.getTripById('AB2');
+      const trip = gtfs.getTrips({ tripId: 'AB2' })[0];
 
       expect(trip).not.toBeNull();
       expect(trip!.trip_id).toBe('AB2');
@@ -275,7 +275,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
 
   describe('Stop Times', () => {
     it('should have correct stop times for trip AB1', () => {
-      const stopTimes = gtfs.getStopTimesByTrip('AB1');
+      const stopTimes = gtfs.getStopTimes({ tripId: 'AB1' });
 
       expect(stopTimes.length).toBe(2);
 
@@ -295,7 +295,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should have correct stop times for trip CITY1', () => {
-      const stopTimes = gtfs.getStopTimesByTrip('CITY1');
+      const stopTimes = gtfs.getStopTimes({ tripId: 'CITY1' });
 
       expect(stopTimes.length).toBe(5);
 
@@ -354,14 +354,14 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
   describe('Complete Journey Scenarios', () => {
     it('should plan journey from Airport to Bullfrog at 8am', () => {
       // User wants to go from BEATTY_AIRPORT to BULLFROG
-      const origin = gtfs.getStopById('BEATTY_AIRPORT');
-      const destination = gtfs.getStopById('BULLFROG');
+      const origin = gtfs.getStops({ stopId: 'BEATTY_AIRPORT' })[0];
+      const destination = gtfs.getStops({ stopId: 'BULLFROG' })[0];
 
       expect(origin).not.toBeNull();
       expect(destination).not.toBeNull();
 
       // Find route AB
-      const route = gtfs.getRouteById('AB');
+      const route = gtfs.getRoutes({ routeId: 'AB' })[0];
       expect(route).not.toBeNull();
 
       // Get trips on a Monday
@@ -373,7 +373,7 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
       expect(trip!.trip_id).toBe('AB1');
 
       // Get stop times
-      const stopTimes = gtfs.getStopTimesByTrip('AB1');
+      const stopTimes = gtfs.getStopTimes({ tripId: 'AB1' });
       expect(stopTimes[0].stop_id).toBe('BEATTY_AIRPORT');
       expect(stopTimes[0].departure_time).toBe('8:00:00');
       expect(stopTimes[1].stop_id).toBe('BULLFROG');
@@ -397,9 +397,9 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
       // Get routes for these trips
       const routes = new Set<string>();
       for (const tripId of tripIds) {
-        const trip = gtfs.getTripById(tripId);
-        if (trip) {
-          routes.add(trip.route_id);
+        const trips = gtfs.getTrips({ tripId });
+        if (trips.length > 0) {
+          routes.add(trips[0].route_id);
         }
       }
 
@@ -410,12 +410,12 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
     });
 
     it('should find city circuit route with all stops', () => {
-      const route = gtfs.getRouteById('CITY');
+      const route = gtfs.getRoutes({ routeId: 'CITY' })[0];
       expect(route).not.toBeNull();
 
       // Get both directions
-      const trip1 = gtfs.getTripById('CITY1');
-      const trip2 = gtfs.getTripById('CITY2');
+      const trip1 = gtfs.getTrips({ tripId: 'CITY1' })[0];
+      const trip2 = gtfs.getTrips({ tripId: 'CITY2' })[0];
 
       const stops1 = gtfs.getStops({ tripId: 'CITY1' });
       const stops2 = gtfs.getStops({ tripId: 'CITY2' });
@@ -452,12 +452,12 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
       expect(agencyData.agency_name).toBe('Demo Transit Authority');
 
       // Verify route
-      const route = gtfs2.getRouteById('AB');
+      const route = gtfs2.getRoutes({ routeId: 'AB' })[0];
       expect(route).not.toBeNull();
       expect(route!.route_long_name).toBe('Airport - Bullfrog');
 
       // Verify trip
-      const trip = gtfs2.getTripById('AB1');
+      const trip = gtfs2.getTrips({ tripId: 'AB1' })[0];
       expect(trip).not.toBeNull();
       expect(trip!.trip_headsign).toBe('to Bullfrog');
 

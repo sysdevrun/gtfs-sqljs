@@ -6,22 +6,44 @@ import type { Database } from 'sql.js';
 import type { Stop } from '../types/gtfs';
 
 export interface StopFilters {
-  stopId?: string;
-  stopCode?: string;
+  stopId?: string | string[];
+  stopCode?: string | string[];
   name?: string;
-  tripId?: string;
+  tripId?: string | string[];
   limit?: number;
 }
 
 /**
  * Get stops with optional filters
+ * - Filters support both single values and arrays
+ * - Use name filter for partial name matching
+ * - Use tripId filter to get stops for a specific trip (ordered by stop_sequence)
  */
 export function getStops(db: Database, filters: StopFilters = {}): Stop[] {
   const { stopId, stopCode, name, tripId, limit } = filters;
 
   // Handle special case: get stops by trip (requires JOIN)
   if (tripId) {
-    return getStopsByTrip(db, tripId);
+    const tripIds = Array.isArray(tripId) ? tripId : [tripId];
+    if (tripIds.length === 0) return [];
+
+    const placeholders = tripIds.map(() => '?').join(', ');
+    const stmt = db.prepare(`
+      SELECT s.* FROM stops s
+      INNER JOIN stop_times st ON s.stop_id = st.stop_id
+      WHERE st.trip_id IN (${placeholders})
+      ORDER BY st.stop_sequence
+    `);
+    stmt.bind(tripIds);
+
+    const stops: Stop[] = [];
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as Record<string, unknown>;
+      stops.push(rowToStop(row));
+    }
+
+    stmt.free();
+    return stops;
   }
 
   // Build WHERE clause dynamically
@@ -29,13 +51,21 @@ export function getStops(db: Database, filters: StopFilters = {}): Stop[] {
   const params: (string | number)[] = [];
 
   if (stopId) {
-    conditions.push('stop_id = ?');
-    params.push(stopId);
+    const stopIds = Array.isArray(stopId) ? stopId : [stopId];
+    if (stopIds.length > 0) {
+      const placeholders = stopIds.map(() => '?').join(', ');
+      conditions.push(`stop_id IN (${placeholders})`);
+      params.push(...stopIds);
+    }
   }
 
   if (stopCode) {
-    conditions.push('stop_code = ?');
-    params.push(stopCode);
+    const stopCodes = Array.isArray(stopCode) ? stopCode : [stopCode];
+    if (stopCodes.length > 0) {
+      const placeholders = stopCodes.map(() => '?').join(', ');
+      conditions.push(`stop_code IN (${placeholders})`);
+      params.push(...stopCodes);
+    }
   }
 
   if (name) {
@@ -70,98 +100,11 @@ export function getStops(db: Database, filters: StopFilters = {}): Stop[] {
 }
 
 /**
- * Get a stop by its stop_id
- */
-export function getStopById(db: Database, stopId: string): Stop | null {
-  const stmt = db.prepare('SELECT * FROM stops WHERE stop_id = ?');
-  stmt.bind([stopId]);
-
-  if (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stmt.free();
-    return rowToStop(row);
-  }
-
-  stmt.free();
-  return null;
-}
-
-/**
- * Get a stop by its stop_code
- */
-export function getStopByCode(db: Database, stopCode: string): Stop | null {
-  const stmt = db.prepare('SELECT * FROM stops WHERE stop_code = ?');
-  stmt.bind([stopCode]);
-
-  if (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stmt.free();
-    return rowToStop(row);
-  }
-
-  stmt.free();
-  return null;
-}
-
-/**
  * Search stops by name (case-insensitive, partial match)
+ * This is a convenience method for name-based searches
  */
 export function searchStopsByName(db: Database, name: string, limit = 50): Stop[] {
-  const stmt = db.prepare(
-    'SELECT * FROM stops WHERE stop_name LIKE ? ORDER BY stop_name LIMIT ?'
-  );
-  stmt.bind([`%${name}%`, limit]);
-
-  const stops: Stop[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stops.push(rowToStop(row));
-  }
-
-  stmt.free();
-  return stops;
-}
-
-/**
- * Get all stops
- */
-export function getAllStops(db: Database, limit?: number): Stop[] {
-  const sql = limit
-    ? `SELECT * FROM stops ORDER BY stop_name LIMIT ${limit}`
-    : 'SELECT * FROM stops ORDER BY stop_name';
-
-  const stmt = db.prepare(sql);
-
-  const stops: Stop[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stops.push(rowToStop(row));
-  }
-
-  stmt.free();
-  return stops;
-}
-
-/**
- * Get stops for a given trip (ordered by stop_sequence)
- */
-export function getStopsByTrip(db: Database, tripId: string): Stop[] {
-  const stmt = db.prepare(`
-    SELECT s.* FROM stops s
-    INNER JOIN stop_times st ON s.stop_id = st.stop_id
-    WHERE st.trip_id = ?
-    ORDER BY st.stop_sequence
-  `);
-  stmt.bind([tripId]);
-
-  const stops: Stop[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stops.push(rowToStop(row));
-  }
-
-  stmt.free();
-  return stops;
+  return getStops(db, { name, limit });
 }
 
 /**

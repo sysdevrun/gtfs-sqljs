@@ -27,11 +27,11 @@ describe('GtfsSqlJs', () => {
   });
 
   describe('Stop methods', () => {
-    it('should get stop by ID', () => {
-      const stop = gtfs.getStopById('STOP1');
-      expect(stop).toBeDefined();
-      expect(stop?.stop_id).toBe('STOP1');
-      expect(stop?.stop_name).toBe('First Street');
+    it('should get stop by ID using filters', () => {
+      const stops = gtfs.getStops({ stopId: 'STOP1' });
+      expect(stops.length).toBe(1);
+      expect(stops[0].stop_id).toBe('STOP1');
+      expect(stops[0].stop_name).toBe('First Street');
     });
 
     it('should get stop by code', () => {
@@ -46,23 +46,28 @@ describe('GtfsSqlJs', () => {
       expect(stops[0].stop_name).toContain('Street');
     });
 
-    it('should return null for non-existent stop ID', () => {
-      const stop = gtfs.getStopById('NONEXISTENT');
-      expect(stop).toBeNull();
+    it('should return empty array for non-existent stop ID', () => {
+      const stops = gtfs.getStops({ stopId: 'NONEXISTENT' });
+      expect(stops.length).toBe(0);
     });
 
     it('should get all stops', () => {
       const stops = gtfs.getStops();
       expect(stops.length).toBeGreaterThan(0);
     });
+
+    it('should get multiple stops by ID array', () => {
+      const stops = gtfs.getStops({ stopId: ['STOP1', 'STOP2'] });
+      expect(stops.length).toBe(2);
+    });
   });
 
   describe('Route methods', () => {
-    it('should get route by ID', () => {
-      const route = gtfs.getRouteById('ROUTE1');
-      expect(route).toBeDefined();
-      expect(route?.route_id).toBe('ROUTE1');
-      expect(route?.route_short_name).toBe('1');
+    it('should get route by ID using filters', () => {
+      const routes = gtfs.getRoutes({ routeId: 'ROUTE1' });
+      expect(routes.length).toBe(1);
+      expect(routes[0].route_id).toBe('ROUTE1');
+      expect(routes[0].route_short_name).toBe('1');
     });
 
     it('should get all routes', () => {
@@ -70,9 +75,14 @@ describe('GtfsSqlJs', () => {
       expect(routes.length).toBeGreaterThan(0);
     });
 
-    it('should return null for non-existent route', () => {
-      const route = gtfs.getRouteById('NONEXISTENT');
-      expect(route).toBeNull();
+    it('should return empty array for non-existent route', () => {
+      const routes = gtfs.getRoutes({ routeId: 'NONEXISTENT' });
+      expect(routes.length).toBe(0);
+    });
+
+    it('should get multiple routes by ID array', () => {
+      const routes = gtfs.getRoutes({ routeId: ['ROUTE1', 'ROUTE2'] });
+      expect(routes.length).toBeGreaterThanOrEqual(1);
     });
   });
 
@@ -97,11 +107,11 @@ describe('GtfsSqlJs', () => {
   });
 
   describe('Trip methods', () => {
-    it('should get trip by ID', () => {
-      const trip = gtfs.getTripById('TRIP1');
-      expect(trip).toBeDefined();
-      expect(trip?.trip_id).toBe('TRIP1');
-      expect(trip?.route_id).toBe('ROUTE1');
+    it('should get trip by ID using filters', () => {
+      const trips = gtfs.getTrips({ tripId: 'TRIP1' });
+      expect(trips.length).toBe(1);
+      expect(trips[0].trip_id).toBe('TRIP1');
+      expect(trips[0].route_id).toBe('ROUTE1');
     });
 
     it('should get trips by route', () => {
@@ -119,11 +129,16 @@ describe('GtfsSqlJs', () => {
       expect(trips.length).toBeGreaterThan(0);
       expect(trips.every(t => t.direction_id === 0)).toBe(true);
     });
+
+    it('should get multiple trips by ID array', () => {
+      const trips = gtfs.getTrips({ tripId: ['TRIP1', 'TRIP2'] });
+      expect(trips.length).toBeGreaterThanOrEqual(1);
+    });
   });
 
   describe('Stop time methods', () => {
-    it('should get stop times by trip', () => {
-      const stopTimes = gtfs.getStopTimesByTrip('TRIP1');
+    it('should get stop times by trip using filters', () => {
+      const stopTimes = gtfs.getStopTimes({ tripId: 'TRIP1' });
       expect(stopTimes.length).toBeGreaterThan(0);
       expect(stopTimes[0].trip_id).toBe('TRIP1');
     });
@@ -142,6 +157,11 @@ describe('GtfsSqlJs', () => {
       const stopTimes = gtfs.getStopTimes({ stopId: 'STOP1', routeId: 'ROUTE1', date: '20240101', directionId: 0 });
       expect(stopTimes.length).toBeGreaterThan(0);
     });
+
+    it('should get multiple stop times by trip ID array', () => {
+      const stopTimes = gtfs.getStopTimes({ tripId: ['TRIP1', 'TRIP2'] });
+      expect(stopTimes.length).toBeGreaterThan(0);
+    });
   });
 
   describe('Database export', () => {
@@ -155,9 +175,9 @@ describe('GtfsSqlJs', () => {
       const buffer = gtfs.export();
       const newGtfs = await GtfsSqlJs.fromDatabase(buffer, { SQL });
 
-      const stop = newGtfs.getStopById('STOP1');
-      expect(stop).toBeDefined();
-      expect(stop?.stop_name).toBe('First Street');
+      const stops = newGtfs.getStops({ stopId: 'STOP1' });
+      expect(stops.length).toBe(1);
+      expect(stops[0].stop_name).toBe('First Street');
 
       newGtfs.close();
     });
@@ -166,7 +186,7 @@ describe('GtfsSqlJs', () => {
   describe('Error handling', () => {
     it('should throw error when accessing closed database', () => {
       const closedGtfs = new (GtfsSqlJs as any)();
-      expect(() => closedGtfs.getStopById('STOP1')).toThrow('Database not initialized');
+      expect(() => closedGtfs.getStops({ stopId: 'STOP1' })).toThrow('Database not initialized');
     });
   });
 });

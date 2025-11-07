@@ -6,13 +6,14 @@ import type { Database } from 'sql.js';
 import type { Route } from '../types/gtfs';
 
 export interface RouteFilters {
-  routeId?: string;
-  agencyId?: string;
+  routeId?: string | string[];
+  agencyId?: string | string[];
   limit?: number;
 }
 
 /**
  * Get routes with optional filters
+ * - Filters support both single values and arrays
  */
 export function getRoutes(db: Database, filters: RouteFilters = {}): Route[] {
   const { routeId, agencyId, limit } = filters;
@@ -22,13 +23,21 @@ export function getRoutes(db: Database, filters: RouteFilters = {}): Route[] {
   const params: (string | number)[] = [];
 
   if (routeId) {
-    conditions.push('route_id = ?');
-    params.push(routeId);
+    const routeIds = Array.isArray(routeId) ? routeId : [routeId];
+    if (routeIds.length > 0) {
+      const placeholders = routeIds.map(() => '?').join(', ');
+      conditions.push(`route_id IN (${placeholders})`);
+      params.push(...routeIds);
+    }
   }
 
   if (agencyId) {
-    conditions.push('agency_id = ?');
-    params.push(agencyId);
+    const agencyIds = Array.isArray(agencyId) ? agencyId : [agencyId];
+    if (agencyIds.length > 0) {
+      const placeholders = agencyIds.map(() => '?').join(', ');
+      conditions.push(`agency_id IN (${placeholders})`);
+      params.push(...agencyIds);
+    }
   }
 
   // Build SQL query
@@ -46,62 +55,6 @@ export function getRoutes(db: Database, filters: RouteFilters = {}): Route[] {
   if (params.length > 0) {
     stmt.bind(params);
   }
-
-  const routes: Route[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    routes.push(rowToRoute(row));
-  }
-
-  stmt.free();
-  return routes;
-}
-
-/**
- * Get a route by its route_id
- */
-export function getRouteById(db: Database, routeId: string): Route | null {
-  const stmt = db.prepare('SELECT * FROM routes WHERE route_id = ?');
-  stmt.bind([routeId]);
-
-  if (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stmt.free();
-    return rowToRoute(row);
-  }
-
-  stmt.free();
-  return null;
-}
-
-/**
- * Get all routes
- */
-export function getAllRoutes(db: Database, limit?: number): Route[] {
-  const sql = limit
-    ? `SELECT * FROM routes ORDER BY route_short_name, route_long_name LIMIT ${limit}`
-    : 'SELECT * FROM routes ORDER BY route_short_name, route_long_name';
-
-  const stmt = db.prepare(sql);
-
-  const routes: Route[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    routes.push(rowToRoute(row));
-  }
-
-  stmt.free();
-  return routes;
-}
-
-/**
- * Get routes by agency
- */
-export function getRoutesByAgency(db: Database, agencyId: string): Route[] {
-  const stmt = db.prepare(
-    'SELECT * FROM routes WHERE agency_id = ? ORDER BY route_short_name, route_long_name'
-  );
-  stmt.bind([agencyId]);
 
   const routes: Route[] = [];
   while (stmt.step()) {
