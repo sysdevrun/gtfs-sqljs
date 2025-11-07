@@ -540,6 +540,73 @@ const stopTimes = gtfs.getStopTimes({
 });
 ```
 
+#### Building Ordered Stop Lists for Multiple Trips
+
+When displaying timetables for routes where different trips may stop at different stops (e.g., express vs local service, or trips with varying start/end points), use `buildOrderedStopList()` to build an optimal ordered list of all unique stops:
+
+```typescript
+// Get all trips for a route in one direction
+const trips = gtfs.getTrips({
+  routeId: 'ROUTE_1',
+  directionId: 0,
+  date: '20240115'
+});
+
+// Build ordered list of all stops served by these trips
+const tripIds = trips.map(t => t.trip_id);
+const orderedStops = gtfs.buildOrderedStopList(tripIds);
+
+// Now display a timetable with all possible stops
+console.log('Route stops:');
+orderedStops.forEach(stop => {
+  console.log(`- ${stop.stop_name}`);
+});
+
+// For each trip, you can now show which stops it serves
+for (const trip of trips) {
+  const tripStopTimes = gtfs.getStopTimes({ tripId: trip.trip_id });
+  console.log(`\nTrip ${trip.trip_headsign}:`);
+
+  // Show all stops, marking which ones this trip serves
+  orderedStops.forEach(stop => {
+    const stopTime = tripStopTimes.find(st => st.stop_id === stop.stop_id);
+    if (stopTime) {
+      console.log(`  ${stopTime.arrival_time} - ${stop.stop_name}`);
+    } else {
+      console.log(`  --- (not served) - ${stop.stop_name}`);
+    }
+  });
+}
+```
+
+**Use Cases:**
+- **Express vs Local Service** - Some trips skip stops that others serve
+- **Different Start/End Points** - Short-turn trips or extended service trips
+- **Peak vs Off-Peak Service** - Different stop coverage based on time of day
+- **Route Variations** - Multiple branches or patterns on the same route
+
+**How it works:**
+The method intelligently merges stop sequences from all provided trips:
+1. Fetches stop times for all trips
+2. Processes each trip's stops in sequence order
+3. When encountering a new stop, finds the best insertion position by analyzing stops before and after it
+4. Returns full Stop objects in the determined order
+
+**Example - Real-world scenario:**
+```typescript
+// You have a bus route with:
+// - Local trips: A → B → C → D → E → F
+// - Express trips: A → C → E → F (skips B and D)
+// - Short trips: B → C → D (doesn't go to end of line)
+
+const allTrips = gtfs.getTrips({ routeId: 'BUS_42', directionId: 0 });
+const tripIds = allTrips.map(t => t.trip_id);
+const stops = gtfs.buildOrderedStopList(tripIds);
+
+// Result: [A, B, C, D, E, F] - all stops in correct order
+// Now you can create a timetable showing all stops with departure times
+```
+
 ### GTFS Realtime Support
 
 This library supports GTFS Realtime data (alerts, trip updates, and vehicle positions) with automatic merging into static schedule data.
@@ -992,6 +1059,7 @@ All methods support flexible filtering with both single values and arrays:
 - `getRoutes(filters?)` - Get routes (filters: routeId, agencyId, limit)
 - `getTrips(filters?)` - Get trips (filters: tripId, routeId, serviceIds, directionId, agencyId, includeRealtime, limit, date)
 - `getStopTimes(filters?)` - Get stop times (filters: tripId, stopId, routeId, serviceIds, directionId, agencyId, includeRealtime, limit, date)
+- `buildOrderedStopList(tripIds)` - Build an ordered list of stops from multiple trips (handles express/local variations)
 
 #### Calendar Methods
 - `getActiveServiceIds(date)` - Get active service IDs for a date (YYYYMMDD format)
