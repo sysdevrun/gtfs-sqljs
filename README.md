@@ -46,6 +46,15 @@ Try the live demo to explore GTFS data, view routes with colors, and see trip sc
 - ✅ Include RT data in database exports
 - ✅ Full support for both GTFS-RT `time` and `delay` fields in stop time updates
 
+### Smart Caching
+- ✅ **Automatic caching** - Enabled by default, no configuration needed
+- ✅ **Platform-optimized storage** - IndexedDB (browser) or FileSystem (Node.js)
+- ✅ **Smart invalidation** - Based on file checksum, size, version, and library version
+- ✅ **Automatic expiration** - Configurable (default: 7 days)
+- ✅ **Cache management API** - Get stats, clean expired entries, clear cache
+- ✅ **Custom cache stores** - Implement your own (Redis, S3, etc.)
+- ✅ **Dramatic speed improvement** - Subsequent loads in <1 second
+
 ## Migration Guide (v1.0.0+)
 
 If you're upgrading from an earlier version, the API has been simplified and improved:
@@ -260,13 +269,18 @@ const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
 
 The loading process goes through these phases:
 
-1. **`downloading`** - Initializing database engine (0-2%)
-2. **`creating_schema`** - Creating database tables (2-10%)
-3. **`extracting`** - Loading and extracting GTFS ZIP file (10-15%)
-4. **`inserting_data`** - Importing data from CSV files (15-85%)
-5. **`creating_indexes`** - Building database indexes (85-95%)
-6. **`analyzing`** - Optimizing query performance (95-99%)
-7. **`complete`** - Load complete (100%)
+1. **`checking_cache`** - Checking if cached database exists (0-2%)
+2. **`loading_from_cache`** - Loading from cache (if found, jumps to 100%)
+3. **`downloading`** - Downloading GTFS ZIP file (2-5%)
+4. **`creating_schema`** - Creating database tables (5-15%)
+5. **`extracting`** - Extracting GTFS ZIP file (15-20%)
+6. **`inserting_data`** - Importing data from CSV files (20-85%)
+7. **`creating_indexes`** - Building database indexes (85-95%)
+8. **`analyzing`** - Optimizing query performance (95-98%)
+9. **`saving_cache`** - Saving to cache (98-99%)
+10. **`complete`** - Load complete (100%)
+
+**Note:** When a cached database is found, phases 3-9 are skipped, and loading completes in <1 second.
 
 **Note:** If `realtimeFeedUrls` are configured, GTFS-RT data will be fetched automatically after the load completes (but won't affect the progress percentage).
 
@@ -684,6 +698,179 @@ import {
 if (alert.cause === AlertCause.ACCIDENT) {
   console.log('Alert is due to an accident');
 }
+```
+
+### Smart Caching
+
+The library automatically caches processed GTFS databases to dramatically speed up subsequent loads. The first load processes the GTFS zip file (~5-10 seconds), but subsequent loads use the cached database (<1 second).
+
+#### Automatic Caching (Default Behavior)
+
+Caching is enabled by default with no configuration needed:
+
+```typescript
+import { GtfsSqlJs } from 'gtfs-sqljs';
+
+// First load: processes GTFS zip file and caches the result
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip');
+
+// Second load: uses cached database (much faster!)
+const gtfs2 = await GtfsSqlJs.fromZip('gtfs.zip');
+```
+
+**Platform-specific storage:**
+- **Browser**: Uses IndexedDB (supports large databases, async)
+- **Node.js**: Uses FileSystem (default: `~/.cache/gtfs-sqljs/`)
+
+#### Cache Invalidation
+
+The cache is automatically invalidated when any of these change:
+- **File checksum** (SHA-256) - Different GTFS data
+- **File size** - Quick check before computing checksum
+- **Library version** - Schema or processing logic updated
+- **Data version** - User-specified version (see below)
+- **Skipped files** - Different `skipFiles` options
+
+#### Data Versioning
+
+Use `cacheVersion` to control cache invalidation:
+
+```typescript
+// Load with version 1.0
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', {
+  cacheVersion: '1.0'
+});
+
+// Load with version 2.0 - will reprocess and create new cache
+const gtfs2 = await GtfsSqlJs.fromZip('gtfs.zip', {
+  cacheVersion: '2.0'
+});
+```
+
+**When to increment version:**
+- GTFS data is updated but filename stays the same
+- You want to force cache refresh
+- Testing different processing configurations
+
+#### Custom Cache Store
+
+**Browser - Custom IndexedDB:**
+```typescript
+import { GtfsSqlJs, IndexedDBCacheStore } from 'gtfs-sqljs';
+
+const cache = new IndexedDBCacheStore({
+  dbName: 'my-app-gtfs-cache'
+});
+
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', { cache });
+```
+
+**Node.js - Custom Directory:**
+```typescript
+import { GtfsSqlJs, FileSystemCacheStore } from 'gtfs-sqljs';
+
+const cache = new FileSystemCacheStore({
+  dir: './my-cache-dir'
+});
+
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', { cache });
+```
+
+#### Cache Management
+
+**Get cache statistics:**
+```typescript
+const stats = await GtfsSqlJs.getCacheStats();
+
+console.log(`Total entries: ${stats.totalEntries}`);
+console.log(`Active entries: ${stats.activeEntries}`);
+console.log(`Expired entries: ${stats.expiredEntries}`);
+console.log(`Total size: ${stats.totalSizeMB} MB`);
+```
+
+**List cache entries:**
+```typescript
+const entries = await GtfsSqlJs.listCache();
+
+entries.forEach(entry => {
+  console.log(`Key: ${entry.key}`);
+  console.log(`Source: ${entry.metadata.source}`);
+  console.log(`Size: ${(entry.metadata.size / 1024 / 1024).toFixed(2)} MB`);
+  console.log(`Age: ${((Date.now() - entry.metadata.timestamp) / 1000 / 60 / 60).toFixed(1)} hours`);
+});
+```
+
+**Clean expired entries:**
+```typescript
+// Remove entries older than 7 days (default)
+const deletedCount = await GtfsSqlJs.cleanExpiredCache();
+console.log(`Deleted ${deletedCount} expired entries`);
+
+// Custom expiration time (3 days)
+const threeDays = 3 * 24 * 60 * 60 * 1000;
+await GtfsSqlJs.cleanExpiredCache(undefined, threeDays);
+```
+
+**Clear all cache:**
+```typescript
+await GtfsSqlJs.clearCache();
+```
+
+#### Disable Caching
+
+To disable caching, explicitly pass `null`:
+
+```typescript
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', {
+  cache: null  // No caching
+});
+```
+
+#### Custom Cache Expiration
+
+Change the default expiration time (default: 7 days):
+
+```typescript
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', {
+  cacheExpirationMs: 3 * 24 * 60 * 60 * 1000  // 3 days
+});
+```
+
+#### Custom Cache Store Implementation
+
+Implement your own cache store (e.g., Redis, S3):
+
+```typescript
+import type { CacheStore, CacheMetadata } from 'gtfs-sqljs';
+
+class RedisCacheStore implements CacheStore {
+  async get(key: string): Promise<ArrayBuffer | null> {
+    // Implement Redis get
+  }
+
+  async set(key: string, data: ArrayBuffer, metadata: CacheMetadata): Promise<void> {
+    // Implement Redis set
+  }
+
+  async has(key: string): Promise<boolean> {
+    // Implement Redis exists check
+  }
+
+  async delete(key: string): Promise<void> {
+    // Implement Redis delete
+  }
+
+  async clear(): Promise<void> {
+    // Implement Redis clear
+  }
+
+  async list(): Promise<CacheEntry[]> {
+    // Optional: Implement list
+  }
+}
+
+const cache = new RedisCacheStore();
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', { cache });
 ```
 
 ### Export Database

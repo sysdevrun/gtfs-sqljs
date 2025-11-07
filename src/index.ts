@@ -70,3 +70,19 @@ export {
 
 // Export schema definitions for advanced use
 export { GTFS_SCHEMA, type TableSchema, type ColumnDefinition, type IndexDefinition } from './schema/schema';
+
+// Export cache types and interfaces
+export type {
+  CacheStore,
+  CacheMetadata,
+  CacheEntry,
+  CacheStoreOptions
+} from './cache/types';
+
+// Export cache store implementations
+export { IndexedDBCacheStore } from './cache/indexeddb-store';
+export { FileSystemCacheStore } from './cache/fs-store';
+
+// Export cache utilities
+export { computeChecksum, computeZipChecksum, generateCacheKey } from './cache/checksum';
+export { isCacheExpired, filterExpiredEntries, getCacheStats, DEFAULT_CACHE_EXPIRATION_MS } from './cache/utils';
