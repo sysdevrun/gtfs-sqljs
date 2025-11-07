@@ -307,7 +307,34 @@ export function generateCreateIndexSQL(schema: TableSchema): string[] {
 }
 
 /**
- * Initialize all GTFS tables in the database
+ * Get CREATE TABLE statements only (without indexes)
+ */
+export function getAllCreateTableStatements(): string[] {
+  const statements: string[] = [];
+
+  for (const schema of GTFS_SCHEMA) {
+    statements.push(generateCreateTableSQL(schema));
+  }
+
+  return statements;
+}
+
+/**
+ * Get CREATE INDEX statements only
+ */
+export function getAllCreateIndexStatements(): string[] {
+  const statements: string[] = [];
+
+  for (const schema of GTFS_SCHEMA) {
+    statements.push(...generateCreateIndexSQL(schema));
+  }
+
+  return statements;
+}
+
+/**
+ * Initialize all GTFS tables in the database (tables + indexes)
+ * @deprecated Use getAllCreateTableStatements() and getAllCreateIndexStatements() separately for better performance
  */
 export function getAllCreateStatements(): string[] {
   const statements: string[] = [];
