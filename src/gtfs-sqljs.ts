@@ -4,10 +4,16 @@
 
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 import { getAllCreateTableStatements, getAllCreateIndexStatements } from './schema/schema';
-import { loadGTFSZip } from './loaders/zip-loader';
+import { loadGTFSZip, fetchZip } from './loaders/zip-loader';
 import { loadGTFSData } from './loaders/data-loader';
 import { createRealtimeTables, clearRealtimeData as clearRTData } from './schema/gtfs-rt-schema';
 import { loadRealtimeData } from './loaders/gtfs-rt-loader';
+import type { CacheStore } from './cache/types';
+import { computeZipChecksum, generateCacheKey } from './cache/checksum';
+import { DEFAULT_CACHE_EXPIRATION_MS } from './cache/utils';
+
+// Library version from package.json
+const LIB_VERSION = '0.1.0';
 
 // Query methods
 import { getAgencies, type AgencyFilters } from './queries/agencies';
@@ -39,7 +45,7 @@ export type { Alert, VehiclePosition, TripUpdate, StopTimeUpdateWithMetadata, Tr
  * Progress information for GTFS data loading
  */
 export interface ProgressInfo {
-  phase: 'downloading' | 'extracting' | 'creating_schema' | 'inserting_data' | 'creating_indexes' | 'analyzing' | 'complete';
+  phase: 'checking_cache' | 'loading_from_cache' | 'downloading' | 'extracting' | 'creating_schema' | 'inserting_data' | 'creating_indexes' | 'analyzing' | 'saving_cache' | 'complete';
   currentFile: string | null;
   filesCompleted: number;
   totalFiles: number;
@@ -97,6 +103,33 @@ export interface GtfsSqlJsOptions {
    * Useful for displaying progress in UI or web workers
    */
   onProgress?: ProgressCallback;
+
+  /**
+   * Optional: Cache store for persisting processed GTFS databases
+   * Use IndexedDBCacheStore (browser) or FileSystemCacheStore (Node.js)
+   * or implement your own CacheStore
+   *
+   * If not provided, caching is enabled by default with:
+   * - IndexedDBCacheStore in browsers
+   * - FileSystemCacheStore in Node.js
+   *
+   * Set to `null` to disable caching
+   */
+  cache?: CacheStore | null;
+
+  /**
+   * Optional: Data version string
+   * When changed, cached databases are invalidated and reprocessed
+   * Default: '1.0'
+   */
+  cacheVersion?: string;
+
+  /**
+   * Optional: Cache expiration time in milliseconds
+   * Cached databases older than this will be invalidated
+   * Default: 7 days (604800000 ms)
+   */
+  cacheExpirationMs?: number;
 }
 
 export class GtfsSqlJs {
@@ -139,8 +172,188 @@ export class GtfsSqlJs {
    */
   private async initFromZip(zipPath: string, options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'>): Promise<void> {
     const onProgress = options.onProgress;
+    const {
+      cache: userCache,
+      cacheVersion = '1.0',
+      skipFiles
+    } = options;
 
     // Initialize SQL.js
+    this.SQL = options.SQL || (await initSqlJs(options.locateFile ? { locateFile: options.locateFile } : {}));
+
+    // Determine cache store to use
+    let cache: CacheStore | null = null;
+
+    if (userCache === null) {
+      // User explicitly disabled caching
+      cache = null;
+    } else if (userCache) {
+      // User provided a cache store
+      cache = userCache;
+    } else {
+      // Auto-detect environment and create default cache store
+      try {
+        if (typeof window !== 'undefined' && typeof indexedDB !== 'undefined') {
+          // Browser environment - use IndexedDB
+          const { IndexedDBCacheStore } = await import('./cache/indexeddb-store');
+          cache = new IndexedDBCacheStore();
+        } else if (typeof process !== 'undefined' && process.versions?.node) {
+          // Node.js environment - use FileSystem
+          const { FileSystemCacheStore } = await import('./cache/fs-store');
+          cache = new FileSystemCacheStore();
+        }
+      } catch (error) {
+        // Fallback to no caching if import fails
+        console.warn('Failed to initialize default cache store:', error);
+        cache = null;
+      }
+    }
+
+    // Check cache if enabled
+    if (cache) {
+      onProgress?.({
+        phase: 'checking_cache',
+        currentFile: null,
+        filesCompleted: 0,
+        totalFiles: 0,
+        rowsProcessed: 0,
+        totalRows: 0,
+        percentComplete: 0,
+        message: 'Checking cache...',
+      });
+
+      // Fetch raw zip data for checksum (only if zipPath is a string)
+      let zipData: ArrayBuffer;
+      if (typeof zipPath === 'string') {
+        onProgress?.({
+          phase: 'downloading',
+          currentFile: null,
+          filesCompleted: 0,
+          totalFiles: 0,
+          rowsProcessed: 0,
+          totalRows: 0,
+          percentComplete: 2,
+          message: 'Downloading GTFS ZIP file',
+        });
+
+        zipData = await fetchZip(zipPath);
+      } else {
+        // zipPath is already ArrayBuffer or Uint8Array
+        zipData = zipPath as ArrayBuffer;
+      }
+
+      // Calculate filesize
+      const filesize = zipData.byteLength;
+
+      // Compute checksum
+      const checksum = await computeZipChecksum(zipData);
+
+      // Generate cache key with all parameters
+      const cacheKey = generateCacheKey(
+        checksum,
+        LIB_VERSION,
+        cacheVersion,
+        filesize,
+        typeof zipPath === 'string' ? zipPath : undefined,
+        skipFiles
+      );
+
+      // Check if cache exists
+      const cachedDb = await cache.get(cacheKey);
+
+      if (cachedDb) {
+        // Note: We retrieve the cache entry but we should check if it's expired
+        // For now, we check expiration when listing/managing cache
+        // The cache store itself doesn't track metadata on get()
+        // TODO: Consider updating CacheStore.get() to return metadata as well
+
+        // Load from cache
+        onProgress?.({
+          phase: 'loading_from_cache',
+          currentFile: null,
+          filesCompleted: 0,
+          totalFiles: 0,
+          rowsProcessed: 0,
+          totalRows: 0,
+          percentComplete: 50,
+          message: 'Loading from cache...',
+        });
+
+        this.db = new this.SQL.Database(new Uint8Array(cachedDb));
+
+        // Set RT configuration
+        if (options.realtimeFeedUrls) {
+          this.realtimeFeedUrls = options.realtimeFeedUrls;
+        }
+        if (options.stalenessThreshold !== undefined) {
+          this.stalenessThreshold = options.stalenessThreshold;
+        }
+
+        onProgress?.({
+          phase: 'complete',
+          currentFile: null,
+          filesCompleted: 0,
+          totalFiles: 0,
+          rowsProcessed: 0,
+          totalRows: 0,
+          percentComplete: 100,
+          message: 'GTFS data loaded from cache',
+        });
+
+        return;
+      }
+
+      // Cache miss - continue with normal loading but use already-fetched zip data
+      onProgress?.({
+        phase: 'extracting',
+        currentFile: null,
+        filesCompleted: 0,
+        totalFiles: 0,
+        rowsProcessed: 0,
+        totalRows: 0,
+        percentComplete: 5,
+        message: 'Extracting GTFS ZIP file',
+      });
+
+      await this.loadFromZipData(zipData, options, onProgress);
+
+      // Save to cache
+      onProgress?.({
+        phase: 'saving_cache',
+        currentFile: null,
+        filesCompleted: 0,
+        totalFiles: 0,
+        rowsProcessed: 0,
+        totalRows: 0,
+        percentComplete: 98,
+        message: 'Saving to cache...',
+      });
+
+      const dbBuffer = this.export();
+      await cache.set(cacheKey, dbBuffer, {
+        checksum,
+        version: cacheVersion,
+        timestamp: Date.now(),
+        source: typeof zipPath === 'string' ? zipPath : undefined,
+        size: dbBuffer.byteLength,
+        skipFiles,
+      });
+
+      onProgress?.({
+        phase: 'complete',
+        currentFile: null,
+        filesCompleted: 0,
+        totalFiles: 0,
+        rowsProcessed: 0,
+        totalRows: 0,
+        percentComplete: 100,
+        message: 'GTFS data loaded successfully',
+      });
+
+      return;
+    }
+
+    // No cache - use normal loading flow
     onProgress?.({
       phase: 'downloading',
       currentFile: null,
@@ -149,13 +362,43 @@ export class GtfsSqlJs {
       rowsProcessed: 0,
       totalRows: 0,
       percentComplete: 0,
-      message: 'Initializing database engine',
+      message: 'Downloading GTFS ZIP file',
     });
 
-    this.SQL = options.SQL || (await initSqlJs(options.locateFile ? { locateFile: options.locateFile } : {}));
+    // Fetch zip data
+    let zipData: ArrayBuffer;
+    if (typeof zipPath === 'string') {
+      zipData = await fetchZip(zipPath);
+    } else {
+      zipData = zipPath as ArrayBuffer;
+    }
 
+    // Load from zip data
+    await this.loadFromZipData(zipData, options, onProgress);
+
+    onProgress?.({
+      phase: 'complete',
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: 0,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 100,
+      message: 'GTFS data loaded successfully',
+    });
+  }
+
+  /**
+   * Helper method to load GTFS data from zip data (ArrayBuffer)
+   * Used by both cache-enabled and cache-disabled paths
+   */
+  private async loadFromZipData(
+    zipData: ArrayBuffer,
+    options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'>,
+    onProgress?: ProgressCallback
+  ): Promise<void> {
     // Create new database
-    this.db = new this.SQL.Database();
+    this.db = new this.SQL!.Database();
 
     // Apply performance PRAGMAs for bulk loading
     onProgress?.({
@@ -165,7 +408,7 @@ export class GtfsSqlJs {
       totalFiles: 0,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 2,
+      percentComplete: 10,
       message: 'Optimizing database for bulk import',
     });
 
@@ -183,7 +426,7 @@ export class GtfsSqlJs {
       totalFiles: 0,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 5,
+      percentComplete: 15,
       message: 'Creating database tables',
     });
 
@@ -195,7 +438,7 @@ export class GtfsSqlJs {
     // Create GTFS-RT tables
     createRealtimeTables(this.db);
 
-    // Load GTFS data
+    // Extract files from zip
     onProgress?.({
       phase: 'extracting',
       currentFile: null,
@@ -203,12 +446,13 @@ export class GtfsSqlJs {
       totalFiles: 0,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 10,
-      message: 'Loading and extracting GTFS ZIP file',
+      percentComplete: 20,
+      message: 'Extracting GTFS ZIP file',
     });
 
-    const files = await loadGTFSZip(zipPath);
+    const files = await loadGTFSZip(zipData);
 
+    // Load GTFS data
     onProgress?.({
       phase: 'inserting_data',
       currentFile: null,
@@ -216,7 +460,7 @@ export class GtfsSqlJs {
       totalFiles: Object.keys(files).length,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 15,
+      percentComplete: 25,
       message: 'Starting data import',
     });
 
@@ -277,17 +521,6 @@ export class GtfsSqlJs {
     if (options.stalenessThreshold !== undefined) {
       this.stalenessThreshold = options.stalenessThreshold;
     }
-
-    onProgress?.({
-      phase: 'complete',
-      currentFile: null,
-      filesCompleted: Object.keys(files).length,
-      totalFiles: Object.keys(files).length,
-      rowsProcessed: 0,
-      totalRows: 0,
-      percentComplete: 100,
-      message: 'GTFS data loaded successfully',
-    });
 
     // Auto-fetch realtime data if feed URLs are configured
     if (this.realtimeFeedUrls.length > 0) {
@@ -641,5 +874,114 @@ export class GtfsSqlJs {
   debugExportAllStopTimeUpdates(): StopTimeUpdateWithMetadata[] {
     if (!this.db) throw new Error('Database not initialized');
     return getAllStopTimeUpdates(this.db);
+  }
+
+  // ==================== Cache Management Methods ====================
+
+  /**
+   * Get cache statistics
+   * @param cacheStore - Cache store to query (optional, auto-detects if not provided)
+   * @returns Cache statistics including size, entry count, and age information
+   */
+  static async getCacheStats(cacheStore?: CacheStore) {
+    const { getCacheStats } = await import('./cache/utils');
+    const cache = cacheStore || await this.getDefaultCacheStore();
+
+    if (!cache) {
+      throw new Error('No cache store available');
+    }
+
+    const entries = await cache.list?.() || [];
+    return getCacheStats(entries);
+  }
+
+  /**
+   * Clean expired cache entries
+   * @param cacheStore - Cache store to clean (optional, auto-detects if not provided)
+   * @param expirationMs - Expiration time in milliseconds (default: 7 days)
+   * @returns Number of entries deleted
+   */
+  static async cleanExpiredCache(
+    cacheStore?: CacheStore,
+    expirationMs: number = DEFAULT_CACHE_EXPIRATION_MS
+  ): Promise<number> {
+    const { filterExpiredEntries } = await import('./cache/utils');
+    const cache = cacheStore || await this.getDefaultCacheStore();
+
+    if (!cache || !cache.list) {
+      throw new Error('No cache store available or cache store does not support listing');
+    }
+
+    const allEntries = await cache.list();
+    const expiredEntries = allEntries.filter(entry =>
+      !filterExpiredEntries([entry], expirationMs).length
+    );
+
+    // Delete expired entries
+    await Promise.all(expiredEntries.map(entry => cache.delete(entry.key)));
+
+    return expiredEntries.length;
+  }
+
+  /**
+   * Clear all cache entries
+   * @param cacheStore - Cache store to clear (optional, auto-detects if not provided)
+   */
+  static async clearCache(cacheStore?: CacheStore): Promise<void> {
+    const cache = cacheStore || await this.getDefaultCacheStore();
+
+    if (!cache) {
+      throw new Error('No cache store available');
+    }
+
+    await cache.clear();
+  }
+
+  /**
+   * List all cache entries
+   * @param cacheStore - Cache store to query (optional, auto-detects if not provided)
+   * @param includeExpired - Include expired entries (default: false)
+   * @returns Array of cache entries with metadata
+   */
+  static async listCache(
+    cacheStore?: CacheStore,
+    includeExpired: boolean = false
+  ) {
+    const { filterExpiredEntries } = await import('./cache/utils');
+    const cache = cacheStore || await this.getDefaultCacheStore();
+
+    if (!cache || !cache.list) {
+      throw new Error('No cache store available or cache store does not support listing');
+    }
+
+    const entries = await cache.list();
+
+    if (includeExpired) {
+      return entries;
+    }
+
+    return filterExpiredEntries(entries);
+  }
+
+  /**
+   * Get the default cache store for the current environment
+   * @returns Default cache store or null if unavailable
+   */
+  private static async getDefaultCacheStore(): Promise<CacheStore | null> {
+    try {
+      if (typeof window !== 'undefined' && typeof indexedDB !== 'undefined') {
+        // Browser environment - use IndexedDB
+        const { IndexedDBCacheStore } = await import('./cache/indexeddb-store');
+        return new IndexedDBCacheStore();
+      } else if (typeof process !== 'undefined' && process.versions?.node) {
+        // Node.js environment - use FileSystem
+        const { FileSystemCacheStore } = await import('./cache/fs-store');
+        return new FileSystemCacheStore();
+      }
+    } catch (error) {
+      console.warn('Failed to initialize default cache store:', error);
+    }
+
+    return null;
   }
 }

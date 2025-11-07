@@ -9,4 +9,8 @@ export default defineConfig({
   clean: true,
   target: 'es2020',
   platform: 'neutral',
+  // Mark Node.js built-in modules as external to avoid bundling errors
+  external: ['fs', 'path', 'os'],
+  // Don't bundle node built-ins
+  noExternal: [],
 });

@@ -47,9 +47,9 @@ export async function loadGTFSZip(source: string | ArrayBuffer | Uint8Array): Pr
 }
 
 /**
- * Fetch ZIP file from URL or file path
+ * Fetch ZIP file from URL or file path (exported for checksum computation)
  */
-async function fetchZip(source: string): Promise<ArrayBuffer> {
+export async function fetchZip(source: string): Promise<ArrayBuffer> {
   // Check if source is a URL
   const isUrl = source.startsWith('http://') || source.startsWith('https://');
 

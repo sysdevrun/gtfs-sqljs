@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>GTFS-SQLjs Cache Example (Browser)</title>
+</head>
+<body>
+  <h1>GTFS-SQLjs with IndexedDB Cache</h1>
+
+  <div>
+    <button id="loadBtn">Load GTFS Data</button>
+    <button id="statsBtn">Show Cache Stats</button>
+    <button id="clearBtn">Clear Cache</button>
+    <button id="cleanBtn">Clean Expired Cache</button>
+  </div>
+
+  <div id="output" style="margin-top: 20px; font-family: monospace;"></div>
+  <div id="progress" style="margin-top: 10px;"></div>
+
+  <script type="module">
+    import { GtfsSqlJs, IndexedDBCacheStore } from 'gtfs-sqljs';
+
+    const output = document.getElementById('output');
+    const progressDiv = document.getElementById('progress');
+
+    function log(message) {
+      output.innerHTML += message + '<br>';
+      console.log(message);
+    }
+
+    // Example 1: Automatic caching (default behavior)
+    document.getElementById('loadBtn').addEventListener('click', async () => {
+      output.innerHTML = '';
+      progressDiv.innerHTML = '';
+
+      try {
+        log('Loading GTFS data (automatic caching enabled)...');
+        const startTime = performance.now();
+
+        const gtfs = await GtfsSqlJs.fromZip(
+          'https://example.com/gtfs.zip',
+          {
+            cacheVersion: '1.0',
+            onProgress: (progress) => {
+              progressDiv.innerHTML = `${progress.phase}: ${progress.message} (${progress.percentComplete}%)`;
+            }
+          }
+        );
+
+        const loadTime = ((performance.now() - startTime) / 1000).toFixed(2);
+        log(`✓ GTFS data loaded in ${loadTime}s`);
+
+        const routes = gtfs.getRoutes();
+        log(`Found ${routes.length} routes`);
+
+      } catch (error) {
+        log(`✗ Error: ${error.message}`);
+      }
+    });
+
+    // Example 2: Show cache statistics
+    document.getElementById('statsBtn').addEventListener('click', async () => {
+      output.innerHTML = '';
+
+      try {
+        log('Fetching cache statistics...');
+        const stats = await GtfsSqlJs.getCacheStats();
+
+        log('\nCache Statistics:');
+        log(`- Total entries: ${stats.totalEntries}`);
+        log(`- Active entries: ${stats.activeEntries}`);
+        log(`- Expired entries: ${stats.expiredEntries}`);
+        log(`- Total size: ${stats.totalSizeMB} MB`);
+
+        if (stats.oldestEntry) {
+          const oldest = new Date(stats.oldestEntry);
+          log(`- Oldest entry: ${oldest.toLocaleString()}`);
+        }
+
+      } catch (error) {
+        log(`✗ Error: ${error.message}`);
+      }
+    });
+
+    // Example 3: Clear cache
+    document.getElementById('clearBtn').addEventListener('click', async () => {
+      output.innerHTML = '';
+
+      try {
+        log('Clearing all cache...');
+        await GtfsSqlJs.clearCache();
+        log('✓ Cache cleared');
+
+      } catch (error) {
+        log(`✗ Error: ${error.message}`);
+      }
+    });
+
+    // Example 4: Clean expired cache
+    document.getElementById('cleanBtn').addEventListener('click', async () => {
+      output.innerHTML = '';
+
+      try {
+        log('Cleaning expired cache entries...');
+        const deletedCount = await GtfsSqlJs.cleanExpiredCache();
+        log(`✓ Deleted ${deletedCount} expired entries`);
+
+      } catch (error) {
+        log(`✗ Error: ${error.message}`);
+      }
+    });
+
+    // Example 5: Custom cache store
+    async function customCacheExample() {
+      const cache = new IndexedDBCacheStore({ dbName: 'my-custom-gtfs-cache' });
+
+      const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+        cache,
+        cacheVersion: '2.0',
+        cacheExpirationMs: 3 * 24 * 60 * 60 * 1000, // 3 days
+      });
+    }
+
+    // Example 6: Disable caching
+    async function noCacheExample() {
+      const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+        cache: null, // Explicitly disable caching
+      });
+    }
+  </script>
+</body>
+</html>

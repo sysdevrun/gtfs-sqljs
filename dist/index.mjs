@@ -1,3 +1,406 @@
+var __defProp = Object.defineProperty;
+var __getOwnPropNames = Object.getOwnPropertyNames;
+var __esm = (fn, res) => function __init() {
+  return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
+};
+var __export = (target, all) => {
+  for (var name in all)
+    __defProp(target, name, { get: all[name], enumerable: true });
+};
+
+// src/cache/utils.ts
+var utils_exports = {};
+__export(utils_exports, {
+  DEFAULT_CACHE_EXPIRATION_MS: () => DEFAULT_CACHE_EXPIRATION_MS,
+  filterExpiredEntries: () => filterExpiredEntries,
+  getCacheStats: () => getCacheStats,
+  isCacheExpired: () => isCacheExpired
+});
+function isCacheExpired(metadata, expirationMs = DEFAULT_CACHE_EXPIRATION_MS) {
+  const now = Date.now();
+  const age = now - metadata.timestamp;
+  return age > expirationMs;
+}
+function filterExpiredEntries(entries, expirationMs = DEFAULT_CACHE_EXPIRATION_MS) {
+  return entries.filter((entry) => !isCacheExpired(entry.metadata, expirationMs));
+}
+function getCacheStats(entries) {
+  const totalSize = entries.reduce((sum, entry) => sum + entry.metadata.size, 0);
+  const expiredEntries = entries.filter((entry) => isCacheExpired(entry.metadata));
+  const activeEntries = entries.filter((entry) => !isCacheExpired(entry.metadata));
+  return {
+    totalEntries: entries.length,
+    activeEntries: activeEntries.length,
+    expiredEntries: expiredEntries.length,
+    totalSize,
+    totalSizeMB: (totalSize / 1024 / 1024).toFixed(2),
+    oldestEntry: entries.length > 0 ? Math.min(...entries.map((e) => e.metadata.timestamp)) : null,
+    newestEntry: entries.length > 0 ? Math.max(...entries.map((e) => e.metadata.timestamp)) : null
+  };
+}
+var DEFAULT_CACHE_EXPIRATION_MS;
+var init_utils = __esm({
+  "src/cache/utils.ts"() {
+    "use strict";
+    DEFAULT_CACHE_EXPIRATION_MS = 7 * 24 * 60 * 60 * 1e3;
+  }
+});
+
+// src/cache/indexeddb-store.ts
+var indexeddb_store_exports = {};
+__export(indexeddb_store_exports, {
+  IndexedDBCacheStore: () => IndexedDBCacheStore
+});
+var IndexedDBCacheStore;
+var init_indexeddb_store = __esm({
+  "src/cache/indexeddb-store.ts"() {
+    "use strict";
+    IndexedDBCacheStore = class {
+      constructor(options = {}) {
+        this.storeName = "gtfs-cache";
+        this.version = 1;
+        this.dbName = options.dbName || "gtfs-sqljs-cache";
+      }
+      /**
+       * Open IndexedDB connection
+       */
+      async openDB() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(this.dbName, this.version);
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => resolve(request.result);
+          request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+            if (!db.objectStoreNames.contains(this.storeName)) {
+              const store = db.createObjectStore(this.storeName, { keyPath: "key" });
+              store.createIndex("timestamp", "metadata.timestamp", { unique: false });
+            }
+          };
+        });
+      }
+      /**
+       * Get a cached database
+       */
+      async get(key) {
+        const db = await this.openDB();
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction([this.storeName], "readonly");
+          const store = transaction.objectStore(this.storeName);
+          const request = store.get(key);
+          request.onerror = () => {
+            db.close();
+            reject(request.error);
+          };
+          request.onsuccess = () => {
+            db.close();
+            const result = request.result;
+            resolve(result ? result.data : null);
+          };
+        });
+      }
+      /**
+       * Store a database in cache
+       */
+      async set(key, data, metadata) {
+        const db = await this.openDB();
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction([this.storeName], "readwrite");
+          const store = transaction.objectStore(this.storeName);
+          const record = {
+            key,
+            data,
+            metadata
+          };
+          const request = store.put(record);
+          request.onerror = () => {
+            db.close();
+            reject(request.error);
+          };
+          request.onsuccess = () => {
+            db.close();
+            resolve();
+          };
+        });
+      }
+      /**
+       * Check if a cache entry exists
+       */
+      async has(key) {
+        const db = await this.openDB();
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction([this.storeName], "readonly");
+          const store = transaction.objectStore(this.storeName);
+          const request = store.getKey(key);
+          request.onerror = () => {
+            db.close();
+            reject(request.error);
+          };
+          request.onsuccess = () => {
+            db.close();
+            resolve(request.result !== void 0);
+          };
+        });
+      }
+      /**
+       * Delete a specific cache entry
+       */
+      async delete(key) {
+        const db = await this.openDB();
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction([this.storeName], "readwrite");
+          const store = transaction.objectStore(this.storeName);
+          const request = store.delete(key);
+          request.onerror = () => {
+            db.close();
+            reject(request.error);
+          };
+          request.onsuccess = () => {
+            db.close();
+            resolve();
+          };
+        });
+      }
+      /**
+       * Clear all cache entries
+       */
+      async clear() {
+        const db = await this.openDB();
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction([this.storeName], "readwrite");
+          const store = transaction.objectStore(this.storeName);
+          const request = store.clear();
+          request.onerror = () => {
+            db.close();
+            reject(request.error);
+          };
+          request.onsuccess = () => {
+            db.close();
+            resolve();
+          };
+        });
+      }
+      /**
+       * List all cached entries
+       */
+      async list() {
+        const db = await this.openDB();
+        return new Promise((resolve, reject) => {
+          const transaction = db.transaction([this.storeName], "readonly");
+          const store = transaction.objectStore(this.storeName);
+          const request = store.getAllKeys();
+          request.onerror = () => {
+            db.close();
+            reject(request.error);
+          };
+          request.onsuccess = async () => {
+            const keys = request.result;
+            const entries = [];
+            const metadataPromises = keys.map(async (key) => {
+              const metaRequest = store.get(key);
+              return new Promise((resolveEntry, rejectEntry) => {
+                metaRequest.onerror = () => rejectEntry(metaRequest.error);
+                metaRequest.onsuccess = () => {
+                  const record = metaRequest.result;
+                  resolveEntry({
+                    key,
+                    metadata: record.metadata
+                  });
+                };
+              });
+            });
+            try {
+              const results = await Promise.all(metadataPromises);
+              entries.push(...results);
+            } catch (error) {
+              db.close();
+              reject(error);
+              return;
+            }
+            db.close();
+            resolve(entries);
+          };
+        });
+      }
+    };
+  }
+});
+
+// src/cache/fs-store.ts
+var fs_store_exports = {};
+__export(fs_store_exports, {
+  FileSystemCacheStore: () => FileSystemCacheStore
+});
+var FileSystemCacheStore;
+var init_fs_store = __esm({
+  "src/cache/fs-store.ts"() {
+    "use strict";
+    FileSystemCacheStore = class {
+      constructor(options = {}) {
+        this.cacheDir = options.dir || "";
+      }
+      /**
+       * Get the cache directory path (lazy initialization)
+       */
+      async getCacheDir() {
+        if (this.cacheDir) {
+          return this.cacheDir;
+        }
+        const path = await import("path");
+        const os = await import("os");
+        this.cacheDir = path.join(
+          process.env.XDG_CACHE_HOME || path.join(os.homedir(), ".cache"),
+          "gtfs-sqljs"
+        );
+        return this.cacheDir;
+      }
+      /**
+       * Ensure cache directory exists
+       */
+      async ensureCacheDir() {
+        const fs = await import("fs");
+        const cacheDir = await this.getCacheDir();
+        try {
+          await fs.promises.mkdir(cacheDir, { recursive: true });
+        } catch (error) {
+          if (error.code !== "EEXIST") {
+            throw error;
+          }
+        }
+      }
+      /**
+       * Get file path for a cache key
+       */
+      async getFilePath(key) {
+        const path = await import("path");
+        const cacheDir = await this.getCacheDir();
+        const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, "_");
+        return path.join(cacheDir, `${safeKey}.db`);
+      }
+      /**
+       * Get metadata file path for a cache key
+       */
+      async getMetadataPath(key) {
+        const path = await import("path");
+        const cacheDir = await this.getCacheDir();
+        const safeKey = key.replace(/[^a-zA-Z0-9_-]/g, "_");
+        return path.join(cacheDir, `${safeKey}.meta.json`);
+      }
+      /**
+       * Get a cached database
+       */
+      async get(key) {
+        const fs = await import("fs");
+        try {
+          const filePath = await this.getFilePath(key);
+          const buffer = await fs.promises.readFile(filePath);
+          return buffer.buffer.slice(
+            buffer.byteOffset,
+            buffer.byteOffset + buffer.byteLength
+          );
+        } catch (error) {
+          if (error.code === "ENOENT") {
+            return null;
+          }
+          throw error;
+        }
+      }
+      /**
+       * Store a database in cache
+       */
+      async set(key, data, metadata) {
+        const fs = await import("fs");
+        await this.ensureCacheDir();
+        const filePath = await this.getFilePath(key);
+        const metadataPath = await this.getMetadataPath(key);
+        await fs.promises.writeFile(filePath, new Uint8Array(data));
+        await fs.promises.writeFile(metadataPath, JSON.stringify(metadata, null, 2));
+      }
+      /**
+       * Check if a cache entry exists
+       */
+      async has(key) {
+        const fs = await import("fs");
+        try {
+          const filePath = await this.getFilePath(key);
+          await fs.promises.access(filePath);
+          return true;
+        } catch {
+          return false;
+        }
+      }
+      /**
+       * Delete a specific cache entry
+       */
+      async delete(key) {
+        const fs = await import("fs");
+        const filePath = await this.getFilePath(key);
+        const metadataPath = await this.getMetadataPath(key);
+        try {
+          await fs.promises.unlink(filePath);
+        } catch (error) {
+          if (error.code !== "ENOENT") {
+            throw error;
+          }
+        }
+        try {
+          await fs.promises.unlink(metadataPath);
+        } catch {
+        }
+      }
+      /**
+       * Clear all cache entries
+       */
+      async clear() {
+        const fs = await import("fs");
+        const path = await import("path");
+        const cacheDir = await this.getCacheDir();
+        try {
+          const files = await fs.promises.readdir(cacheDir);
+          await Promise.all(
+            files.map(
+              (file) => fs.promises.unlink(path.join(cacheDir, file)).catch(() => {
+              })
+            )
+          );
+        } catch (error) {
+          if (error.code !== "ENOENT") {
+            throw error;
+          }
+        }
+      }
+      /**
+       * List all cached entries
+       */
+      async list() {
+        const fs = await import("fs");
+        const path = await import("path");
+        const cacheDir = await this.getCacheDir();
+        try {
+          const files = await fs.promises.readdir(cacheDir);
+          const metadataFiles = files.filter((f) => f.endsWith(".meta.json"));
+          const entries = [];
+          for (const metaFile of metadataFiles) {
+            try {
+              const metaPath = path.join(cacheDir, metaFile);
+              const metaContent = await fs.promises.readFile(metaPath, "utf-8");
+              const metadata = JSON.parse(metaContent);
+              const key = metaFile.replace(".meta.json", "");
+              entries.push({ key, metadata });
+            } catch {
+            }
+          }
+          return entries;
+        } catch (error) {
+          if (error.code === "ENOENT") {
+            return [];
+          }
+          throw error;
+        }
+      }
+    };
+  }
+});
+
 // src/gtfs-sqljs.ts
 import initSqlJs from "sql.js";
 
@@ -1002,6 +1405,50 @@ async function loadRealtimeData(db, feedUrls) {
   }
 }
 
+// src/cache/checksum.ts
+async function getCrypto() {
+  if (typeof crypto !== "undefined" && crypto.subtle) {
+    return crypto;
+  }
+  if (typeof globalThis !== "undefined") {
+    try {
+      const { webcrypto } = await import("crypto");
+      return webcrypto;
+    } catch {
+      throw new Error("Web Crypto API not available");
+    }
+  }
+  throw new Error("Crypto not available in this environment");
+}
+async function computeChecksum(data) {
+  const cryptoInstance = await getCrypto();
+  const bufferSource = data instanceof Uint8Array ? data : new Uint8Array(data);
+  const hashBuffer = await cryptoInstance.subtle.digest("SHA-256", bufferSource);
+  const hashArray = Array.from(new Uint8Array(hashBuffer));
+  const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
+  return hashHex;
+}
+async function computeZipChecksum(zipData) {
+  return computeChecksum(zipData);
+}
+function generateCacheKey(checksum, libVersion, dataVersion, filesize, source, skipFiles) {
+  let key = `v${libVersion}_d${dataVersion}_${filesize}_${checksum}`;
+  if (source) {
+    const filename = source.split("/").pop() || source;
+    const sanitized = filename.replace(/[^a-zA-Z0-9._-]/g, "_");
+    key += `_${sanitized}`;
+  }
+  if (skipFiles && skipFiles.length > 0) {
+    const sortedSkips = [...skipFiles].sort();
+    const skipsSuffix = sortedSkips.join(",").replace(/\.txt/g, "");
+    key += `_skip-${skipsSuffix}`;
+  }
+  return key;
+}
+
+// src/gtfs-sqljs.ts
+init_utils();
+
 // src/queries/agencies.ts
 function getAgencies(db, filters = {}) {
   const { agencyId, limit } = filters;
@@ -1935,6 +2382,7 @@ function getAllStopTimeUpdates(db) {
 }
 
 // src/gtfs-sqljs.ts
+var LIB_VERSION = "0.1.0";
 var GtfsSqlJs = class _GtfsSqlJs {
   /**
    * Private constructor - use static factory methods instead
@@ -1966,6 +2414,141 @@ var GtfsSqlJs = class _GtfsSqlJs {
    */
   async initFromZip(zipPath, options) {
     const onProgress = options.onProgress;
+    const {
+      cache: userCache,
+      cacheVersion = "1.0",
+      skipFiles
+    } = options;
+    this.SQL = options.SQL || await initSqlJs(options.locateFile ? { locateFile: options.locateFile } : {});
+    let cache = null;
+    if (userCache === null) {
+      cache = null;
+    } else if (userCache) {
+      cache = userCache;
+    } else {
+      try {
+        if (typeof window !== "undefined" && typeof indexedDB !== "undefined") {
+          const { IndexedDBCacheStore: IndexedDBCacheStore2 } = await Promise.resolve().then(() => (init_indexeddb_store(), indexeddb_store_exports));
+          cache = new IndexedDBCacheStore2();
+        } else if (typeof process !== "undefined" && process.versions?.node) {
+          const { FileSystemCacheStore: FileSystemCacheStore2 } = await Promise.resolve().then(() => (init_fs_store(), fs_store_exports));
+          cache = new FileSystemCacheStore2();
+        }
+      } catch (error) {
+        console.warn("Failed to initialize default cache store:", error);
+        cache = null;
+      }
+    }
+    if (cache) {
+      onProgress?.({
+        phase: "checking_cache",
+        currentFile: null,
+        filesCompleted: 0,
+        totalFiles: 0,
+        rowsProcessed: 0,
+        totalRows: 0,
+        percentComplete: 0,
+        message: "Checking cache..."
+      });
+      let zipData2;
+      if (typeof zipPath === "string") {
+        onProgress?.({
+          phase: "downloading",
+          currentFile: null,
+          filesCompleted: 0,
+          totalFiles: 0,
+          rowsProcessed: 0,
+          totalRows: 0,
+          percentComplete: 2,
+          message: "Downloading GTFS ZIP file"
+        });
+        zipData2 = await fetchZip(zipPath);
+      } else {
+        zipData2 = zipPath;
+      }
+      const filesize = zipData2.byteLength;
+      const checksum = await computeZipChecksum(zipData2);
+      const cacheKey = generateCacheKey(
+        checksum,
+        LIB_VERSION,
+        cacheVersion,
+        filesize,
+        typeof zipPath === "string" ? zipPath : void 0,
+        skipFiles
+      );
+      const cachedDb = await cache.get(cacheKey);
+      if (cachedDb) {
+        onProgress?.({
+          phase: "loading_from_cache",
+          currentFile: null,
+          filesCompleted: 0,
+          totalFiles: 0,
+          rowsProcessed: 0,
+          totalRows: 0,
+          percentComplete: 50,
+          message: "Loading from cache..."
+        });
+        this.db = new this.SQL.Database(new Uint8Array(cachedDb));
+        if (options.realtimeFeedUrls) {
+          this.realtimeFeedUrls = options.realtimeFeedUrls;
+        }
+        if (options.stalenessThreshold !== void 0) {
+          this.stalenessThreshold = options.stalenessThreshold;
+        }
+        onProgress?.({
+          phase: "complete",
+          currentFile: null,
+          filesCompleted: 0,
+          totalFiles: 0,
+          rowsProcessed: 0,
+          totalRows: 0,
+          percentComplete: 100,
+          message: "GTFS data loaded from cache"
+        });
+        return;
+      }
+      onProgress?.({
+        phase: "extracting",
+        currentFile: null,
+        filesCompleted: 0,
+        totalFiles: 0,
+        rowsProcessed: 0,
+        totalRows: 0,
+        percentComplete: 5,
+        message: "Extracting GTFS ZIP file"
+      });
+      await this.loadFromZipData(zipData2, options, onProgress);
+      onProgress?.({
+        phase: "saving_cache",
+        currentFile: null,
+        filesCompleted: 0,
+        totalFiles: 0,
+        rowsProcessed: 0,
+        totalRows: 0,
+        percentComplete: 98,
+        message: "Saving to cache..."
+      });
+      const dbBuffer = this.export();
+      await cache.set(cacheKey, dbBuffer, {
+        checksum,
+        version: cacheVersion,
+        timestamp: Date.now(),
+        source: typeof zipPath === "string" ? zipPath : void 0,
+        size: dbBuffer.byteLength,
+        skipFiles
+      });
+      onProgress?.({
+        phase: "complete",
+        currentFile: null,
+        filesCompleted: 0,
+        totalFiles: 0,
+        rowsProcessed: 0,
+        totalRows: 0,
+        percentComplete: 100,
+        message: "GTFS data loaded successfully"
+      });
+      return;
+    }
     onProgress?.({
       phase: "downloading",
       currentFile: null,
@@ -1974,9 +2557,31 @@ var GtfsSqlJs = class _GtfsSqlJs {
       rowsProcessed: 0,
       totalRows: 0,
       percentComplete: 0,
-      message: "Initializing database engine"
+      message: "Downloading GTFS ZIP file"
     });
-    this.SQL = options.SQL || await initSqlJs(options.locateFile ? { locateFile: options.locateFile } : {});
+    let zipData;
+    if (typeof zipPath === "string") {
+      zipData = await fetchZip(zipPath);
+    } else {
+      zipData = zipPath;
+    }
+    await this.loadFromZipData(zipData, options, onProgress);
+    onProgress?.({
+      phase: "complete",
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: 0,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 100,
+      message: "GTFS data loaded successfully"
+    });
+  }
+  /**
+   * Helper method to load GTFS data from zip data (ArrayBuffer)
+   * Used by both cache-enabled and cache-disabled paths
+   */
+  async loadFromZipData(zipData, options, onProgress) {
     this.db = new this.SQL.Database();
     onProgress?.({
       phase: "creating_schema",
@@ -1985,7 +2590,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
       totalFiles: 0,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 2,
+      percentComplete: 10,
       message: "Optimizing database for bulk import"
     });
     this.db.run("PRAGMA synchronous = OFF");
@@ -2000,7 +2605,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
       totalFiles: 0,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 5,
+      percentComplete: 15,
       message: "Creating database tables"
     });
     const createTableStatements = getAllCreateTableStatements();
@@ -2015,10 +2620,10 @@ var GtfsSqlJs = class _GtfsSqlJs {
       totalFiles: 0,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 10,
-      message: "Loading and extracting GTFS ZIP file"
+      percentComplete: 20,
+      message: "Extracting GTFS ZIP file"
     });
-    const files = await loadGTFSZip(zipPath);
+    const files = await loadGTFSZip(zipData);
     onProgress?.({
       phase: "inserting_data",
       currentFile: null,
@@ -2026,7 +2631,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
       totalFiles: Object.keys(files).length,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 15,
+      percentComplete: 25,
       message: "Starting data import"
     });
     await loadGTFSData(this.db, files, options.skipFiles, onProgress);
@@ -2076,16 +2681,6 @@ var GtfsSqlJs = class _GtfsSqlJs {
     if (options.stalenessThreshold !== void 0) {
       this.stalenessThreshold = options.stalenessThreshold;
     }
-    onProgress?.({
-      phase: "complete",
-      currentFile: null,
-      filesCompleted: Object.keys(files).length,
-      totalFiles: Object.keys(files).length,
-      rowsProcessed: 0,
-      totalRows: 0,
-      percentComplete: 100,
-      message: "GTFS data loaded successfully"
-    });
     if (this.realtimeFeedUrls.length > 0) {
       try {
         await loadRealtimeData(this.db, this.realtimeFeedUrls);
@@ -2380,6 +2975,87 @@ var GtfsSqlJs = class _GtfsSqlJs {
     if (!this.db) throw new Error("Database not initialized");
     return getAllStopTimeUpdates(this.db);
   }
+  // ==================== Cache Management Methods ====================
+  /**
+   * Get cache statistics
+   * @param cacheStore - Cache store to query (optional, auto-detects if not provided)
+   * @returns Cache statistics including size, entry count, and age information
+   */
+  static async getCacheStats(cacheStore) {
+    const { getCacheStats: getCacheStats2 } = await Promise.resolve().then(() => (init_utils(), utils_exports));
+    const cache = cacheStore || await this.getDefaultCacheStore();
+    if (!cache) {
+      throw new Error("No cache store available");
+    }
+    const entries = await cache.list?.() || [];
+    return getCacheStats2(entries);
+  }
+  /**
+   * Clean expired cache entries
+   * @param cacheStore - Cache store to clean (optional, auto-detects if not provided)
+   * @param expirationMs - Expiration time in milliseconds (default: 7 days)
+   * @returns Number of entries deleted
+   */
+  static async cleanExpiredCache(cacheStore, expirationMs = DEFAULT_CACHE_EXPIRATION_MS) {
+    const { filterExpiredEntries: filterExpiredEntries2 } = await Promise.resolve().then(() => (init_utils(), utils_exports));
+    const cache = cacheStore || await this.getDefaultCacheStore();
+    if (!cache || !cache.list) {
+      throw new Error("No cache store available or cache store does not support listing");
+    }
+    const allEntries = await cache.list();
+    const expiredEntries = allEntries.filter(
+      (entry) => !filterExpiredEntries2([entry], expirationMs).length
+    );
+    await Promise.all(expiredEntries.map((entry) => cache.delete(entry.key)));
+    return expiredEntries.length;
+  }
+  /**
+   * Clear all cache entries
+   * @param cacheStore - Cache store to clear (optional, auto-detects if not provided)
+   */
+  static async clearCache(cacheStore) {
+    const cache = cacheStore || await this.getDefaultCacheStore();
+    if (!cache) {
+      throw new Error("No cache store available");
+    }
+    await cache.clear();
+  }
+  /**
+   * List all cache entries
+   * @param cacheStore - Cache store to query (optional, auto-detects if not provided)
+   * @param includeExpired - Include expired entries (default: false)
+   * @returns Array of cache entries with metadata
+   */
+  static async listCache(cacheStore, includeExpired = false) {
+    const { filterExpiredEntries: filterExpiredEntries2 } = await Promise.resolve().then(() => (init_utils(), utils_exports));
+    const cache = cacheStore || await this.getDefaultCacheStore();
+    if (!cache || !cache.list) {
+      throw new Error("No cache store available or cache store does not support listing");
+    }
+    const entries = await cache.list();
+    if (includeExpired) {
+      return entries;
+    }
+    return filterExpiredEntries2(entries);
+  }
+  /**
+   * Get the default cache store for the current environment
+   * @returns Default cache store or null if unavailable
+   */
+  static async getDefaultCacheStore() {
+    try {
+      if (typeof window !== "undefined" && typeof indexedDB !== "undefined") {
+        const { IndexedDBCacheStore: IndexedDBCacheStore2 } = await Promise.resolve().then(() => (init_indexeddb_store(), indexeddb_store_exports));
+        return new IndexedDBCacheStore2();
+      } else if (typeof process !== "undefined" && process.versions?.node) {
+        const { FileSystemCacheStore: FileSystemCacheStore2 } = await Promise.resolve().then(() => (init_fs_store(), fs_store_exports));
+        return new FileSystemCacheStore2();
+      }
+    } catch (error) {
+      console.warn("Failed to initialize default cache store:", error);
+    }
+    return null;
+  }
 };
 
 // src/types/gtfs-rt.ts
@@ -2445,15 +3121,29 @@ var AlertEffect = /* @__PURE__ */ ((AlertEffect2) => {
   AlertEffect2[AlertEffect2["ACCESSIBILITY_ISSUE"] = 11] = "ACCESSIBILITY_ISSUE";
   return AlertEffect2;
 })(AlertEffect || {});
+
+// src/index.ts
+init_indexeddb_store();
+init_fs_store();
+init_utils();
 export {
   AlertCause,
   AlertEffect,
   CongestionLevel,
+  DEFAULT_CACHE_EXPIRATION_MS,
+  FileSystemCacheStore,
   GTFS_SCHEMA,
   GtfsSqlJs,
+  IndexedDBCacheStore,
   OccupancyStatus,
   ScheduleRelationship,
-  VehicleStopStatus
+  VehicleStopStatus,
+  computeChecksum,
+  computeZipChecksum,
+  filterExpiredEntries,
+  generateCacheKey,
+  getCacheStats,
+  isCacheExpired
 };
 /**
  * gtfs-sqljs - Load GTFS data into sql.js SQLite database
