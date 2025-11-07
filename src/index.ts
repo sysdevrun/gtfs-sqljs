@@ -76,6 +76,7 @@ export type {
   CacheStore,
   CacheMetadata,
   CacheEntry,
+  CacheEntryWithData,
   CacheStoreOptions
 } from './cache/types';
 

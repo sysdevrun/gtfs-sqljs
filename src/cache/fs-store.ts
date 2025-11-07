@@ -1,4 +1,4 @@
-import type { CacheStore, CacheMetadata, CacheEntry, CacheStoreOptions } from './types';
+import type { CacheStore, CacheMetadata, CacheEntry, CacheEntryWithData, CacheStoreOptions } from './types';
 
 /**
  * File system-based cache store for Node.js
@@ -87,18 +87,28 @@ export class FileSystemCacheStore implements CacheStore {
   }
 
   /**
-   * Get a cached database
+   * Get a cached database with metadata
    */
-  async get(key: string): Promise<ArrayBuffer | null> {
+  async get(key: string): Promise<CacheEntryWithData | null> {
     const fs = await import('fs');
 
     try {
       const filePath = await this.getFilePath(key);
-      const buffer = await fs.promises.readFile(filePath);
-      return buffer.buffer.slice(
+      const metadataPath = await this.getMetadataPath(key);
+
+      // Read both database and metadata
+      const [buffer, metadataContent] = await Promise.all([
+        fs.promises.readFile(filePath),
+        fs.promises.readFile(metadataPath, 'utf-8')
+      ]);
+
+      const data = buffer.buffer.slice(
         buffer.byteOffset,
         buffer.byteOffset + buffer.byteLength
       );
+      const metadata = JSON.parse(metadataContent) as CacheMetadata;
+
+      return { data, metadata };
     } catch (error) {
       // Return null if file doesn't exist
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
