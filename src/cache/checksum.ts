@@ -1,12 +1,38 @@
 /**
+ * Get crypto object (browser or Node.js)
+ */
+async function getCrypto(): Promise<Crypto> {
+  // Browser environment
+  if (typeof crypto !== 'undefined' && crypto.subtle) {
+    return crypto;
+  }
+
+  // Node.js environment - import webcrypto
+  if (typeof globalThis !== 'undefined') {
+    try {
+      const { webcrypto } = await import('crypto');
+      return webcrypto as unknown as Crypto;
+    } catch {
+      // Fallback for older Node.js versions
+      throw new Error('Web Crypto API not available');
+    }
+  }
+
+  throw new Error('Crypto not available in this environment');
+}
+
+/**
  * Compute SHA-256 checksum of data
  * Uses Web Crypto API (available in both browser and Node.js 18+)
  */
 export async function computeChecksum(data: ArrayBuffer | Uint8Array): Promise<string> {
+  // Get crypto instance
+  const cryptoInstance = await getCrypto();
+
   // Ensure we have a BufferSource for crypto.subtle.digest
   // Use type assertion to handle ArrayBufferLike compatibility
   const bufferSource = (data instanceof Uint8Array ? data : new Uint8Array(data)) as BufferSource;
-  const hashBuffer = await crypto.subtle.digest('SHA-256', bufferSource);
+  const hashBuffer = await cryptoInstance.subtle.digest('SHA-256', bufferSource);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   return hashHex;

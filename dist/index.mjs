@@ -1406,9 +1406,24 @@ async function loadRealtimeData(db, feedUrls) {
 }
 
 // src/cache/checksum.ts
+async function getCrypto() {
+  if (typeof crypto !== "undefined" && crypto.subtle) {
+    return crypto;
+  }
+  if (typeof globalThis !== "undefined") {
+    try {
+      const { webcrypto } = await import("crypto");
+      return webcrypto;
+    } catch {
+      throw new Error("Web Crypto API not available");
+    }
+  }
+  throw new Error("Crypto not available in this environment");
+}
 async function computeChecksum(data) {
+  const cryptoInstance = await getCrypto();
   const bufferSource = data instanceof Uint8Array ? data : new Uint8Array(data);
-  const hashBuffer = await crypto.subtle.digest("SHA-256", bufferSource);
+  const hashBuffer = await cryptoInstance.subtle.digest("SHA-256", bufferSource);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray.map((b) => b.toString(16).padStart(2, "0")).join("");
   return hashHex;
