@@ -479,6 +479,23 @@ interface StopTimeUpdateWithMetadata extends StopTimeUpdate {
     rt_last_updated: number;
 }
 
+/**
+ * Progress information for GTFS data loading
+ */
+interface ProgressInfo {
+    phase: 'downloading' | 'extracting' | 'creating_schema' | 'inserting_data' | 'creating_indexes' | 'analyzing' | 'complete';
+    currentFile: string | null;
+    filesCompleted: number;
+    totalFiles: number;
+    rowsProcessed: number;
+    totalRows: number;
+    percentComplete: number;
+    message: string;
+}
+/**
+ * Progress callback function type
+ */
+type ProgressCallback = (progress: ProgressInfo) => void;
 interface GtfsSqlJsOptions {
     /**
      * Path or URL to GTFS ZIP file
@@ -510,6 +527,11 @@ interface GtfsSqlJsOptions {
      * Realtime data older than this will be excluded from queries
      */
     stalenessThreshold?: number;
+    /**
+     * Optional: Progress callback for tracking load progress
+     * Useful for displaying progress in UI or web workers
+     */
+    onProgress?: ProgressCallback;
 }
 declare class GtfsSqlJs {
     private db;

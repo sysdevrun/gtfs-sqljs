@@ -3,7 +3,7 @@
  */
 
 import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
-import { getAllCreateStatements } from './schema/schema';
+import { getAllCreateTableStatements, getAllCreateIndexStatements } from './schema/schema';
 import { loadGTFSZip } from './loaders/zip-loader';
 import { loadGTFSData } from './loaders/data-loader';
 import { createRealtimeTables, clearRealtimeData as clearRTData } from './schema/gtfs-rt-schema';
@@ -34,6 +34,25 @@ import type { Alert, VehiclePosition, TripUpdate } from './types/gtfs-rt';
 export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters };
 // Export RT types
 export type { Alert, VehiclePosition, TripUpdate, StopTimeUpdateWithMetadata, TripWithRealtime, StopTimeWithRealtime };
+
+/**
+ * Progress information for GTFS data loading
+ */
+export interface ProgressInfo {
+  phase: 'downloading' | 'extracting' | 'creating_schema' | 'inserting_data' | 'creating_indexes' | 'analyzing' | 'complete';
+  currentFile: string | null;
+  filesCompleted: number;
+  totalFiles: number;
+  rowsProcessed: number;
+  totalRows: number;
+  percentComplete: number; // 0-100
+  message: string;
+}
+
+/**
+ * Progress callback function type
+ */
+export type ProgressCallback = (progress: ProgressInfo) => void;
 
 export interface GtfsSqlJsOptions {
   /**
@@ -72,6 +91,12 @@ export interface GtfsSqlJsOptions {
    * Realtime data older than this will be excluded from queries
    */
   stalenessThreshold?: number;
+
+  /**
+   * Optional: Progress callback for tracking load progress
+   * Useful for displaying progress in UI or web workers
+   */
+  onProgress?: ProgressCallback;
 }
 
 export class GtfsSqlJs {
@@ -113,15 +138,57 @@ export class GtfsSqlJs {
    * Initialize from ZIP file
    */
   private async initFromZip(zipPath: string, options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'>): Promise<void> {
+    const onProgress = options.onProgress;
+
     // Initialize SQL.js
+    onProgress?.({
+      phase: 'downloading',
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: 0,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 0,
+      message: 'Initializing database engine',
+    });
+
     this.SQL = options.SQL || (await initSqlJs(options.locateFile ? { locateFile: options.locateFile } : {}));
 
     // Create new database
     this.db = new this.SQL.Database();
 
-    // Create GTFS schema
-    const createStatements = getAllCreateStatements();
-    for (const statement of createStatements) {
+    // Apply performance PRAGMAs for bulk loading
+    onProgress?.({
+      phase: 'creating_schema',
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: 0,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 2,
+      message: 'Optimizing database for bulk import',
+    });
+
+    this.db.run('PRAGMA synchronous = OFF');        // Skip fsync for performance
+    this.db.run('PRAGMA journal_mode = MEMORY');    // Keep journal in memory
+    this.db.run('PRAGMA temp_store = MEMORY');      // Temp tables in memory
+    this.db.run('PRAGMA cache_size = -64000');      // 64MB cache
+    this.db.run('PRAGMA locking_mode = EXCLUSIVE'); // No locking overhead
+
+    // Create GTFS tables (without indexes)
+    onProgress?.({
+      phase: 'creating_schema',
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: 0,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 5,
+      message: 'Creating database tables',
+    });
+
+    const createTableStatements = getAllCreateTableStatements();
+    for (const statement of createTableStatements) {
       this.db.run(statement);
     }
 
@@ -129,8 +196,79 @@ export class GtfsSqlJs {
     createRealtimeTables(this.db);
 
     // Load GTFS data
+    onProgress?.({
+      phase: 'extracting',
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: 0,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 10,
+      message: 'Extracting GTFS ZIP file',
+    });
+
     const files = await loadGTFSZip(zipPath);
-    await loadGTFSData(this.db, files, options.skipFiles);
+
+    onProgress?.({
+      phase: 'inserting_data',
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: Object.keys(files).length,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 15,
+      message: 'Starting data import',
+    });
+
+    await loadGTFSData(this.db, files, options.skipFiles, onProgress);
+
+    // Create indexes after data is loaded
+    onProgress?.({
+      phase: 'creating_indexes',
+      currentFile: null,
+      filesCompleted: Object.keys(files).length,
+      totalFiles: Object.keys(files).length,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 85,
+      message: 'Creating database indexes',
+    });
+
+    const createIndexStatements = getAllCreateIndexStatements();
+    let indexCount = 0;
+    for (const statement of createIndexStatements) {
+      this.db.run(statement);
+      indexCount++;
+      const indexProgress = 85 + Math.floor((indexCount / createIndexStatements.length) * 10);
+      onProgress?.({
+        phase: 'creating_indexes',
+        currentFile: null,
+        filesCompleted: Object.keys(files).length,
+        totalFiles: Object.keys(files).length,
+        rowsProcessed: 0,
+        totalRows: 0,
+        percentComplete: indexProgress,
+        message: `Creating indexes (${indexCount}/${createIndexStatements.length})`,
+      });
+    }
+
+    // Run ANALYZE to update query planner statistics
+    onProgress?.({
+      phase: 'analyzing',
+      currentFile: null,
+      filesCompleted: Object.keys(files).length,
+      totalFiles: Object.keys(files).length,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 95,
+      message: 'Optimizing query performance',
+    });
+
+    this.db.run('ANALYZE');
+
+    // Restore normal SQLite settings
+    this.db.run('PRAGMA synchronous = FULL');
+    this.db.run('PRAGMA locking_mode = NORMAL');
 
     // Set RT configuration
     if (options.realtimeFeedUrls) {
@@ -139,6 +277,17 @@ export class GtfsSqlJs {
     if (options.stalenessThreshold !== undefined) {
       this.stalenessThreshold = options.stalenessThreshold;
     }
+
+    onProgress?.({
+      phase: 'complete',
+      currentFile: null,
+      filesCompleted: Object.keys(files).length,
+      totalFiles: Object.keys(files).length,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 100,
+      message: 'GTFS data loaded successfully',
+    });
   }
 
   /**

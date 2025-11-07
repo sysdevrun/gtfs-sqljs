@@ -318,10 +318,16 @@ function generateCreateIndexSQL(schema) {
     return `CREATE ${unique}INDEX IF NOT EXISTS ${idx.name} ON ${schema.name} (${columns})`;
   });
 }
-function getAllCreateStatements() {
+function getAllCreateTableStatements() {
   const statements = [];
   for (const schema of GTFS_SCHEMA) {
     statements.push(generateCreateTableSQL(schema));
+  }
+  return statements;
+}
+function getAllCreateIndexStatements() {
+  const statements = [];
+  for (const schema of GTFS_SCHEMA) {
     statements.push(...generateCreateIndexSQL(schema));
   }
   return statements;
@@ -400,74 +406,150 @@ function parseCSV(text) {
   const rows = result.data;
   return { headers, rows };
 }
-function convertRowTypes(row, columnTypes) {
-  const result = {};
-  for (const [key, type] of Object.entries(columnTypes)) {
-    const value = row[key];
-    if (value === void 0 || value === null || value === "") {
-      result[key] = null;
-      continue;
-    }
-    if (type === "INTEGER") {
-      const parsed = parseInt(value, 10);
-      result[key] = isNaN(parsed) ? null : parsed;
-    } else if (type === "REAL") {
-      const parsed = parseFloat(value);
-      result[key] = isNaN(parsed) ? null : parsed;
-    } else {
-      result[key] = value;
-    }
-  }
-  return result;
-}
 
 // src/loaders/data-loader.ts
-async function loadGTFSData(db, files, skipFiles) {
+async function loadGTFSData(db, files, skipFiles, onProgress) {
   const fileToSchema = /* @__PURE__ */ new Map();
   for (const schema of GTFS_SCHEMA) {
     fileToSchema.set(`${schema.name}.txt`, schema);
   }
   const skipSet = new Set(skipFiles?.map((f) => f.toLowerCase()) || []);
+  const filePriority = [
+    "agency.txt",
+    "feed_info.txt",
+    "attributions.txt",
+    "levels.txt",
+    "routes.txt",
+    "calendar.txt",
+    "calendar_dates.txt",
+    "fare_attributes.txt",
+    "fare_rules.txt",
+    "stops.txt",
+    "pathways.txt",
+    "transfers.txt",
+    "trips.txt",
+    "frequencies.txt",
+    "shapes.txt",
+    "stop_times.txt"
+    // Largest file - process last
+  ];
+  const sortedFiles = [];
+  for (const priorityFile of filePriority) {
+    if (files[priorityFile]) {
+      sortedFiles.push([priorityFile, files[priorityFile]]);
+    }
+  }
   for (const [fileName, content] of Object.entries(files)) {
+    if (!filePriority.includes(fileName)) {
+      sortedFiles.push([fileName, content]);
+    }
+  }
+  let totalRows = 0;
+  const fileRowCounts = /* @__PURE__ */ new Map();
+  for (const [fileName, content] of sortedFiles) {
+    const schema = fileToSchema.get(fileName);
+    if (schema && !skipSet.has(fileName.toLowerCase())) {
+      const { rows } = parseCSV(content);
+      fileRowCounts.set(fileName, rows.length);
+      totalRows += rows.length;
+    }
+  }
+  let rowsProcessed = 0;
+  let filesCompleted = 0;
+  for (const [fileName, content] of sortedFiles) {
     const schema = fileToSchema.get(fileName);
     if (!schema) {
       continue;
     }
     if (skipSet.has(fileName.toLowerCase())) {
       console.log(`Skipping import of ${fileName} (table ${schema.name} created but empty)`);
+      filesCompleted++;
       continue;
     }
-    await loadTableData(db, schema, content);
+    const fileRows = fileRowCounts.get(fileName) || 0;
+    onProgress?.({
+      phase: "inserting_data",
+      currentFile: fileName,
+      filesCompleted,
+      totalFiles: sortedFiles.length,
+      rowsProcessed,
+      totalRows,
+      percentComplete: 15 + Math.floor(rowsProcessed / totalRows * 70),
+      message: `Loading ${fileName} (${fileRows.toLocaleString()} rows)`
+    });
+    await loadTableData(db, schema, content, (processedInFile) => {
+      const currentProgress = rowsProcessed + processedInFile;
+      onProgress?.({
+        phase: "inserting_data",
+        currentFile: fileName,
+        filesCompleted,
+        totalFiles: sortedFiles.length,
+        rowsProcessed: currentProgress,
+        totalRows,
+        percentComplete: 15 + Math.floor(currentProgress / totalRows * 70),
+        message: `Loading ${fileName} (${processedInFile.toLocaleString()}/${fileRows.toLocaleString()} rows)`
+      });
+    });
+    rowsProcessed += fileRows;
+    filesCompleted++;
+    onProgress?.({
+      phase: "inserting_data",
+      currentFile: null,
+      filesCompleted,
+      totalFiles: sortedFiles.length,
+      rowsProcessed,
+      totalRows,
+      percentComplete: 15 + Math.floor(rowsProcessed / totalRows * 70),
+      message: `Completed ${fileName}`
+    });
   }
 }
-async function loadTableData(db, schema, csvContent) {
+async function loadTableData(db, schema, csvContent, onProgress) {
   const { headers, rows } = parseCSV(csvContent);
   if (rows.length === 0) {
     return;
   }
-  const columnTypes = {};
-  for (const col of schema.columns) {
-    columnTypes[col.name] = col.type;
-  }
   const columns = headers.filter((h) => schema.columns.some((c) => c.name === h));
-  const placeholders = columns.map(() => "?").join(", ");
-  const insertSQL = `INSERT INTO ${schema.name} (${columns.join(", ")}) VALUES (${placeholders})`;
-  const stmt = db.prepare(insertSQL);
-  for (const row of rows) {
-    const typedRow = convertRowTypes(row, columnTypes);
-    const values = columns.map((col) => {
-      const value = typedRow[col];
-      return value === null || value === void 0 ? null : value;
-    });
-    try {
-      stmt.run(values);
-    } catch (error) {
-      console.error(`Error inserting row into ${schema.name}:`, error);
-      console.error("Row data:", row);
-      throw error;
-    }
+  if (columns.length === 0) {
+    return;
   }
-  stmt.free();
+  const BATCH_SIZE = 1e3;
+  let rowsProcessed = 0;
+  db.run("BEGIN TRANSACTION");
+  try {
+    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
+      const batchRows = rows.slice(i, Math.min(i + BATCH_SIZE, rows.length));
+      const placeholders = batchRows.map(() => `(${columns.map(() => "?").join(", ")})`).join(", ");
+      const insertSQL = `INSERT INTO ${schema.name} (${columns.join(", ")}) VALUES ${placeholders}`;
+      const allValues = [];
+      for (const row of batchRows) {
+        for (const col of columns) {
+          const value = row[col];
+          allValues.push(value === null || value === void 0 || value === "" ? null : value);
+        }
+      }
+      const stmt = db.prepare(insertSQL);
+      try {
+        stmt.run(allValues);
+      } catch (error) {
+        console.error(`Error inserting batch into ${schema.name}:`, error);
+        console.error("Batch size:", batchRows.length);
+        throw error;
+      } finally {
+        stmt.free();
+      }
+      rowsProcessed += batchRows.length;
+      onProgress?.(rowsProcessed);
+    }
+    db.run("COMMIT");
+  } catch (error) {
+    try {
+      db.run("ROLLBACK");
+    } catch (rollbackError) {
+      console.error("Error rolling back transaction:", rollbackError);
+    }
+    throw error;
+  }
 }
 
 // src/schema/gtfs-rt-schema.ts
@@ -813,12 +895,8 @@ function insertAlerts(db, alerts, timestamp) {
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
   for (const alert of alerts) {
-    const activePeriod = alert.activePeriod || alert.active_period || [];
-    const informedEntity = alert.informedEntity || alert.informed_entity || [];
-    const headerText = alert.headerText || alert.header_text;
-    const descriptionText = alert.descriptionText || alert.description_text;
-    const activePeriodSnake = convertKeysToSnakeCase(activePeriod);
-    const informedEntitySnake = convertKeysToSnakeCase(informedEntity);
+    const activePeriodSnake = convertKeysToSnakeCase(alert.activePeriod || []);
+    const informedEntitySnake = convertKeysToSnakeCase(alert.informedEntity || []);
     stmt.run([
       alert.id,
       JSON.stringify(activePeriodSnake),
@@ -826,8 +904,8 @@ function insertAlerts(db, alerts, timestamp) {
       alert.cause || null,
       alert.effect || null,
       parseTranslatedString(alert.url),
-      parseTranslatedString(headerText),
-      parseTranslatedString(descriptionText),
+      parseTranslatedString(alert.headerText),
+      parseTranslatedString(alert.descriptionText),
       timestamp
     ]);
   }
@@ -844,34 +922,24 @@ function insertVehiclePositions(db, positions, timestamp) {
   `);
   for (const vp of positions) {
     const trip = vp.trip;
-    if (!trip || !(trip.tripId || trip.trip_id)) continue;
-    const tripId = trip.tripId || trip.trip_id;
-    const routeId = trip.routeId || trip.route_id;
-    const vehicleId = vp.vehicle?.id;
-    const vehicleLabel = vp.vehicle?.label;
-    const vehicleLicensePlate = vp.vehicle?.licensePlate || vp.vehicle?.license_plate;
-    const currentStopSequence = vp.currentStopSequence || vp.current_stop_sequence;
-    const stopId = vp.stopId || vp.stop_id;
-    const currentStatus = vp.currentStatus || vp.current_status;
-    const congestionLevel = vp.congestionLevel || vp.congestion_level;
-    const occupancyStatus = vp.occupancyStatus || vp.occupancy_status;
+    if (!trip || !trip.tripId) continue;
     stmt.run([
-      tripId,
-      routeId || null,
-      vehicleId || null,
-      vehicleLabel || null,
-      vehicleLicensePlate || null,
+      trip.tripId,
+      trip.routeId || null,
+      vp.vehicle?.id || null,
+      vp.vehicle?.label || null,
+      vp.vehicle?.licensePlate || null,
       vp.position?.latitude || null,
       vp.position?.longitude || null,
       vp.position?.bearing || null,
       vp.position?.odometer || null,
       vp.position?.speed || null,
-      currentStopSequence || null,
-      stopId || null,
-      currentStatus || null,
+      vp.currentStopSequence || null,
+      vp.stopId || null,
+      vp.currentStatus || null,
       vp.timestamp || null,
-      congestionLevel || null,
-      occupancyStatus || null,
+      vp.congestionLevel || null,
+      vp.occupancyStatus || null,
       timestamp
     ]);
   }
@@ -894,41 +962,31 @@ function insertTripUpdates(db, updates, timestamp) {
   `);
   for (const tu of updates) {
     const trip = tu.trip;
-    if (!trip || !(trip.tripId || trip.trip_id)) continue;
-    const tripId = trip.tripId || trip.trip_id;
-    const routeId = trip.routeId || trip.route_id;
-    const vehicleId = tu.vehicle?.id;
-    const vehicleLabel = tu.vehicle?.label;
-    const vehicleLicensePlate = tu.vehicle?.licensePlate || tu.vehicle?.license_plate;
-    const scheduleRelationship = trip.scheduleRelationship || trip.schedule_relationship;
-    const stopTimeUpdate = tu.stopTimeUpdate || tu.stop_time_update;
+    if (!trip || !trip.tripId) continue;
     tripStmt.run([
-      tripId,
-      routeId || null,
-      vehicleId || null,
-      vehicleLabel || null,
-      vehicleLicensePlate || null,
+      trip.tripId,
+      trip.routeId || null,
+      tu.vehicle?.id || null,
+      tu.vehicle?.label || null,
+      tu.vehicle?.licensePlate || null,
       tu.timestamp || null,
       tu.delay || null,
-      scheduleRelationship || null,
+      trip.scheduleRelationship || null,
       timestamp
     ]);
-    if (stopTimeUpdate) {
-      for (const stu of stopTimeUpdate) {
-        const stopSequence = stu.stopSequence || stu.stop_sequence;
-        const stopId = stu.stopId || stu.stop_id;
-        const scheduleRel = stu.scheduleRelationship || stu.schedule_relationship;
+    if (tu.stopTimeUpdate) {
+      for (const stu of tu.stopTimeUpdate) {
         stopTimeStmt.run([
-          tripId,
-          stopSequence || null,
-          stopId || null,
+          trip.tripId,
+          stu.stopSequence || null,
+          stu.stopId || null,
           stu.arrival?.delay || null,
           stu.arrival?.time || null,
           stu.arrival?.uncertainty || null,
           stu.departure?.delay || null,
           stu.departure?.time || null,
           stu.departure?.uncertainty || null,
-          scheduleRel || null,
+          stu.scheduleRelationship || null,
           timestamp
         ]);
       }
@@ -1950,21 +2008,127 @@ var GtfsSqlJs = class _GtfsSqlJs {
    * Initialize from ZIP file
    */
   async initFromZip(zipPath, options) {
+    const onProgress = options.onProgress;
+    onProgress?.({
+      phase: "downloading",
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: 0,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 0,
+      message: "Initializing database engine"
+    });
     this.SQL = options.SQL || await (0, import_sql.default)(options.locateFile ? { locateFile: options.locateFile } : {});
     this.db = new this.SQL.Database();
-    const createStatements = getAllCreateStatements();
-    for (const statement of createStatements) {
+    onProgress?.({
+      phase: "creating_schema",
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: 0,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 2,
+      message: "Optimizing database for bulk import"
+    });
+    this.db.run("PRAGMA synchronous = OFF");
+    this.db.run("PRAGMA journal_mode = MEMORY");
+    this.db.run("PRAGMA temp_store = MEMORY");
+    this.db.run("PRAGMA cache_size = -64000");
+    this.db.run("PRAGMA locking_mode = EXCLUSIVE");
+    onProgress?.({
+      phase: "creating_schema",
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: 0,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 5,
+      message: "Creating database tables"
+    });
+    const createTableStatements = getAllCreateTableStatements();
+    for (const statement of createTableStatements) {
       this.db.run(statement);
     }
     createRealtimeTables(this.db);
+    onProgress?.({
+      phase: "extracting",
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: 0,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 10,
+      message: "Extracting GTFS ZIP file"
+    });
     const files = await loadGTFSZip(zipPath);
-    await loadGTFSData(this.db, files, options.skipFiles);
+    onProgress?.({
+      phase: "inserting_data",
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: Object.keys(files).length,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 15,
+      message: "Starting data import"
+    });
+    await loadGTFSData(this.db, files, options.skipFiles, onProgress);
+    onProgress?.({
+      phase: "creating_indexes",
+      currentFile: null,
+      filesCompleted: Object.keys(files).length,
+      totalFiles: Object.keys(files).length,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 85,
+      message: "Creating database indexes"
+    });
+    const createIndexStatements = getAllCreateIndexStatements();
+    let indexCount = 0;
+    for (const statement of createIndexStatements) {
+      this.db.run(statement);
+      indexCount++;
+      const indexProgress = 85 + Math.floor(indexCount / createIndexStatements.length * 10);
+      onProgress?.({
+        phase: "creating_indexes",
+        currentFile: null,
+        filesCompleted: Object.keys(files).length,
+        totalFiles: Object.keys(files).length,
+        rowsProcessed: 0,
+        totalRows: 0,
+        percentComplete: indexProgress,
+        message: `Creating indexes (${indexCount}/${createIndexStatements.length})`
+      });
+    }
+    onProgress?.({
+      phase: "analyzing",
+      currentFile: null,
+      filesCompleted: Object.keys(files).length,
+      totalFiles: Object.keys(files).length,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 95,
+      message: "Optimizing query performance"
+    });
+    this.db.run("ANALYZE");
+    this.db.run("PRAGMA synchronous = FULL");
+    this.db.run("PRAGMA locking_mode = NORMAL");
     if (options.realtimeFeedUrls) {
       this.realtimeFeedUrls = options.realtimeFeedUrls;
     }
     if (options.stalenessThreshold !== void 0) {
       this.stalenessThreshold = options.stalenessThreshold;
     }
+    onProgress?.({
+      phase: "complete",
+      currentFile: null,
+      filesCompleted: Object.keys(files).length,
+      totalFiles: Object.keys(files).length,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 100,
+      message: "GTFS data loaded successfully"
+    });
   }
   /**
    * Initialize from existing database
