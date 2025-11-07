@@ -262,11 +262,13 @@ The loading process goes through these phases:
 
 1. **`downloading`** - Initializing database engine (0-2%)
 2. **`creating_schema`** - Creating database tables (2-10%)
-3. **`extracting`** - Extracting GTFS ZIP file (10-15%)
+3. **`extracting`** - Loading and extracting GTFS ZIP file (10-15%)
 4. **`inserting_data`** - Importing data from CSV files (15-85%)
 5. **`creating_indexes`** - Building database indexes (85-95%)
 6. **`analyzing`** - Optimizing query performance (95-99%)
 7. **`complete`** - Load complete (100%)
+
+**Note:** If `realtimeFeedUrls` are configured, GTFS-RT data will be fetched automatically after the load completes (but won't affect the progress percentage).
 
 #### Web Worker Example
 
@@ -531,7 +533,7 @@ This library supports GTFS Realtime data (alerts, trip updates, and vehicle posi
 #### Loading Realtime Data
 
 ```typescript
-// Configure RT feed URLs (optional - can also pass directly to fetchRealtimeData)
+// Configure RT feed URLs - data will be fetched automatically after GTFS load
 const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
   realtimeFeedUrls: [
     'https://example.com/gtfs-rt/alerts',
@@ -540,8 +542,9 @@ const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
   ],
   stalenessThreshold: 120 // seconds (default: 120)
 });
+// RT data is already loaded and ready to use!
 
-// Fetch RT data (uses configured URLs or pass custom URLs)
+// Or manually fetch RT data later (uses configured URLs or pass custom URLs)
 await gtfs.fetchRealtimeData();
 
 // Or fetch from specific URLs

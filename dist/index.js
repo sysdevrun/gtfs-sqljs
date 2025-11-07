@@ -2059,7 +2059,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
       rowsProcessed: 0,
       totalRows: 0,
       percentComplete: 10,
-      message: "Extracting GTFS ZIP file"
+      message: "Loading and extracting GTFS ZIP file"
     });
     const files = await loadGTFSZip(zipPath);
     onProgress?.({
@@ -2129,6 +2129,13 @@ var GtfsSqlJs = class _GtfsSqlJs {
       percentComplete: 100,
       message: "GTFS data loaded successfully"
     });
+    if (this.realtimeFeedUrls.length > 0) {
+      try {
+        await loadRealtimeData(this.db, this.realtimeFeedUrls);
+      } catch (error) {
+        console.warn("Failed to fetch initial realtime data:", error);
+      }
+    }
   }
   /**
    * Initialize from existing database
