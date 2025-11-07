@@ -2472,7 +2472,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
       cache = userCache;
     } else {
       try {
-        if (typeof window !== "undefined" && typeof indexedDB !== "undefined") {
+        if (typeof indexedDB !== "undefined") {
           const { IndexedDBCacheStore: IndexedDBCacheStore2 } = await Promise.resolve().then(() => (init_indexeddb_store(), indexeddb_store_exports));
           cache = new IndexedDBCacheStore2();
         } else if (typeof process !== "undefined" && process.versions?.node) {
@@ -3089,7 +3089,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
    */
   static async getDefaultCacheStore() {
     try {
-      if (typeof window !== "undefined" && typeof indexedDB !== "undefined") {
+      if (typeof indexedDB !== "undefined") {
         const { IndexedDBCacheStore: IndexedDBCacheStore2 } = await Promise.resolve().then(() => (init_indexeddb_store(), indexeddb_store_exports));
         return new IndexedDBCacheStore2();
       } else if (typeof process !== "undefined" && process.versions?.node) {

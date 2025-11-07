@@ -193,8 +193,8 @@ export class GtfsSqlJs {
     } else {
       // Auto-detect environment and create default cache store
       try {
-        if (typeof window !== 'undefined' && typeof indexedDB !== 'undefined') {
-          // Browser environment - use IndexedDB
+        if (typeof indexedDB !== 'undefined') {
+          // Browser/Web Worker environment - use IndexedDB
           const { IndexedDBCacheStore } = await import('./cache/indexeddb-store');
           cache = new IndexedDBCacheStore();
         } else if (typeof process !== 'undefined' && process.versions?.node) {
@@ -969,8 +969,8 @@ export class GtfsSqlJs {
    */
   private static async getDefaultCacheStore(): Promise<CacheStore | null> {
     try {
-      if (typeof window !== 'undefined' && typeof indexedDB !== 'undefined') {
-        // Browser environment - use IndexedDB
+      if (typeof indexedDB !== 'undefined') {
+        // Browser/Web Worker environment - use IndexedDB
         const { IndexedDBCacheStore } = await import('./cache/indexeddb-store');
         return new IndexedDBCacheStore();
       } else if (typeof process !== 'undefined' && process.versions?.node) {
