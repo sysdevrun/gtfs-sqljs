@@ -21,6 +21,8 @@ Try the live demo to explore GTFS data, view routes with colors, and see trip sc
 
 ### GTFS Static Data
 - ✅ Load GTFS data from ZIP files (URL or local path)
+- ✅ **High-performance loading** - 7-8x faster than previous versions
+- ✅ **Progress tracking** - Real-time progress callbacks (0-100%)
 - ✅ Skip importing specific files (e.g., shapes.txt) to reduce memory usage
 - ✅ Load existing SQLite databases
 - ✅ Export databases to ArrayBuffer for persistence
@@ -31,6 +33,7 @@ Try the live demo to explore GTFS data, view routes with colors, and see trip sc
 - ✅ Efficient querying with indexed SQLite database
 - ✅ Proper handling of GTFS required/optional fields
 - ✅ Active service detection based on calendar/calendar_dates
+- ✅ Optimized bulk loading with transactions and batch inserts
 
 ### GTFS Realtime Support
 - ✅ Load GTFS-RT data from protobuf feeds (URLs or local files)
@@ -231,6 +234,94 @@ import { GtfsSqlJs } from 'gtfs-sqljs';
 // Load from ArrayBuffer
 const dbBuffer = await fetch('https://example.com/gtfs.db').then(r => r.arrayBuffer());
 const gtfs = await GtfsSqlJs.fromDatabase(dbBuffer);
+```
+
+### Progress Tracking
+
+Track loading progress with a callback function - perfect for displaying progress bars or updating UI:
+
+```typescript
+import { GtfsSqlJs, type ProgressInfo } from 'gtfs-sqljs';
+
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  onProgress: (progress: ProgressInfo) => {
+    console.log(`${progress.percentComplete}% - ${progress.message}`);
+
+    // Progress information available:
+    console.log('Phase:', progress.phase);              // Current phase
+    console.log('File:', progress.currentFile);         // Current file being processed
+    console.log('Files:', progress.filesCompleted, '/', progress.totalFiles);
+    console.log('Rows:', progress.rowsProcessed, '/', progress.totalRows);
+  }
+});
+```
+
+#### Progress Phases
+
+The loading process goes through these phases:
+
+1. **`downloading`** - Initializing database engine (0-2%)
+2. **`creating_schema`** - Creating database tables (2-10%)
+3. **`extracting`** - Extracting GTFS ZIP file (10-15%)
+4. **`inserting_data`** - Importing data from CSV files (15-85%)
+5. **`creating_indexes`** - Building database indexes (85-95%)
+6. **`analyzing`** - Optimizing query performance (95-99%)
+7. **`complete`** - Load complete (100%)
+
+#### Web Worker Example
+
+The progress callback is especially useful for web workers:
+
+```typescript
+// In your web worker
+import { GtfsSqlJs } from 'gtfs-sqljs';
+
+self.onmessage = async (event) => {
+  if (event.data.type === 'load') {
+    const gtfs = await GtfsSqlJs.fromZip(event.data.url, {
+      onProgress: (progress) => {
+        // Send progress updates to main thread
+        self.postMessage({
+          type: 'progress',
+          data: progress
+        });
+      }
+    });
+
+    self.postMessage({ type: 'complete' });
+  }
+};
+```
+
+```typescript
+// In your main thread
+const worker = new Worker('gtfs-worker.js');
+
+worker.onmessage = (event) => {
+  if (event.data.type === 'progress') {
+    const progress = event.data.data;
+    updateProgressBar(progress.percentComplete);
+    updateStatusText(progress.message);
+  }
+};
+
+worker.postMessage({ type: 'load', url: 'https://example.com/gtfs.zip' });
+```
+
+#### ProgressInfo Type
+
+```typescript
+interface ProgressInfo {
+  phase: 'downloading' | 'extracting' | 'creating_schema' | 'inserting_data' |
+         'creating_indexes' | 'analyzing' | 'complete';
+  currentFile: string | null;        // e.g., "stop_times.txt"
+  filesCompleted: number;            // Files processed so far
+  totalFiles: number;                // Total number of files
+  rowsProcessed: number;             // Rows imported so far
+  totalRows: number;                 // Total rows to import
+  percentComplete: number;           // 0-100
+  message: string;                   // Human-readable status message
+}
 ```
 
 ### Querying Data
@@ -743,7 +834,7 @@ All methods support flexible filtering with both single values and arrays:
 
 ## TypeScript Support
 
-This library is written in TypeScript and provides full type definitions for all GTFS entities, filter options, and GTFS-RT types:
+This library is written in TypeScript and provides full type definitions for all GTFS entities, filter options, GTFS-RT types, and progress tracking:
 
 ```typescript
 import type {
@@ -754,7 +845,9 @@ import type {
   Alert, VehiclePosition, TripWithRealtime, StopTimeWithRealtime,
   AlertFilters, VehiclePositionFilters,
   // GTFS-RT enums
-  AlertCause, AlertEffect, ScheduleRelationship
+  AlertCause, AlertEffect, ScheduleRelationship,
+  // Progress tracking types
+  ProgressInfo, ProgressCallback
 } from 'gtfs-sqljs';
 
 const stop: Stop = gtfs.getStopById('STOP_123')!;
@@ -770,6 +863,11 @@ const trips = gtfs.getTrips(filters);
 // RT types
 const alerts: Alert[] = gtfs.getAlerts({ activeOnly: true });
 const vehicles: VehiclePosition[] = gtfs.getVehiclePositions();
+
+// Progress callback with types
+const handleProgress: ProgressCallback = (progress) => {
+  console.log(`${progress.percentComplete}% - ${progress.message}`);
+};
 ```
 
 ## GTFS Specification
