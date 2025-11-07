@@ -165,7 +165,9 @@ export interface TripUpdate {
 
 export interface StopTimeRealtime {
   arrival_delay?: number;      // seconds
+  arrival_time?: number;       // UNIX timestamp (absolute time)
   departure_delay?: number;    // seconds
+  departure_time?: number;     // UNIX timestamp (absolute time)
   schedule_relationship?: ScheduleRelationship;
 }
 

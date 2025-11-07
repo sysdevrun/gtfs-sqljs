@@ -7,12 +7,12 @@ import type { StopTime } from '../types/gtfs';
 import type { StopTimeRealtime } from '../types/gtfs-rt';
 
 export interface StopTimeFilters {
-  tripId?: string;
-  stopId?: string;
-  routeId?: string;
-  serviceIds?: string[];
-  directionId?: number;
-  agencyId?: string;
+  tripId?: string | string[];
+  stopId?: string | string[];
+  routeId?: string | string[];
+  serviceIds?: string | string[];
+  directionId?: number | number[];
+  agencyId?: string | string[];
   includeRealtime?: boolean;
   limit?: number;
 }
@@ -39,7 +39,7 @@ function mergeRealtimeData(
   const placeholders = tripIds.map(() => '?').join(', ');
   const stmt = db.prepare(`
     SELECT trip_id, stop_sequence, stop_id,
-           arrival_delay, departure_delay, schedule_relationship
+           arrival_delay, arrival_time, departure_delay, departure_time, schedule_relationship
     FROM rt_stop_time_updates
     WHERE trip_id IN (${placeholders})
       AND rt_last_updated >= ?
@@ -53,7 +53,9 @@ function mergeRealtimeData(
     const key = `${row.trip_id}_${row.stop_sequence}`;
     rtMap.set(key, {
       arrival_delay: row.arrival_delay !== null ? Number(row.arrival_delay) : undefined,
+      arrival_time: row.arrival_time !== null ? Number(row.arrival_time) : undefined,
       departure_delay: row.departure_delay !== null ? Number(row.departure_delay) : undefined,
+      departure_time: row.departure_time !== null ? Number(row.departure_time) : undefined,
       schedule_relationship: row.schedule_relationship !== null ? Number(row.schedule_relationship) : undefined
     });
   }
@@ -73,6 +75,7 @@ function mergeRealtimeData(
 
 /**
  * Get stop times with optional filters
+ * - Filters support both single values and arrays
  */
 export function getStopTimes(
   db: Database,
@@ -90,34 +93,57 @@ export function getStopTimes(
   const params: (string | number)[] = [];
 
   if (tripId) {
-    conditions.push(needsTripsJoin ? 'st.trip_id = ?' : 'trip_id = ?');
-    params.push(tripId);
+    const tripIds = Array.isArray(tripId) ? tripId : [tripId];
+    if (tripIds.length > 0) {
+      const placeholders = tripIds.map(() => '?').join(', ');
+      conditions.push(needsTripsJoin ? `st.trip_id IN (${placeholders})` : `trip_id IN (${placeholders})`);
+      params.push(...tripIds);
+    }
   }
 
   if (stopId) {
-    conditions.push(needsTripsJoin ? 'st.stop_id = ?' : 'stop_id = ?');
-    params.push(stopId);
+    const stopIds = Array.isArray(stopId) ? stopId : [stopId];
+    if (stopIds.length > 0) {
+      const placeholders = stopIds.map(() => '?').join(', ');
+      conditions.push(needsTripsJoin ? `st.stop_id IN (${placeholders})` : `stop_id IN (${placeholders})`);
+      params.push(...stopIds);
+    }
   }
 
   if (routeId) {
-    conditions.push('t.route_id = ?');
-    params.push(routeId);
+    const routeIds = Array.isArray(routeId) ? routeId : [routeId];
+    if (routeIds.length > 0) {
+      const placeholders = routeIds.map(() => '?').join(', ');
+      conditions.push(`t.route_id IN (${placeholders})`);
+      params.push(...routeIds);
+    }
   }
 
-  if (serviceIds && serviceIds.length > 0) {
-    const placeholders = serviceIds.map(() => '?').join(', ');
-    conditions.push(`t.service_id IN (${placeholders})`);
-    params.push(...serviceIds);
+  if (serviceIds) {
+    const serviceIdArray = Array.isArray(serviceIds) ? serviceIds : [serviceIds];
+    if (serviceIdArray.length > 0) {
+      const placeholders = serviceIdArray.map(() => '?').join(', ');
+      conditions.push(`t.service_id IN (${placeholders})`);
+      params.push(...serviceIdArray);
+    }
   }
 
   if (directionId !== undefined) {
-    conditions.push('t.direction_id = ?');
-    params.push(directionId);
+    const directionIds = Array.isArray(directionId) ? directionId : [directionId];
+    if (directionIds.length > 0) {
+      const placeholders = directionIds.map(() => '?').join(', ');
+      conditions.push(`t.direction_id IN (${placeholders})`);
+      params.push(...directionIds);
+    }
   }
 
   if (agencyId) {
-    conditions.push('r.agency_id = ?');
-    params.push(agencyId);
+    const agencyIds = Array.isArray(agencyId) ? agencyId : [agencyId];
+    if (agencyIds.length > 0) {
+      const placeholders = agencyIds.map(() => '?').join(', ');
+      conditions.push(`r.agency_id IN (${placeholders})`);
+      params.push(...agencyIds);
+    }
   }
 
   // Build SQL query
@@ -160,118 +186,6 @@ export function getStopTimes(
     return mergeRealtimeData(stopTimes, db, stalenessThreshold);
   }
 
-  return stopTimes;
-}
-
-/**
- * Get stop times for a trip
- */
-export function getStopTimesByTrip(db: Database, tripId: string): StopTime[] {
-  const stmt = db.prepare('SELECT * FROM stop_times WHERE trip_id = ? ORDER BY stop_sequence');
-  stmt.bind([tripId]);
-
-  const stopTimes: StopTime[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stopTimes.push(rowToStopTime(row));
-  }
-
-  stmt.free();
-  return stopTimes;
-}
-
-/**
- * Get stop times for a stop
- */
-export function getStopTimesByStop(db: Database, stopId: string, limit = 100): StopTime[] {
-  const stmt = db.prepare(
-    'SELECT * FROM stop_times WHERE stop_id = ? ORDER BY arrival_time LIMIT ?'
-  );
-  stmt.bind([stopId, limit]);
-
-  const stopTimes: StopTime[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stopTimes.push(rowToStopTime(row));
-  }
-
-  stmt.free();
-  return stopTimes;
-}
-
-/**
- * Get stop times for a stop and specific trips (filtered by route/date)
- */
-export function getStopTimesByStopAndTrips(
-  db: Database,
-  stopId: string,
-  tripIds: string[]
-): StopTime[] {
-  if (tripIds.length === 0) {
-    return [];
-  }
-
-  const placeholders = tripIds.map(() => '?').join(', ');
-  const stmt = db.prepare(
-    `SELECT * FROM stop_times
-     WHERE stop_id = ? AND trip_id IN (${placeholders})
-     ORDER BY arrival_time`
-  );
-  stmt.bind([stopId, ...tripIds]);
-
-  const stopTimes: StopTime[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stopTimes.push(rowToStopTime(row));
-  }
-
-  stmt.free();
-  return stopTimes;
-}
-
-/**
- * Get stop times for a stop, route, and direction on a specific date
- */
-export function getStopTimesForStopRouteDirection(
-  db: Database,
-  stopId: string,
-  routeId: string,
-  serviceIds: string[],
-  directionId?: number
-): StopTime[] {
-  if (serviceIds.length === 0) {
-    return [];
-  }
-
-  const placeholders = serviceIds.map(() => '?').join(', ');
-
-  let sql = `
-    SELECT st.* FROM stop_times st
-    INNER JOIN trips t ON st.trip_id = t.trip_id
-    WHERE st.stop_id = ?
-    AND t.route_id = ?
-    AND t.service_id IN (${placeholders})
-  `;
-
-  const params: (string | number)[] = [stopId, routeId, ...serviceIds];
-
-  if (directionId !== undefined) {
-    sql += ' AND t.direction_id = ?';
-    params.push(directionId);
-  }
-
-  sql += ' ORDER BY st.arrival_time';
-
-  const stmt = db.prepare(sql);
-  stmt.bind(params);
-
-  const stopTimes: StopTime[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stopTimes.push(rowToStopTime(row));
-  }
-
-  stmt.free();
   return stopTimes;
 }
 

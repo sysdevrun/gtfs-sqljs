@@ -8,11 +8,11 @@ import type { TripRealtime, VehiclePosition } from '../types/gtfs-rt';
 import { parseVehiclePosition } from './rt-vehicle-positions';
 
 export interface TripFilters {
-  tripId?: string;
-  routeId?: string;
-  serviceIds?: string[];
-  directionId?: number;
-  agencyId?: string;
+  tripId?: string | string[];
+  routeId?: string | string[];
+  serviceIds?: string | string[];
+  directionId?: number | number[];
+  agencyId?: string | string[];
   includeRealtime?: boolean;
   limit?: number;
 }
@@ -93,6 +93,7 @@ function mergeRealtimeData(
 
 /**
  * Get trips with optional filters
+ * - Filters support both single values and arrays
  */
 export function getTrips(
   db: Database,
@@ -109,29 +110,48 @@ export function getTrips(
   const params: (string | number)[] = [];
 
   if (tripId) {
-    conditions.push(needsRoutesJoin ? 't.trip_id = ?' : 'trip_id = ?');
-    params.push(tripId);
+    const tripIds = Array.isArray(tripId) ? tripId : [tripId];
+    if (tripIds.length > 0) {
+      const placeholders = tripIds.map(() => '?').join(', ');
+      conditions.push(needsRoutesJoin ? `t.trip_id IN (${placeholders})` : `trip_id IN (${placeholders})`);
+      params.push(...tripIds);
+    }
   }
 
   if (routeId) {
-    conditions.push(needsRoutesJoin ? 't.route_id = ?' : 'route_id = ?');
-    params.push(routeId);
+    const routeIds = Array.isArray(routeId) ? routeId : [routeId];
+    if (routeIds.length > 0) {
+      const placeholders = routeIds.map(() => '?').join(', ');
+      conditions.push(needsRoutesJoin ? `t.route_id IN (${placeholders})` : `route_id IN (${placeholders})`);
+      params.push(...routeIds);
+    }
   }
 
-  if (serviceIds && serviceIds.length > 0) {
-    const placeholders = serviceIds.map(() => '?').join(', ');
-    conditions.push(needsRoutesJoin ? `t.service_id IN (${placeholders})` : `service_id IN (${placeholders})`);
-    params.push(...serviceIds);
+  if (serviceIds) {
+    const serviceIdArray = Array.isArray(serviceIds) ? serviceIds : [serviceIds];
+    if (serviceIdArray.length > 0) {
+      const placeholders = serviceIdArray.map(() => '?').join(', ');
+      conditions.push(needsRoutesJoin ? `t.service_id IN (${placeholders})` : `service_id IN (${placeholders})`);
+      params.push(...serviceIdArray);
+    }
   }
 
   if (directionId !== undefined) {
-    conditions.push(needsRoutesJoin ? 't.direction_id = ?' : 'direction_id = ?');
-    params.push(directionId);
+    const directionIds = Array.isArray(directionId) ? directionId : [directionId];
+    if (directionIds.length > 0) {
+      const placeholders = directionIds.map(() => '?').join(', ');
+      conditions.push(needsRoutesJoin ? `t.direction_id IN (${placeholders})` : `direction_id IN (${placeholders})`);
+      params.push(...directionIds);
+    }
   }
 
   if (agencyId) {
-    conditions.push('r.agency_id = ?');
-    params.push(agencyId);
+    const agencyIds = Array.isArray(agencyId) ? agencyId : [agencyId];
+    if (agencyIds.length > 0) {
+      const placeholders = agencyIds.map(() => '?').join(', ');
+      conditions.push(`r.agency_id IN (${placeholders})`);
+      params.push(...agencyIds);
+    }
   }
 
   // Build SQL query
@@ -165,119 +185,6 @@ export function getTrips(
     return mergeRealtimeData(trips, db, stalenessThreshold);
   }
 
-  return trips;
-}
-
-/**
- * Get a trip by its trip_id
- */
-export function getTripById(db: Database, tripId: string): Trip | null {
-  const stmt = db.prepare('SELECT * FROM trips WHERE trip_id = ?');
-  stmt.bind([tripId]);
-
-  if (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stmt.free();
-    return rowToTrip(row);
-  }
-
-  stmt.free();
-  return null;
-}
-
-/**
- * Get trips for a route
- */
-export function getTripsByRoute(db: Database, routeId: string): Trip[] {
-  const stmt = db.prepare('SELECT * FROM trips WHERE route_id = ?');
-  stmt.bind([routeId]);
-
-  const trips: Trip[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    trips.push(rowToTrip(row));
-  }
-
-  stmt.free();
-  return trips;
-}
-
-/**
- * Get trips for a route and service (active on a given date)
- */
-export function getTripsByRouteAndService(
-  db: Database,
-  routeId: string,
-  serviceIds: string[]
-): Trip[] {
-  if (serviceIds.length === 0) {
-    return [];
-  }
-
-  const placeholders = serviceIds.map(() => '?').join(', ');
-  const stmt = db.prepare(
-    `SELECT * FROM trips WHERE route_id = ? AND service_id IN (${placeholders})`
-  );
-  stmt.bind([routeId, ...serviceIds]);
-
-  const trips: Trip[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    trips.push(rowToTrip(row));
-  }
-
-  stmt.free();
-  return trips;
-}
-
-/**
- * Get trips for a route, service, and direction
- */
-export function getTripsByRouteServiceAndDirection(
-  db: Database,
-  routeId: string,
-  serviceIds: string[],
-  directionId: number
-): Trip[] {
-  if (serviceIds.length === 0) {
-    return [];
-  }
-
-  const placeholders = serviceIds.map(() => '?').join(', ');
-  const stmt = db.prepare(
-    `SELECT * FROM trips WHERE route_id = ? AND service_id IN (${placeholders}) AND direction_id = ?`
-  );
-  stmt.bind([routeId, ...serviceIds, directionId]);
-
-  const trips: Trip[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    trips.push(rowToTrip(row));
-  }
-
-  stmt.free();
-  return trips;
-}
-
-/**
- * Get all trips for a service (active on a given date)
- */
-export function getTripsByService(db: Database, serviceIds: string[]): Trip[] {
-  if (serviceIds.length === 0) {
-    return [];
-  }
-
-  const placeholders = serviceIds.map(() => '?').join(', ');
-  const stmt = db.prepare(`SELECT * FROM trips WHERE service_id IN (${placeholders})`);
-  stmt.bind(serviceIds);
-
-  const trips: Trip[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    trips.push(rowToTrip(row));
-  }
-
-  stmt.free();
   return trips;
 }
 

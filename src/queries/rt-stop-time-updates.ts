@@ -2,9 +2,9 @@ import type { Database } from 'sql.js';
 import type { StopTimeUpdate } from '../types/gtfs-rt';
 
 export interface StopTimeUpdateFilters {
-  tripId?: string;
-  stopId?: string;
-  stopSequence?: number;
+  tripId?: string | string[];
+  stopId?: string | string[];
+  stopSequence?: number | number[];
   limit?: number;
 }
 
@@ -59,6 +59,7 @@ function parseStopTimeUpdateWithMetadata(row: Record<string, unknown>): StopTime
 
 /**
  * Get stop time updates with optional filters
+ * - Filters support both single values and arrays
  */
 export function getStopTimeUpdates(
   db: Database,
@@ -72,20 +73,32 @@ export function getStopTimeUpdates(
 
   // Filter by trip_id
   if (tripId) {
-    conditions.push('trip_id = ?');
-    params.push(tripId);
+    const tripIds = Array.isArray(tripId) ? tripId : [tripId];
+    if (tripIds.length > 0) {
+      const placeholders = tripIds.map(() => '?').join(', ');
+      conditions.push(`trip_id IN (${placeholders})`);
+      params.push(...tripIds);
+    }
   }
 
   // Filter by stop_id
   if (stopId) {
-    conditions.push('stop_id = ?');
-    params.push(stopId);
+    const stopIds = Array.isArray(stopId) ? stopId : [stopId];
+    if (stopIds.length > 0) {
+      const placeholders = stopIds.map(() => '?').join(', ');
+      conditions.push(`stop_id IN (${placeholders})`);
+      params.push(...stopIds);
+    }
   }
 
   // Filter by stop_sequence
   if (stopSequence !== undefined) {
-    conditions.push('stop_sequence = ?');
-    params.push(stopSequence);
+    const stopSequences = Array.isArray(stopSequence) ? stopSequence : [stopSequence];
+    if (stopSequences.length > 0) {
+      const placeholders = stopSequences.map(() => '?').join(', ');
+      conditions.push(`stop_sequence IN (${placeholders})`);
+      params.push(...stopSequences);
+    }
   }
 
   // Staleness filter (always applied)
@@ -120,17 +133,6 @@ export function getStopTimeUpdates(
 
   stmt.free();
   return stopTimeUpdates;
-}
-
-/**
- * Get stop time updates for a specific trip
- */
-export function getStopTimeUpdatesByTripId(
-  db: Database,
-  tripId: string,
-  stalenessThreshold: number = 120
-): StopTimeUpdate[] {
-  return getStopTimeUpdates(db, { tripId }, stalenessThreshold);
 }
 
 /**

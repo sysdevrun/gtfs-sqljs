@@ -144,7 +144,9 @@ interface TripUpdate {
 }
 interface StopTimeRealtime {
     arrival_delay?: number;
+    arrival_time?: number;
     departure_delay?: number;
+    departure_time?: number;
     schedule_relationship?: ScheduleRelationship;
 }
 interface TripRealtime {
@@ -395,7 +397,7 @@ interface Attribution {
  */
 
 interface AgencyFilters {
-    agencyId?: string;
+    agencyId?: string | string[];
     limit?: number;
 }
 
@@ -404,10 +406,10 @@ interface AgencyFilters {
  */
 
 interface StopFilters {
-    stopId?: string;
-    stopCode?: string;
+    stopId?: string | string[];
+    stopCode?: string | string[];
     name?: string;
-    tripId?: string;
+    tripId?: string | string[];
     limit?: number;
 }
 
@@ -416,8 +418,8 @@ interface StopFilters {
  */
 
 interface RouteFilters {
-    routeId?: string;
-    agencyId?: string;
+    routeId?: string | string[];
+    agencyId?: string | string[];
     limit?: number;
 }
 
@@ -426,11 +428,11 @@ interface RouteFilters {
  */
 
 interface TripFilters {
-    tripId?: string;
-    routeId?: string;
-    serviceIds?: string[];
-    directionId?: number;
-    agencyId?: string;
+    tripId?: string | string[];
+    routeId?: string | string[];
+    serviceIds?: string | string[];
+    directionId?: number | number[];
+    agencyId?: string | string[];
     includeRealtime?: boolean;
     limit?: number;
 }
@@ -443,12 +445,12 @@ interface TripWithRealtime extends Trip {
  */
 
 interface StopTimeFilters {
-    tripId?: string;
-    stopId?: string;
-    routeId?: string;
-    serviceIds?: string[];
-    directionId?: number;
-    agencyId?: string;
+    tripId?: string | string[];
+    stopId?: string | string[];
+    routeId?: string | string[];
+    serviceIds?: string | string[];
+    directionId?: number | number[];
+    agencyId?: string | string[];
     includeRealtime?: boolean;
     limit?: number;
 }
@@ -464,9 +466,9 @@ interface TripUpdateFilters {
 }
 
 interface StopTimeUpdateFilters {
-    tripId?: string;
-    stopId?: string;
-    stopSequence?: number;
+    tripId?: string | string[];
+    stopId?: string | string[];
+    stopSequence?: number | number[];
     limit?: number;
 }
 /**
@@ -547,27 +549,18 @@ declare class GtfsSqlJs {
      */
     getDatabase(): Database;
     /**
-     * Get an agency by its agency_id
-     */
-    getAgencyById(agencyId: string): Agency | null;
-    /**
      * Get agencies with optional filters
+     * Pass agencyId filter to get a specific agency
      */
     getAgencies(filters?: AgencyFilters): Agency[];
     /**
-     * Get a stop by its stop_id
-     */
-    getStopById(stopId: string): Stop | null;
-    /**
      * Get stops with optional filters
+     * Pass stopId filter to get a specific stop
      */
     getStops(filters?: StopFilters): Stop[];
     /**
-     * Get a route by its route_id
-     */
-    getRouteById(routeId: string): Route | null;
-    /**
      * Get routes with optional filters
+     * Pass routeId filter to get a specific route
      */
     getRoutes(filters?: RouteFilters): Route[];
     /**
@@ -587,18 +580,15 @@ declare class GtfsSqlJs {
      */
     getCalendarDatesForDate(date: string): CalendarDate[];
     /**
-     * Get a trip by its trip_id
-     */
-    getTripById(tripId: string): Trip | null;
-    /**
      * Get trips with optional filters
+     * Pass tripId filter to get a specific trip
      *
      * @param filters - Optional filters
-     * @param filters.tripId - Filter by trip ID
-     * @param filters.routeId - Filter by route ID
+     * @param filters.tripId - Filter by trip ID (single value or array)
+     * @param filters.routeId - Filter by route ID (single value or array)
      * @param filters.date - Filter by date (YYYYMMDD format) - will get active services for that date
-     * @param filters.directionId - Filter by direction ID
-     * @param filters.agencyId - Filter by agency ID
+     * @param filters.directionId - Filter by direction ID (single value or array)
+     * @param filters.agencyId - Filter by agency ID (single value or array)
      * @param filters.limit - Limit number of results
      *
      * @example
@@ -608,24 +598,25 @@ declare class GtfsSqlJs {
      * @example
      * // Get all trips for a route going in one direction
      * const trips = gtfs.getTrips({ routeId: 'ROUTE_1', directionId: 0 });
+     *
+     * @example
+     * // Get a specific trip
+     * const trips = gtfs.getTrips({ tripId: 'TRIP_123' });
      */
     getTrips(filters?: TripFilters & {
         date?: string;
     }): Trip[];
     /**
-     * Get stop times for a trip (ordered by stop_sequence)
-     */
-    getStopTimesByTrip(tripId: string): StopTime[];
-    /**
      * Get stop times with optional filters
      *
      * @param filters - Optional filters
-     * @param filters.tripId - Filter by trip ID
-     * @param filters.stopId - Filter by stop ID
-     * @param filters.routeId - Filter by route ID
+     * @param filters.tripId - Filter by trip ID (single value or array)
+     * @param filters.stopId - Filter by stop ID (single value or array)
+     * @param filters.routeId - Filter by route ID (single value or array)
      * @param filters.date - Filter by date (YYYYMMDD format) - will get active services for that date
-     * @param filters.directionId - Filter by direction ID
-     * @param filters.agencyId - Filter by agency ID
+     * @param filters.directionId - Filter by direction ID (single value or array)
+     * @param filters.agencyId - Filter by agency ID (single value or array)
+     * @param filters.includeRealtime - Include realtime data (delay and time fields)
      * @param filters.limit - Limit number of results
      *
      * @example
@@ -638,6 +629,13 @@ declare class GtfsSqlJs {
      *   stopId: 'STOP_123',
      *   routeId: 'ROUTE_1',
      *   date: '20240115'
+     * });
+     *
+     * @example
+     * // Get stop times with realtime data
+     * const stopTimes = gtfs.getStopTimes({
+     *   tripId: 'TRIP_123',
+     *   includeRealtime: true
      * });
      */
     getStopTimes(filters?: StopTimeFilters & {
@@ -670,36 +668,24 @@ declare class GtfsSqlJs {
     clearRealtimeData(): void;
     /**
      * Get alerts with optional filters
+     * Pass alertId filter to get a specific alert
      */
     getAlerts(filters?: AlertFilters): Alert[];
     /**
-     * Get alert by ID
-     */
-    getAlertById(alertId: string): Alert | null;
-    /**
      * Get vehicle positions with optional filters
+     * Pass tripId filter to get vehicle position for a specific trip
      */
     getVehiclePositions(filters?: VehiclePositionFilters): VehiclePosition[];
     /**
-     * Get vehicle position by trip ID
-     */
-    getVehiclePositionByTripId(tripId: string): VehiclePosition | null;
-    /**
      * Get trip updates with optional filters
+     * Pass tripId filter to get trip update for a specific trip
      */
     getTripUpdates(filters?: TripUpdateFilters): TripUpdate[];
     /**
-     * Get trip update by trip ID
-     */
-    getTripUpdateByTripId(tripId: string): TripUpdate | null;
-    /**
      * Get stop time updates with optional filters
+     * Pass tripId filter to get stop time updates for a specific trip
      */
     getStopTimeUpdates(filters?: StopTimeUpdateFilters): StopTimeUpdate[];
-    /**
-     * Get stop time updates for a specific trip
-     */
-    getStopTimeUpdatesByTripId(tripId: string): StopTimeUpdate[];
     /**
      * Export all alerts without staleness filtering (for debugging)
      */

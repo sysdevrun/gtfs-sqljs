@@ -950,8 +950,12 @@ function getAgencies(db, filters = {}) {
   const conditions = [];
   const params = [];
   if (agencyId) {
-    conditions.push("agency_id = ?");
-    params.push(agencyId);
+    const agencyIds = Array.isArray(agencyId) ? agencyId : [agencyId];
+    if (agencyIds.length > 0) {
+      const placeholders = agencyIds.map(() => "?").join(", ");
+      conditions.push(`agency_id IN (${placeholders})`);
+      params.push(...agencyIds);
+    }
   }
   let sql = "SELECT * FROM agency";
   if (conditions.length > 0) {
@@ -974,17 +978,6 @@ function getAgencies(db, filters = {}) {
   stmt.free();
   return agencies;
 }
-function getAgencyById(db, agencyId) {
-  const stmt = db.prepare("SELECT * FROM agency WHERE agency_id = ?");
-  stmt.bind([agencyId]);
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
-    return rowToAgency(row);
-  }
-  stmt.free();
-  return null;
-}
 function rowToAgency(row) {
   return {
     agency_id: String(row.agency_id),
@@ -1002,17 +995,41 @@ function rowToAgency(row) {
 function getStops(db, filters = {}) {
   const { stopId, stopCode, name, tripId, limit } = filters;
   if (tripId) {
-    return getStopsByTrip(db, tripId);
+    const tripIds = Array.isArray(tripId) ? tripId : [tripId];
+    if (tripIds.length === 0) return [];
+    const placeholders = tripIds.map(() => "?").join(", ");
+    const stmt2 = db.prepare(`
+      SELECT s.* FROM stops s
+      INNER JOIN stop_times st ON s.stop_id = st.stop_id
+      WHERE st.trip_id IN (${placeholders})
+      ORDER BY st.stop_sequence
+    `);
+    stmt2.bind(tripIds);
+    const stops2 = [];
+    while (stmt2.step()) {
+      const row = stmt2.getAsObject();
+      stops2.push(rowToStop(row));
+    }
+    stmt2.free();
+    return stops2;
   }
   const conditions = [];
   const params = [];
   if (stopId) {
-    conditions.push("stop_id = ?");
-    params.push(stopId);
+    const stopIds = Array.isArray(stopId) ? stopId : [stopId];
+    if (stopIds.length > 0) {
+      const placeholders = stopIds.map(() => "?").join(", ");
+      conditions.push(`stop_id IN (${placeholders})`);
+      params.push(...stopIds);
+    }
   }
   if (stopCode) {
-    conditions.push("stop_code = ?");
-    params.push(stopCode);
+    const stopCodes = Array.isArray(stopCode) ? stopCode : [stopCode];
+    if (stopCodes.length > 0) {
+      const placeholders = stopCodes.map(() => "?").join(", ");
+      conditions.push(`stop_code IN (${placeholders})`);
+      params.push(...stopCodes);
+    }
   }
   if (name) {
     conditions.push("stop_name LIKE ?");
@@ -1031,33 +1048,6 @@ function getStops(db, filters = {}) {
   if (params.length > 0) {
     stmt.bind(params);
   }
-  const stops = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
-    stops.push(rowToStop(row));
-  }
-  stmt.free();
-  return stops;
-}
-function getStopById(db, stopId) {
-  const stmt = db.prepare("SELECT * FROM stops WHERE stop_id = ?");
-  stmt.bind([stopId]);
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
-    return rowToStop(row);
-  }
-  stmt.free();
-  return null;
-}
-function getStopsByTrip(db, tripId) {
-  const stmt = db.prepare(`
-    SELECT s.* FROM stops s
-    INNER JOIN stop_times st ON s.stop_id = st.stop_id
-    WHERE st.trip_id = ?
-    ORDER BY st.stop_sequence
-  `);
-  stmt.bind([tripId]);
   const stops = [];
   while (stmt.step()) {
     const row = stmt.getAsObject();
@@ -1091,12 +1081,20 @@ function getRoutes(db, filters = {}) {
   const conditions = [];
   const params = [];
   if (routeId) {
-    conditions.push("route_id = ?");
-    params.push(routeId);
+    const routeIds = Array.isArray(routeId) ? routeId : [routeId];
+    if (routeIds.length > 0) {
+      const placeholders = routeIds.map(() => "?").join(", ");
+      conditions.push(`route_id IN (${placeholders})`);
+      params.push(...routeIds);
+    }
   }
   if (agencyId) {
-    conditions.push("agency_id = ?");
-    params.push(agencyId);
+    const agencyIds = Array.isArray(agencyId) ? agencyId : [agencyId];
+    if (agencyIds.length > 0) {
+      const placeholders = agencyIds.map(() => "?").join(", ");
+      conditions.push(`agency_id IN (${placeholders})`);
+      params.push(...agencyIds);
+    }
   }
   let sql = "SELECT * FROM routes";
   if (conditions.length > 0) {
@@ -1118,17 +1116,6 @@ function getRoutes(db, filters = {}) {
   }
   stmt.free();
   return routes;
-}
-function getRouteById(db, routeId) {
-  const stmt = db.prepare("SELECT * FROM routes WHERE route_id = ?");
-  stmt.bind([routeId]);
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
-    return rowToRoute(row);
-  }
-  stmt.free();
-  return null;
 }
 function rowToRoute(row) {
   return {
@@ -1321,10 +1308,6 @@ function getVehiclePositions(db, filters = {}, stalenessThreshold = 120) {
   stmt.free();
   return positions;
 }
-function getVehiclePositionByTripId(db, tripId, stalenessThreshold = 120) {
-  const positions = getVehiclePositions(db, { tripId, limit: 1 }, stalenessThreshold);
-  return positions.length > 0 ? positions[0] : null;
-}
 function getAllVehiclePositions(db) {
   const sql = "SELECT * FROM rt_vehicle_positions ORDER BY rt_last_updated DESC";
   const stmt = db.prepare(sql);
@@ -1394,25 +1377,44 @@ function getTrips(db, filters = {}, stalenessThreshold = 120) {
   const conditions = [];
   const params = [];
   if (tripId) {
-    conditions.push(needsRoutesJoin ? "t.trip_id = ?" : "trip_id = ?");
-    params.push(tripId);
+    const tripIds = Array.isArray(tripId) ? tripId : [tripId];
+    if (tripIds.length > 0) {
+      const placeholders = tripIds.map(() => "?").join(", ");
+      conditions.push(needsRoutesJoin ? `t.trip_id IN (${placeholders})` : `trip_id IN (${placeholders})`);
+      params.push(...tripIds);
+    }
   }
   if (routeId) {
-    conditions.push(needsRoutesJoin ? "t.route_id = ?" : "route_id = ?");
-    params.push(routeId);
+    const routeIds = Array.isArray(routeId) ? routeId : [routeId];
+    if (routeIds.length > 0) {
+      const placeholders = routeIds.map(() => "?").join(", ");
+      conditions.push(needsRoutesJoin ? `t.route_id IN (${placeholders})` : `route_id IN (${placeholders})`);
+      params.push(...routeIds);
+    }
   }
-  if (serviceIds && serviceIds.length > 0) {
-    const placeholders = serviceIds.map(() => "?").join(", ");
-    conditions.push(needsRoutesJoin ? `t.service_id IN (${placeholders})` : `service_id IN (${placeholders})`);
-    params.push(...serviceIds);
+  if (serviceIds) {
+    const serviceIdArray = Array.isArray(serviceIds) ? serviceIds : [serviceIds];
+    if (serviceIdArray.length > 0) {
+      const placeholders = serviceIdArray.map(() => "?").join(", ");
+      conditions.push(needsRoutesJoin ? `t.service_id IN (${placeholders})` : `service_id IN (${placeholders})`);
+      params.push(...serviceIdArray);
+    }
   }
   if (directionId !== void 0) {
-    conditions.push(needsRoutesJoin ? "t.direction_id = ?" : "direction_id = ?");
-    params.push(directionId);
+    const directionIds = Array.isArray(directionId) ? directionId : [directionId];
+    if (directionIds.length > 0) {
+      const placeholders = directionIds.map(() => "?").join(", ");
+      conditions.push(needsRoutesJoin ? `t.direction_id IN (${placeholders})` : `direction_id IN (${placeholders})`);
+      params.push(...directionIds);
+    }
   }
   if (agencyId) {
-    conditions.push("r.agency_id = ?");
-    params.push(agencyId);
+    const agencyIds = Array.isArray(agencyId) ? agencyId : [agencyId];
+    if (agencyIds.length > 0) {
+      const placeholders = agencyIds.map(() => "?").join(", ");
+      conditions.push(`r.agency_id IN (${placeholders})`);
+      params.push(...agencyIds);
+    }
   }
   let sql = needsRoutesJoin ? "SELECT t.* FROM trips t INNER JOIN routes r ON t.route_id = r.route_id" : "SELECT * FROM trips";
   if (conditions.length > 0) {
@@ -1436,17 +1438,6 @@ function getTrips(db, filters = {}, stalenessThreshold = 120) {
     return mergeRealtimeData(trips, db, stalenessThreshold);
   }
   return trips;
-}
-function getTripById(db, tripId) {
-  const stmt = db.prepare("SELECT * FROM trips WHERE trip_id = ?");
-  stmt.bind([tripId]);
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
-    return rowToTrip(row);
-  }
-  stmt.free();
-  return null;
 }
 function rowToTrip(row) {
   return {
@@ -1472,7 +1463,7 @@ function mergeRealtimeData2(stopTimes, db, stalenessThreshold) {
   const placeholders = tripIds.map(() => "?").join(", ");
   const stmt = db.prepare(`
     SELECT trip_id, stop_sequence, stop_id,
-           arrival_delay, departure_delay, schedule_relationship
+           arrival_delay, arrival_time, departure_delay, departure_time, schedule_relationship
     FROM rt_stop_time_updates
     WHERE trip_id IN (${placeholders})
       AND rt_last_updated >= ?
@@ -1484,7 +1475,9 @@ function mergeRealtimeData2(stopTimes, db, stalenessThreshold) {
     const key = `${row.trip_id}_${row.stop_sequence}`;
     rtMap.set(key, {
       arrival_delay: row.arrival_delay !== null ? Number(row.arrival_delay) : void 0,
+      arrival_time: row.arrival_time !== null ? Number(row.arrival_time) : void 0,
       departure_delay: row.departure_delay !== null ? Number(row.departure_delay) : void 0,
+      departure_time: row.departure_time !== null ? Number(row.departure_time) : void 0,
       schedule_relationship: row.schedule_relationship !== null ? Number(row.schedule_relationship) : void 0
     });
   }
@@ -1505,29 +1498,52 @@ function getStopTimes(db, filters = {}, stalenessThreshold = 120) {
   const conditions = [];
   const params = [];
   if (tripId) {
-    conditions.push(needsTripsJoin ? "st.trip_id = ?" : "trip_id = ?");
-    params.push(tripId);
+    const tripIds = Array.isArray(tripId) ? tripId : [tripId];
+    if (tripIds.length > 0) {
+      const placeholders = tripIds.map(() => "?").join(", ");
+      conditions.push(needsTripsJoin ? `st.trip_id IN (${placeholders})` : `trip_id IN (${placeholders})`);
+      params.push(...tripIds);
+    }
   }
   if (stopId) {
-    conditions.push(needsTripsJoin ? "st.stop_id = ?" : "stop_id = ?");
-    params.push(stopId);
+    const stopIds = Array.isArray(stopId) ? stopId : [stopId];
+    if (stopIds.length > 0) {
+      const placeholders = stopIds.map(() => "?").join(", ");
+      conditions.push(needsTripsJoin ? `st.stop_id IN (${placeholders})` : `stop_id IN (${placeholders})`);
+      params.push(...stopIds);
+    }
   }
   if (routeId) {
-    conditions.push("t.route_id = ?");
-    params.push(routeId);
+    const routeIds = Array.isArray(routeId) ? routeId : [routeId];
+    if (routeIds.length > 0) {
+      const placeholders = routeIds.map(() => "?").join(", ");
+      conditions.push(`t.route_id IN (${placeholders})`);
+      params.push(...routeIds);
+    }
   }
-  if (serviceIds && serviceIds.length > 0) {
-    const placeholders = serviceIds.map(() => "?").join(", ");
-    conditions.push(`t.service_id IN (${placeholders})`);
-    params.push(...serviceIds);
+  if (serviceIds) {
+    const serviceIdArray = Array.isArray(serviceIds) ? serviceIds : [serviceIds];
+    if (serviceIdArray.length > 0) {
+      const placeholders = serviceIdArray.map(() => "?").join(", ");
+      conditions.push(`t.service_id IN (${placeholders})`);
+      params.push(...serviceIdArray);
+    }
   }
   if (directionId !== void 0) {
-    conditions.push("t.direction_id = ?");
-    params.push(directionId);
+    const directionIds = Array.isArray(directionId) ? directionId : [directionId];
+    if (directionIds.length > 0) {
+      const placeholders = directionIds.map(() => "?").join(", ");
+      conditions.push(`t.direction_id IN (${placeholders})`);
+      params.push(...directionIds);
+    }
   }
   if (agencyId) {
-    conditions.push("r.agency_id = ?");
-    params.push(agencyId);
+    const agencyIds = Array.isArray(agencyId) ? agencyId : [agencyId];
+    if (agencyIds.length > 0) {
+      const placeholders = agencyIds.map(() => "?").join(", ");
+      conditions.push(`r.agency_id IN (${placeholders})`);
+      params.push(...agencyIds);
+    }
   }
   let sql;
   if (needsRoutesJoin) {
@@ -1558,17 +1574,6 @@ function getStopTimes(db, filters = {}, stalenessThreshold = 120) {
   if (includeRealtime) {
     return mergeRealtimeData2(stopTimes, db, stalenessThreshold);
   }
-  return stopTimes;
-}
-function getStopTimesByTrip(db, tripId) {
-  const stmt = db.prepare("SELECT * FROM stop_times WHERE trip_id = ? ORDER BY stop_sequence");
-  stmt.bind([tripId]);
-  const stopTimes = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
-    stopTimes.push(rowToStopTime(row));
-  }
-  stmt.free();
   return stopTimes;
 }
 function rowToStopTime(row) {
@@ -1691,10 +1696,6 @@ function getAlerts(db, filters = {}, stalenessThreshold = 120) {
   stmt.free();
   return alerts;
 }
-function getAlertById(db, alertId, stalenessThreshold = 120) {
-  const alerts = getAlerts(db, { alertId, limit: 1 }, stalenessThreshold);
-  return alerts.length > 0 ? alerts[0] : null;
-}
 function getAllAlerts(db) {
   const sql = "SELECT * FROM rt_alerts ORDER BY rt_last_updated DESC";
   const stmt = db.prepare(sql);
@@ -1769,10 +1770,6 @@ function getTripUpdates(db, filters = {}, stalenessThreshold = 120) {
   stmt.free();
   return tripUpdates;
 }
-function getTripUpdateByTripId(db, tripId, stalenessThreshold = 120) {
-  const updates = getTripUpdates(db, { tripId, limit: 1 }, stalenessThreshold);
-  return updates.length > 0 ? updates[0] : null;
-}
 function getAllTripUpdates(db) {
   const sql = "SELECT * FROM rt_trip_updates ORDER BY rt_last_updated DESC";
   const stmt = db.prepare(sql);
@@ -1819,16 +1816,28 @@ function getStopTimeUpdates(db, filters = {}, stalenessThreshold = 120) {
   const conditions = [];
   const params = [];
   if (tripId) {
-    conditions.push("trip_id = ?");
-    params.push(tripId);
+    const tripIds = Array.isArray(tripId) ? tripId : [tripId];
+    if (tripIds.length > 0) {
+      const placeholders = tripIds.map(() => "?").join(", ");
+      conditions.push(`trip_id IN (${placeholders})`);
+      params.push(...tripIds);
+    }
   }
   if (stopId) {
-    conditions.push("stop_id = ?");
-    params.push(stopId);
+    const stopIds = Array.isArray(stopId) ? stopId : [stopId];
+    if (stopIds.length > 0) {
+      const placeholders = stopIds.map(() => "?").join(", ");
+      conditions.push(`stop_id IN (${placeholders})`);
+      params.push(...stopIds);
+    }
   }
   if (stopSequence !== void 0) {
-    conditions.push("stop_sequence = ?");
-    params.push(stopSequence);
+    const stopSequences = Array.isArray(stopSequence) ? stopSequence : [stopSequence];
+    if (stopSequences.length > 0) {
+      const placeholders = stopSequences.map(() => "?").join(", ");
+      conditions.push(`stop_sequence IN (${placeholders})`);
+      params.push(...stopSequences);
+    }
   }
   const now = Math.floor(Date.now() / 1e3);
   const staleThreshold = now - stalenessThreshold;
@@ -1854,9 +1863,6 @@ function getStopTimeUpdates(db, filters = {}, stalenessThreshold = 120) {
   }
   stmt.free();
   return stopTimeUpdates;
-}
-function getStopTimeUpdatesByTripId(db, tripId, stalenessThreshold = 120) {
-  return getStopTimeUpdates(db, { tripId }, stalenessThreshold);
 }
 function getAllStopTimeUpdates(db) {
   const sql = "SELECT * FROM rt_stop_time_updates ORDER BY trip_id, stop_sequence";
@@ -1963,14 +1969,8 @@ var GtfsSqlJs = class _GtfsSqlJs {
   }
   // ==================== Agency Methods ====================
   /**
-   * Get an agency by its agency_id
-   */
-  getAgencyById(agencyId) {
-    if (!this.db) throw new Error("Database not initialized");
-    return getAgencyById(this.db, agencyId);
-  }
-  /**
    * Get agencies with optional filters
+   * Pass agencyId filter to get a specific agency
    */
   getAgencies(filters) {
     if (!this.db) throw new Error("Database not initialized");
@@ -1978,14 +1978,8 @@ var GtfsSqlJs = class _GtfsSqlJs {
   }
   // ==================== Stop Methods ====================
   /**
-   * Get a stop by its stop_id
-   */
-  getStopById(stopId) {
-    if (!this.db) throw new Error("Database not initialized");
-    return getStopById(this.db, stopId);
-  }
-  /**
    * Get stops with optional filters
+   * Pass stopId filter to get a specific stop
    */
   getStops(filters) {
     if (!this.db) throw new Error("Database not initialized");
@@ -1993,14 +1987,8 @@ var GtfsSqlJs = class _GtfsSqlJs {
   }
   // ==================== Route Methods ====================
   /**
-   * Get a route by its route_id
-   */
-  getRouteById(routeId) {
-    if (!this.db) throw new Error("Database not initialized");
-    return getRouteById(this.db, routeId);
-  }
-  /**
    * Get routes with optional filters
+   * Pass routeId filter to get a specific route
    */
   getRoutes(filters) {
     if (!this.db) throw new Error("Database not initialized");
@@ -2037,21 +2025,15 @@ var GtfsSqlJs = class _GtfsSqlJs {
   }
   // ==================== Trip Methods ====================
   /**
-   * Get a trip by its trip_id
-   */
-  getTripById(tripId) {
-    if (!this.db) throw new Error("Database not initialized");
-    return getTripById(this.db, tripId);
-  }
-  /**
    * Get trips with optional filters
+   * Pass tripId filter to get a specific trip
    *
    * @param filters - Optional filters
-   * @param filters.tripId - Filter by trip ID
-   * @param filters.routeId - Filter by route ID
+   * @param filters.tripId - Filter by trip ID (single value or array)
+   * @param filters.routeId - Filter by route ID (single value or array)
    * @param filters.date - Filter by date (YYYYMMDD format) - will get active services for that date
-   * @param filters.directionId - Filter by direction ID
-   * @param filters.agencyId - Filter by agency ID
+   * @param filters.directionId - Filter by direction ID (single value or array)
+   * @param filters.agencyId - Filter by agency ID (single value or array)
    * @param filters.limit - Limit number of results
    *
    * @example
@@ -2061,6 +2043,10 @@ var GtfsSqlJs = class _GtfsSqlJs {
    * @example
    * // Get all trips for a route going in one direction
    * const trips = gtfs.getTrips({ routeId: 'ROUTE_1', directionId: 0 });
+   *
+   * @example
+   * // Get a specific trip
+   * const trips = gtfs.getTrips({ tripId: 'TRIP_123' });
    */
   getTrips(filters) {
     if (!this.db) throw new Error("Database not initialized");
@@ -2074,22 +2060,16 @@ var GtfsSqlJs = class _GtfsSqlJs {
   }
   // ==================== Stop Time Methods ====================
   /**
-   * Get stop times for a trip (ordered by stop_sequence)
-   */
-  getStopTimesByTrip(tripId) {
-    if (!this.db) throw new Error("Database not initialized");
-    return getStopTimesByTrip(this.db, tripId);
-  }
-  /**
    * Get stop times with optional filters
    *
    * @param filters - Optional filters
-   * @param filters.tripId - Filter by trip ID
-   * @param filters.stopId - Filter by stop ID
-   * @param filters.routeId - Filter by route ID
+   * @param filters.tripId - Filter by trip ID (single value or array)
+   * @param filters.stopId - Filter by stop ID (single value or array)
+   * @param filters.routeId - Filter by route ID (single value or array)
    * @param filters.date - Filter by date (YYYYMMDD format) - will get active services for that date
-   * @param filters.directionId - Filter by direction ID
-   * @param filters.agencyId - Filter by agency ID
+   * @param filters.directionId - Filter by direction ID (single value or array)
+   * @param filters.agencyId - Filter by agency ID (single value or array)
+   * @param filters.includeRealtime - Include realtime data (delay and time fields)
    * @param filters.limit - Limit number of results
    *
    * @example
@@ -2102,6 +2082,13 @@ var GtfsSqlJs = class _GtfsSqlJs {
    *   stopId: 'STOP_123',
    *   routeId: 'ROUTE_1',
    *   date: '20240115'
+   * });
+   *
+   * @example
+   * // Get stop times with realtime data
+   * const stopTimes = gtfs.getStopTimes({
+   *   tripId: 'TRIP_123',
+   *   includeRealtime: true
    * });
    */
   getStopTimes(filters) {
@@ -2160,59 +2147,35 @@ var GtfsSqlJs = class _GtfsSqlJs {
   }
   /**
    * Get alerts with optional filters
+   * Pass alertId filter to get a specific alert
    */
   getAlerts(filters) {
     if (!this.db) throw new Error("Database not initialized");
     return getAlerts(this.db, filters, this.stalenessThreshold);
   }
   /**
-   * Get alert by ID
-   */
-  getAlertById(alertId) {
-    if (!this.db) throw new Error("Database not initialized");
-    return getAlertById(this.db, alertId, this.stalenessThreshold);
-  }
-  /**
    * Get vehicle positions with optional filters
+   * Pass tripId filter to get vehicle position for a specific trip
    */
   getVehiclePositions(filters) {
     if (!this.db) throw new Error("Database not initialized");
     return getVehiclePositions(this.db, filters, this.stalenessThreshold);
   }
   /**
-   * Get vehicle position by trip ID
-   */
-  getVehiclePositionByTripId(tripId) {
-    if (!this.db) throw new Error("Database not initialized");
-    return getVehiclePositionByTripId(this.db, tripId, this.stalenessThreshold);
-  }
-  /**
    * Get trip updates with optional filters
+   * Pass tripId filter to get trip update for a specific trip
    */
   getTripUpdates(filters) {
     if (!this.db) throw new Error("Database not initialized");
     return getTripUpdates(this.db, filters, this.stalenessThreshold);
   }
   /**
-   * Get trip update by trip ID
-   */
-  getTripUpdateByTripId(tripId) {
-    if (!this.db) throw new Error("Database not initialized");
-    return getTripUpdateByTripId(this.db, tripId, this.stalenessThreshold);
-  }
-  /**
    * Get stop time updates with optional filters
+   * Pass tripId filter to get stop time updates for a specific trip
    */
   getStopTimeUpdates(filters) {
     if (!this.db) throw new Error("Database not initialized");
     return getStopTimeUpdates(this.db, filters, this.stalenessThreshold);
-  }
-  /**
-   * Get stop time updates for a specific trip
-   */
-  getStopTimeUpdatesByTripId(tripId) {
-    if (!this.db) throw new Error("Database not initialized");
-    return getStopTimeUpdatesByTripId(this.db, tripId, this.stalenessThreshold);
   }
   // ==================== Debug Export Methods ====================
   // These methods export all realtime data without staleness filtering
