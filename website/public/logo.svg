@@ -4,6 +4,10 @@
       <stop offset="0%" style="stop-color:#4A90E2;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#357ABD;stop-opacity:1" />
     </linearGradient>
+    <linearGradient id="featherLight" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#6BA5E7;stop-opacity:0.8" />
+      <stop offset="100%" style="stop-color:#4A90E2;stop-opacity:0.8" />
+    </linearGradient>
     <linearGradient id="gGradient" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#5CB85C;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#449D44;stop-opacity:1" />
@@ -14,81 +18,76 @@
   <circle cx="100" cy="100" r="95" fill="#FFFFFF" stroke="#E0E0E0" stroke-width="2"/>
 
   <!-- Feather (SQLite symbol) -->
-  <g transform="translate(45, 50)">
-    <!-- Feather shaft -->
-    <path d="M 30 10 Q 28 50 25 90"
+  <g transform="translate(35, 45)">
+    <!-- Feather vanes (filled shapes for more elegance) -->
+    <!-- Left vane -->
+    <path d="M 40 15 Q 20 20 8 30 Q 15 28 25 25 Q 35 20 40 20 Z"
+          fill="url(#featherLight)"
+          opacity="0.9"/>
+    <path d="M 40 25 Q 18 32 5 45 Q 14 40 28 35 Q 37 30 40 30 Z"
+          fill="url(#featherLight)"
+          opacity="0.85"/>
+    <path d="M 39 35 Q 16 44 4 58 Q 15 50 30 43 Q 37 38 39 38 Z"
+          fill="url(#featherLight)"
+          opacity="0.8"/>
+    <path d="M 38 45 Q 15 55 5 68 Q 18 58 32 50 Q 37 46 38 46 Z"
+          fill="url(#featherLight)"
+          opacity="0.75"/>
+    <path d="M 37 55 Q 18 65 10 76 Q 22 66 33 58 Q 36 55 37 55 Z"
+          fill="url(#featherLight)"
+          opacity="0.7"/>
+    <path d="M 36 65 Q 22 73 16 82 Q 26 74 33 67 Q 35 65 36 65 Z"
+          fill="url(#featherLight)"
+          opacity="0.65"/>
+    <path d="M 35 75 Q 26 80 22 87 Q 28 81 33 76 Q 34 75 35 75 Z"
+          fill="url(#featherLight)"
+          opacity="0.6"/>
+
+    <!-- Right vane -->
+    <path d="M 40 20 Q 55 23 68 28 Q 60 26 48 23 Q 42 21 40 20 Z"
+          fill="url(#featherLight)"
+          opacity="0.9"/>
+    <path d="M 40 30 Q 58 35 72 42 Q 62 38 47 33 Q 41 31 40 30 Z"
+          fill="url(#featherLight)"
+          opacity="0.85"/>
+    <path d="M 39 38 Q 56 44 68 52 Q 58 47 46 41 Q 40 39 39 38 Z"
+          fill="url(#featherLight)"
+          opacity="0.8"/>
+    <path d="M 38 46 Q 53 52 63 60 Q 54 54 44 49 Q 39 47 38 46 Z"
+          fill="url(#featherLight)"
+          opacity="0.75"/>
+    <path d="M 37 55 Q 50 60 57 67 Q 50 62 42 57 Q 38 56 37 55 Z"
+          fill="url(#featherLight)"
+          opacity="0.7"/>
+    <path d="M 36 65 Q 46 69 51 75 Q 46 71 40 67 Q 37 66 36 65 Z"
+          fill="url(#featherLight)"
+          opacity="0.65"/>
+    <path d="M 35 75 Q 42 78 46 82 Q 42 79 38 76 Q 36 75 35 75 Z"
+          fill="url(#featherLight)"
+          opacity="0.6"/>
+
+    <!-- Feather shaft (rachis) - thicker at top, tapering down -->
+    <path d="M 40 10 C 40 10 39 15 39 20 C 39 35 38 50 37 65 C 36.5 75 35 85 33 95"
           stroke="url(#featherGradient)"
-          stroke-width="3"
+          stroke-width="3.5"
           fill="none"
           stroke-linecap="round"/>
 
-    <!-- Feather barbs (left side) -->
-    <path d="M 30 15 Q 15 20 10 25"
-          stroke="url(#featherGradient)"
-          stroke-width="2"
+    <!-- Shaft highlight -->
+    <path d="M 40.5 12 C 40.5 12 40 20 40 28 C 40 40 39 52 38.5 64"
+          stroke="#6BA5E7"
+          stroke-width="1"
           fill="none"
-          stroke-linecap="round"/>
-    <path d="M 29 25 Q 18 28 12 32"
-          stroke="url(#featherGradient)"
-          stroke-width="2"
-          fill="none"
-          stroke-linecap="round"/>
-    <path d="M 29 35 Q 20 36 14 38"
-          stroke="url(#featherGradient)"
-          stroke-width="2"
-          fill="none"
-          stroke-linecap="round"/>
-    <path d="M 28 45 Q 20 45 15 45"
-          stroke="url(#featherGradient)"
-          stroke-width="2"
-          fill="none"
-          stroke-linecap="round"/>
-    <path d="M 28 55 Q 21 54 16 52"
-          stroke="url(#featherGradient)"
-          stroke-width="2"
-          fill="none"
-          stroke-linecap="round"/>
-    <path d="M 27 65 Q 22 63 18 60"
-          stroke="url(#featherGradient)"
-          stroke-width="2"
-          fill="none"
-          stroke-linecap="round"/>
+          stroke-linecap="round"
+          opacity="0.5"/>
 
-    <!-- Feather barbs (right side) -->
-    <path d="M 30 18 Q 42 22 48 26"
-          stroke="url(#featherGradient)"
-          stroke-width="2"
-          fill="none"
-          stroke-linecap="round"/>
-    <path d="M 29 28 Q 38 30 44 33"
-          stroke="url(#featherGradient)"
-          stroke-width="2"
-          fill="none"
-          stroke-linecap="round"/>
-    <path d="M 29 38 Q 36 39 42 40"
-          stroke="url(#featherGradient)"
-          stroke-width="2"
-          fill="none"
-          stroke-linecap="round"/>
-    <path d="M 28 48 Q 34 48 39 47"
-          stroke="url(#featherGradient)"
-          stroke-width="2"
-          fill="none"
-          stroke-linecap="round"/>
-    <path d="M 28 58 Q 33 57 37 55"
-          stroke="url(#featherGradient)"
-          stroke-width="2"
-          fill="none"
-          stroke-linecap="round"/>
-    <path d="M 27 68 Q 31 66 34 63"
-          stroke="url(#featherGradient)"
-          stroke-width="2"
-          fill="none"
-          stroke-linecap="round"/>
+    <!-- Tip of feather (calamus) -->
+    <ellipse cx="40" cy="10" rx="2" ry="3"
+             fill="url(#featherGradient)"/>
   </g>
 
   <!-- Large G letter (GTFS symbol) -->
-  <g transform="translate(85, 50)">
+  <g transform="translate(90, 50)">
     <path d="M 60 25 Q 40 15 25 25 Q 10 35 10 50 Q 10 65 25 75 Q 40 85 60 75 L 60 50 L 45 50"
           fill="url(#gGradient)"
           stroke="url(#gGradient)"
