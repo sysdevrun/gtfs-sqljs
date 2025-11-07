@@ -359,7 +359,8 @@ function renderRoutes() {
 
   // Render stop times with stop names and realtime data
   const html = stopTimes.map(st => {
-    const stop = gtfs.getStopById(st.stop_id);
+    const stops = gtfs.getStops({ stopId: st.stop_id });
+    const stop = stops.length > 0 ? stops[0] : null;
     const stopName = stop ? stop.stop_name : st.stop_id;
 
     const hasRealtime = st.realtime !== undefined;
@@ -508,7 +509,8 @@ function renderAlerts() {
         .slice(0, 10); // Show max 10 routes
 
       const routesBadges = affectedRoutes.map(routeId => {
-        const route = gtfs.getRouteById(routeId!);
+        const routes = gtfs.getRoutes({ routeId: routeId! });
+        const route = routes.length > 0 ? routes[0] : null;
         if (!route) return '';
 
         const bgColor = route.route_color ? `#${route.route_color}` : '#64748b';

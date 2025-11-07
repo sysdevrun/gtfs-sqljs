@@ -41,6 +41,88 @@ Try the live demo to explore GTFS data, view routes with colors, and see trip sc
 - ✅ Filter alerts and vehicle positions by route, stop, or trip
 - ✅ Store RT data in SQLite for consistent querying
 - ✅ Include RT data in database exports
+- ✅ Full support for both GTFS-RT `time` and `delay` fields in stop time updates
+
+## Migration Guide (v1.0.0+)
+
+If you're upgrading from an earlier version, the API has been simplified and improved:
+
+### Unified Filter-Based API
+
+All `getXXXByYYYY` methods have been removed in favor of unified `getXXXX` methods with optional filters. Filters now support both single values and arrays for maximum flexibility.
+
+**Migration examples:**
+
+```typescript
+// ❌ Old API
+const stop = gtfs.getStopById('STOP_123');
+const route = gtfs.getRouteById('ROUTE_1');
+const trip = gtfs.getTripById('TRIP_123');
+const stopTimes = gtfs.getStopTimesByTrip('TRIP_123');
+const agency = gtfs.getAgencyById('AGENCY_1');
+const alert = gtfs.getAlertById('alert:123');
+const vehicle = gtfs.getVehiclePositionByTripId('TRIP_123');
+
+// ✅ New API
+const stops = gtfs.getStops({ stopId: 'STOP_123' });
+const stop = stops.length > 0 ? stops[0] : null;
+
+const routes = gtfs.getRoutes({ routeId: 'ROUTE_1' });
+const route = routes.length > 0 ? routes[0] : null;
+
+const trips = gtfs.getTrips({ tripId: 'TRIP_123' });
+const trip = trips.length > 0 ? trips[0] : null;
+
+const stopTimes = gtfs.getStopTimes({ tripId: 'TRIP_123' });
+
+const agencies = gtfs.getAgencies({ agencyId: 'AGENCY_1' });
+const agency = agencies.length > 0 ? agencies[0] : null;
+
+const alerts = gtfs.getAlerts({ alertId: 'alert:123' });
+const alert = alerts.length > 0 ? alerts[0] : null;
+
+const vehicles = gtfs.getVehiclePositions({ tripId: 'TRIP_123' });
+const vehicle = vehicles.length > 0 ? vehicles[0] : null;
+```
+
+**Benefits of the new API:**
+- ✅ Support for filtering by multiple IDs at once (arrays)
+- ✅ More consistent API surface
+- ✅ Easier to combine multiple filters
+- ✅ Better TypeScript inference
+
+**Array filtering example:**
+```typescript
+// Get multiple stops at once
+const stops = gtfs.getStops({ stopId: ['STOP_1', 'STOP_2', 'STOP_3'] });
+
+// Get trips for multiple routes
+const trips = gtfs.getTrips({ routeId: ['ROUTE_1', 'ROUTE_2'], date: '20240115' });
+
+// Get stop times for multiple trips
+const stopTimes = gtfs.getStopTimes({ tripId: ['TRIP_1', 'TRIP_2'] });
+```
+
+### GTFS-RT Time/Delay Support
+
+Stop time updates now include both `time` and `delay` fields:
+
+```typescript
+const stopTimes = gtfs.getStopTimes({
+  tripId: 'TRIP_123',
+  includeRealtime: true
+});
+
+for (const st of stopTimes) {
+  if (st.realtime) {
+    // Both delay (relative to schedule) and time (absolute) are now available
+    console.log('Arrival delay:', st.realtime.arrival_delay, 'seconds');
+    console.log('Arrival time:', st.realtime.arrival_time, '(UNIX timestamp)');
+    console.log('Departure delay:', st.realtime.departure_delay, 'seconds');
+    console.log('Departure time:', st.realtime.departure_time, '(UNIX timestamp)');
+  }
+}
+```
 
 ## Installation
 
@@ -222,7 +304,8 @@ const stopTimes = gtfs.getStopTimes({
 
 ```typescript
 // Get stop by ID
-const stop = gtfs.getStopById('STOP_123');
+const stops = gtfs.getStops({ stopId: 'STOP_123' });
+const stop = stops.length > 0 ? stops[0] : null;
 console.log(stop?.stop_name);
 
 // Get stop by code (using filters)
@@ -246,7 +329,8 @@ const stops = gtfs.getStops({ tripId: 'TRIP_123' });
 
 ```typescript
 // Get route by ID
-const route = gtfs.getRouteById('ROUTE_1');
+const routes = gtfs.getRoutes({ routeId: 'ROUTE_1' });
+const route = routes.length > 0 ? routes[0] : null;
 
 // Get all routes (using filters with no parameters)
 const routes = gtfs.getRoutes();
@@ -262,10 +346,11 @@ const routes = gtfs.getRoutes({ limit: 10 });
 
 ```typescript
 // Get agency by ID
-const agency = gtfs.getAgencyById('AGENCY_1');
+const agencies = gtfs.getAgencies({ agencyId: 'AGENCY_1' });
+const agency = agencies.length > 0 ? agencies[0] : null;
 
 // Get all agencies
-const agencies = gtfs.getAgencies();
+const allAgencies = gtfs.getAgencies();
 
 // Get agencies with limit
 const agencies = gtfs.getAgencies({ limit: 5 });
@@ -288,7 +373,8 @@ const exceptions = gtfs.getCalendarDates('WEEKDAY');
 
 ```typescript
 // Get trip by ID
-const trip = gtfs.getTripById('TRIP_123');
+const trips = gtfs.getTrips({ tripId: 'TRIP_123' });
+const trip = trips.length > 0 ? trips[0] : null;
 
 // Get trips by route (using filters)
 const trips = gtfs.getTrips({ routeId: 'ROUTE_1' });
@@ -314,7 +400,7 @@ const trips = gtfs.getTrips({ agencyId: 'AGENCY_1' });
 
 ```typescript
 // Get stop times for a trip (ordered by stop_sequence)
-const stopTimes = gtfs.getStopTimesByTrip('TRIP_123');
+const stopTimes = gtfs.getStopTimes({ tripId: 'TRIP_123' });
 
 // Get stop times for a stop (using filters)
 const stopTimes = gtfs.getStopTimes({ stopId: 'STOP_123' });
@@ -404,7 +490,8 @@ const tripAlerts = gtfs.getAlerts({
 });
 
 // Get alert by ID
-const alert = gtfs.getAlertById('alert:12345');
+const alerts = gtfs.getAlerts({ alertId: 'alert:12345' });
+const alert = alerts.length > 0 ? alerts[0] : null;
 
 // Alert structure
 console.log(alert.header_text);      // TranslatedString
@@ -427,12 +514,10 @@ const routeVehicles = gtfs.getVehiclePositions({
 });
 
 // Filter by trip
-const tripVehicle = gtfs.getVehiclePositions({
+const tripVehicles = gtfs.getVehiclePositions({
   tripId: 'TRIP_123'
 });
-
-// Get vehicle by trip ID
-const vehicle = gtfs.getVehiclePositionByTripId('TRIP_123');
+const vehicle = tripVehicles.length > 0 ? tripVehicles[0] : null;
 
 // Vehicle structure
 console.log(vehicle.position);           // { latitude, longitude, bearing, speed }
@@ -568,15 +653,16 @@ async function example() {
   const allStopTimes = gtfs.getStopTimes({ stopId: stop.stop_id });
   const routeIds = new Set(
     allStopTimes.map(st => {
-      const trip = gtfs.getTripById(st.trip_id);
-      return trip?.route_id;
+      const trips = gtfs.getTrips({ tripId: st.trip_id });
+      return trips.length > 0 ? trips[0].route_id : null;
     })
   );
 
   // Get route details
   for (const routeId of routeIds) {
     if (!routeId) continue;
-    const route = gtfs.getRouteById(routeId);
+    const routes = gtfs.getRoutes({ routeId });
+    const route = routes.length > 0 ? routes[0] : null;
     console.log(`Route: ${route?.route_short_name} - ${route?.route_long_name}`);
   }
 
@@ -589,10 +675,11 @@ async function example() {
   console.log(`Found ${trips.length} trips for today`);
 
   // Get stop times for a specific trip
-  const stopTimes = gtfs.getStopTimesByTrip(trips[0].trip_id);
+  const stopTimes = gtfs.getStopTimes({ tripId: trips[0].trip_id });
   console.log('Trip schedule:');
   for (const st of stopTimes) {
-    const stop = gtfs.getStopById(st.stop_id);
+    const stops = gtfs.getStops({ stopId: st.stop_id });
+    const stop = stops.length > 0 ? stops[0] : null;
     console.log(`  ${st.arrival_time} - ${stop?.stop_name}`);
   }
 
@@ -616,44 +703,43 @@ example();
 
 ### Instance Methods
 
-#### Flexible Filter-Based Methods (Recommended)
-- `getStops(filters?)` - Get stops with optional filters (stopId, stopCode, name, tripId, limit)
-- `getRoutes(filters?)` - Get routes with optional filters (routeId, agencyId, limit)
-- `getTrips(filters?)` - Get trips with optional filters (tripId, routeId, date, directionId, agencyId, limit)
-- `getStopTimes(filters?)` - Get stop times with optional filters (tripId, stopId, routeId, date, directionId, agencyId, limit)
-- `getAgencies(filters?)` - Get agencies with optional filters (agencyId, limit)
+#### GTFS Static Data Methods
+All methods support flexible filtering with both single values and arrays:
 
-#### Direct Lookup Methods
-- `getStopById(stopId)` - Get stop by stop_id
-- `getRouteById(routeId)` - Get route by route_id
-- `getTripById(tripId)` - Get trip by trip_id
-- `getAgencyById(agencyId)` - Get agency by agency_id
+- `getAgencies(filters?)` - Get agencies (filters: agencyId, limit)
+- `getStops(filters?)` - Get stops (filters: stopId, stopCode, name, tripId, limit)
+- `getRoutes(filters?)` - Get routes (filters: routeId, agencyId, limit)
+- `getTrips(filters?)` - Get trips (filters: tripId, routeId, serviceIds, directionId, agencyId, includeRealtime, limit, date)
+- `getStopTimes(filters?)` - Get stop times (filters: tripId, stopId, routeId, serviceIds, directionId, agencyId, includeRealtime, limit, date)
 
 #### Calendar Methods
-- `getActiveServiceIds(date)` - Get active service IDs for a date
+- `getActiveServiceIds(date)` - Get active service IDs for a date (YYYYMMDD format)
 - `getCalendarByServiceId(serviceId)` - Get calendar by service_id
-- `getCalendarDates(serviceId)` - Get calendar date exceptions
-- `getCalendarDatesForDate(date)` - Get exceptions for a specific date
-
-#### Special Methods
-- `getStopTimesByTrip(tripId)` - Get stop times for a trip (ordered by stop_sequence)
+- `getCalendarDates(serviceId)` - Get calendar date exceptions for a service
+- `getCalendarDatesForDate(date)` - Get calendar exceptions for a specific date
 
 #### GTFS Realtime Methods
 - `fetchRealtimeData(urls?)` - Fetch and load RT data from protobuf feeds
 - `clearRealtimeData()` - Clear all realtime data from database
 - `setRealtimeFeedUrls(urls)` - Configure RT feed URLs
 - `getRealtimeFeedUrls()` - Get configured RT feed URLs
-- `setStalenessThreshold(seconds)` - Set staleness threshold (default: 120)
-- `getStalenessThreshold()` - Get staleness threshold
-- `getAlerts(filters?)` - Get alerts with optional filters (routeId, stopId, tripId, activeOnly)
-- `getAlertById(alertId)` - Get alert by ID
-- `getVehiclePositions(filters?)` - Get vehicle positions with optional filters (routeId, tripId, vehicleId)
-- `getVehiclePositionByTripId(tripId)` - Get vehicle position by trip ID
+- `setStalenessThreshold(seconds)` - Set staleness threshold (default: 120 seconds)
+- `getStalenessThreshold()` - Get current staleness threshold
+- `getAlerts(filters?)` - Get alerts (filters: alertId, routeId, stopId, tripId, activeOnly, cause, effect, limit)
+- `getVehiclePositions(filters?)` - Get vehicle positions (filters: tripId, routeId, vehicleId, limit)
+- `getTripUpdates(filters?)` - Get trip updates (filters: tripId, routeId, limit)
+- `getStopTimeUpdates(filters?)` - Get stop time updates (filters: tripId, stopId, stopSequence, limit)
 
 #### Database Methods
 - `export()` - Export database to ArrayBuffer (includes RT data)
-- `getDatabase()` - Get direct access to sql.js database
+- `getDatabase()` - Get direct access to sql.js database for advanced queries
 - `close()` - Close database connection
+
+#### Debug Methods
+- `debugExportAllAlerts()` - Export all alerts without staleness filtering
+- `debugExportAllVehiclePositions()` - Export all vehicle positions without staleness filtering
+- `debugExportAllTripUpdates()` - Export all trip updates without staleness filtering
+- `debugExportAllStopTimeUpdates()` - Export all stop time updates without staleness filtering
 
 ## TypeScript Support
 
