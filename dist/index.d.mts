@@ -204,6 +204,15 @@ interface CacheEntry {
     metadata: CacheMetadata;
 }
 /**
+ * A cache entry with data and metadata
+ */
+interface CacheEntryWithData {
+    /** The cached database data */
+    data: ArrayBuffer;
+    /** Cache metadata */
+    metadata: CacheMetadata;
+}
+/**
  * Interface for implementing custom cache storage backends.
  *
  * The library provides two implementations:
@@ -217,9 +226,9 @@ interface CacheStore {
     /**
      * Retrieve a cached database by key
      * @param key - Cache key (typically includes checksum and version)
-     * @returns The cached database as ArrayBuffer, or null if not found
+     * @returns The cached entry with data and metadata, or null if not found
      */
-    get(key: string): Promise<ArrayBuffer | null>;
+    get(key: string): Promise<CacheEntryWithData | null>;
     /**
      * Store a database in the cache
      * @param key - Cache key
@@ -924,9 +933,9 @@ declare class IndexedDBCacheStore implements CacheStore {
      */
     private openDB;
     /**
-     * Get a cached database
+     * Get a cached database with metadata
      */
-    get(key: string): Promise<ArrayBuffer | null>;
+    get(key: string): Promise<CacheEntryWithData | null>;
     /**
      * Store a database in cache
      */
@@ -986,9 +995,9 @@ declare class FileSystemCacheStore implements CacheStore {
      */
     private getMetadataPath;
     /**
-     * Get a cached database
+     * Get a cached database with metadata
      */
-    get(key: string): Promise<ArrayBuffer | null>;
+    get(key: string): Promise<CacheEntryWithData | null>;
     /**
      * Store a database in cache
      */
@@ -1069,4 +1078,4 @@ declare function getCacheStats(entries: CacheEntry[]): {
     newestEntry: number | null;
 };
 
-export { type Agency, type AgencyFilters, type Alert, AlertCause, AlertEffect, type AlertFilters, type Attribution, type CacheEntry, type CacheMetadata, type CacheStore, type CacheStoreOptions, type Calendar, type CalendarDate, type ColumnDefinition, CongestionLevel, DEFAULT_CACHE_EXPIRATION_MS, type EntitySelector, type FareAttribute, type FareRule, type FeedInfo, FileSystemCacheStore, type Frequency, GTFS_SCHEMA, GtfsSqlJs, type GtfsSqlJsOptions, type IndexDefinition, IndexedDBCacheStore, type Level, OccupancyStatus, type Pathway, type Position, type RealtimeConfig, type Route, type RouteFilters, ScheduleRelationship, type Shape, type Stop, type StopFilters, type StopTime, type StopTimeEvent, type StopTimeFilters, type StopTimeRealtime, type StopTimeUpdate, type StopTimeUpdateFilters, type StopTimeUpdateWithMetadata, type StopTimeWithRealtime, type TableSchema, type TimeRange, type Transfer, type TranslatedString, type Trip, type TripFilters, type TripRealtime, type TripUpdate, type TripUpdateFilters, type TripWithRealtime, type VehicleDescriptor, type VehiclePosition, type VehiclePositionFilters, VehicleStopStatus, computeChecksum, computeZipChecksum, filterExpiredEntries, generateCacheKey, getCacheStats, isCacheExpired };
+export { type Agency, type AgencyFilters, type Alert, AlertCause, AlertEffect, type AlertFilters, type Attribution, type CacheEntry, type CacheEntryWithData, type CacheMetadata, type CacheStore, type CacheStoreOptions, type Calendar, type CalendarDate, type ColumnDefinition, CongestionLevel, DEFAULT_CACHE_EXPIRATION_MS, type EntitySelector, type FareAttribute, type FareRule, type FeedInfo, FileSystemCacheStore, type Frequency, GTFS_SCHEMA, GtfsSqlJs, type GtfsSqlJsOptions, type IndexDefinition, IndexedDBCacheStore, type Level, OccupancyStatus, type Pathway, type Position, type RealtimeConfig, type Route, type RouteFilters, ScheduleRelationship, type Shape, type Stop, type StopFilters, type StopTime, type StopTimeEvent, type StopTimeFilters, type StopTimeRealtime, type StopTimeUpdate, type StopTimeUpdateFilters, type StopTimeUpdateWithMetadata, type StopTimeWithRealtime, type TableSchema, type TimeRange, type Transfer, type TranslatedString, type Trip, type TripFilters, type TripRealtime, type TripUpdate, type TripUpdateFilters, type TripWithRealtime, type VehicleDescriptor, type VehiclePosition, type VehiclePositionFilters, VehicleStopStatus, computeChecksum, computeZipChecksum, filterExpiredEntries, generateCacheKey, getCacheStats, isCacheExpired };

@@ -10,7 +10,7 @@ import { createRealtimeTables, clearRealtimeData as clearRTData } from './schema
 import { loadRealtimeData } from './loaders/gtfs-rt-loader';
 import type { CacheStore } from './cache/types';
 import { computeZipChecksum, generateCacheKey } from './cache/checksum';
-import { DEFAULT_CACHE_EXPIRATION_MS } from './cache/utils';
+import { DEFAULT_CACHE_EXPIRATION_MS, isCacheExpired } from './cache/utils';
 
 // Library version from package.json
 const LIB_VERSION = '0.1.0';
@@ -175,6 +175,7 @@ export class GtfsSqlJs {
     const {
       cache: userCache,
       cacheVersion = '1.0',
+      cacheExpirationMs = DEFAULT_CACHE_EXPIRATION_MS,
       skipFiles
     } = options;
 
@@ -193,8 +194,8 @@ export class GtfsSqlJs {
     } else {
       // Auto-detect environment and create default cache store
       try {
-        if (typeof window !== 'undefined' && typeof indexedDB !== 'undefined') {
-          // Browser environment - use IndexedDB
+        if (typeof indexedDB !== 'undefined') {
+          // Browser/Web Worker environment - use IndexedDB
           const { IndexedDBCacheStore } = await import('./cache/indexeddb-store');
           cache = new IndexedDBCacheStore();
         } else if (typeof process !== 'undefined' && process.versions?.node) {
@@ -259,48 +260,62 @@ export class GtfsSqlJs {
       );
 
       // Check if cache exists
-      const cachedDb = await cache.get(cacheKey);
+      const cacheEntry = await cache.get(cacheKey);
 
-      if (cachedDb) {
-        // Note: We retrieve the cache entry but we should check if it's expired
-        // For now, we check expiration when listing/managing cache
-        // The cache store itself doesn't track metadata on get()
-        // TODO: Consider updating CacheStore.get() to return metadata as well
+      if (cacheEntry) {
+        // Check if cache entry is expired
+        const expired = isCacheExpired(cacheEntry.metadata, cacheExpirationMs);
 
-        // Load from cache
-        onProgress?.({
-          phase: 'loading_from_cache',
-          currentFile: null,
-          filesCompleted: 0,
-          totalFiles: 0,
-          rowsProcessed: 0,
-          totalRows: 0,
-          percentComplete: 50,
-          message: 'Loading from cache...',
-        });
+        if (expired) {
+          // Cache is expired, delete it and continue with normal loading
+          onProgress?.({
+            phase: 'checking_cache',
+            currentFile: null,
+            filesCompleted: 0,
+            totalFiles: 0,
+            rowsProcessed: 0,
+            totalRows: 0,
+            percentComplete: 2,
+            message: 'Cache expired, reprocessing...',
+          });
 
-        this.db = new this.SQL.Database(new Uint8Array(cachedDb));
+          await cache.delete(cacheKey);
+        } else {
+          // Cache is valid, load from it
+          onProgress?.({
+            phase: 'loading_from_cache',
+            currentFile: null,
+            filesCompleted: 0,
+            totalFiles: 0,
+            rowsProcessed: 0,
+            totalRows: 0,
+            percentComplete: 50,
+            message: 'Loading from cache...',
+          });
 
-        // Set RT configuration
-        if (options.realtimeFeedUrls) {
-          this.realtimeFeedUrls = options.realtimeFeedUrls;
+          this.db = new this.SQL.Database(new Uint8Array(cacheEntry.data));
+
+          // Set RT configuration
+          if (options.realtimeFeedUrls) {
+            this.realtimeFeedUrls = options.realtimeFeedUrls;
+          }
+          if (options.stalenessThreshold !== undefined) {
+            this.stalenessThreshold = options.stalenessThreshold;
+          }
+
+          onProgress?.({
+            phase: 'complete',
+            currentFile: null,
+            filesCompleted: 0,
+            totalFiles: 0,
+            rowsProcessed: 0,
+            totalRows: 0,
+            percentComplete: 100,
+            message: 'GTFS data loaded from cache',
+          });
+
+          return;
         }
-        if (options.stalenessThreshold !== undefined) {
-          this.stalenessThreshold = options.stalenessThreshold;
-        }
-
-        onProgress?.({
-          phase: 'complete',
-          currentFile: null,
-          filesCompleted: 0,
-          totalFiles: 0,
-          rowsProcessed: 0,
-          totalRows: 0,
-          percentComplete: 100,
-          message: 'GTFS data loaded from cache',
-        });
-
-        return;
       }
 
       // Cache miss - continue with normal loading but use already-fetched zip data
@@ -969,8 +984,8 @@ export class GtfsSqlJs {
    */
   private static async getDefaultCacheStore(): Promise<CacheStore | null> {
     try {
-      if (typeof window !== 'undefined' && typeof indexedDB !== 'undefined') {
-        // Browser environment - use IndexedDB
+      if (typeof indexedDB !== 'undefined') {
+        // Browser/Web Worker environment - use IndexedDB
         const { IndexedDBCacheStore } = await import('./cache/indexeddb-store');
         return new IndexedDBCacheStore();
       } else if (typeof process !== 'undefined' && process.versions?.node) {

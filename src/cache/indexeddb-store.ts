@@ -1,4 +1,4 @@
-import type { CacheStore, CacheMetadata, CacheEntry, CacheStoreOptions } from './types';
+import type { CacheStore, CacheMetadata, CacheEntry, CacheEntryWithData, CacheStoreOptions } from './types';
 
 /**
  * IndexedDB-based cache store for browsers
@@ -49,9 +49,9 @@ export class IndexedDBCacheStore implements CacheStore {
   }
 
   /**
-   * Get a cached database
+   * Get a cached database with metadata
    */
-  async get(key: string): Promise<ArrayBuffer | null> {
+  async get(key: string): Promise<CacheEntryWithData | null> {
     const db = await this.openDB();
 
     return new Promise((resolve, reject) => {
@@ -67,7 +67,14 @@ export class IndexedDBCacheStore implements CacheStore {
       request.onsuccess = () => {
         db.close();
         const result = request.result;
-        resolve(result ? result.data : null);
+        if (result) {
+          resolve({
+            data: result.data,
+            metadata: result.metadata
+          });
+        } else {
+          resolve(null);
+        }
       };
     });
   }

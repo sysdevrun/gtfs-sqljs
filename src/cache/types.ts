@@ -27,6 +27,16 @@ export interface CacheEntry {
 }
 
 /**
+ * A cache entry with data and metadata
+ */
+export interface CacheEntryWithData {
+  /** The cached database data */
+  data: ArrayBuffer;
+  /** Cache metadata */
+  metadata: CacheMetadata;
+}
+
+/**
  * Interface for implementing custom cache storage backends.
  *
  * The library provides two implementations:
@@ -40,9 +50,9 @@ export interface CacheStore {
   /**
    * Retrieve a cached database by key
    * @param key - Cache key (typically includes checksum and version)
-   * @returns The cached database as ArrayBuffer, or null if not found
+   * @returns The cached entry with data and metadata, or null if not found
    */
-  get(key: string): Promise<ArrayBuffer | null>;
+  get(key: string): Promise<CacheEntryWithData | null>;
 
   /**
    * Store a database in the cache

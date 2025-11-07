@@ -101,7 +101,7 @@ var init_indexeddb_store = __esm({
         });
       }
       /**
-       * Get a cached database
+       * Get a cached database with metadata
        */
       async get(key) {
         const db = await this.openDB();
@@ -116,7 +116,14 @@ var init_indexeddb_store = __esm({
           request.onsuccess = () => {
             db.close();
             const result = request.result;
-            resolve(result ? result.data : null);
+            if (result) {
+              resolve({
+                data: result.data,
+                metadata: result.metadata
+              });
+            } else {
+              resolve(null);
+            }
           };
         });
       }
@@ -308,17 +315,23 @@ var init_fs_store = __esm({
         return path.join(cacheDir, `${safeKey}.meta.json`);
       }
       /**
-       * Get a cached database
+       * Get a cached database with metadata
        */
       async get(key) {
         const fs = await import("fs");
         try {
           const filePath = await this.getFilePath(key);
-          const buffer = await fs.promises.readFile(filePath);
-          return buffer.buffer.slice(
+          const metadataPath = await this.getMetadataPath(key);
+          const [buffer, metadataContent] = await Promise.all([
+            fs.promises.readFile(filePath),
+            fs.promises.readFile(metadataPath, "utf-8")
+          ]);
+          const data = buffer.buffer.slice(
             buffer.byteOffset,
             buffer.byteOffset + buffer.byteLength
           );
+          const metadata = JSON.parse(metadataContent);
+          return { data, metadata };
         } catch (error) {
           if (error.code === "ENOENT") {
             return null;
@@ -2462,6 +2475,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
     const {
       cache: userCache,
       cacheVersion = "1.0",
+      cacheExpirationMs = DEFAULT_CACHE_EXPIRATION_MS,
       skipFiles
     } = options;
     this.SQL = options.SQL || await (0, import_sql.default)(options.locateFile ? { locateFile: options.locateFile } : {});
@@ -2472,7 +2486,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
       cache = userCache;
     } else {
       try {
-        if (typeof window !== "undefined" && typeof indexedDB !== "undefined") {
+        if (typeof indexedDB !== "undefined") {
           const { IndexedDBCacheStore: IndexedDBCacheStore2 } = await Promise.resolve().then(() => (init_indexeddb_store(), indexeddb_store_exports));
           cache = new IndexedDBCacheStore2();
         } else if (typeof process !== "undefined" && process.versions?.node) {
@@ -2521,36 +2535,51 @@ var GtfsSqlJs = class _GtfsSqlJs {
         typeof zipPath === "string" ? zipPath : void 0,
         skipFiles
       );
-      const cachedDb = await cache.get(cacheKey);
-      if (cachedDb) {
-        onProgress?.({
-          phase: "loading_from_cache",
-          currentFile: null,
-          filesCompleted: 0,
-          totalFiles: 0,
-          rowsProcessed: 0,
-          totalRows: 0,
-          percentComplete: 50,
-          message: "Loading from cache..."
-        });
-        this.db = new this.SQL.Database(new Uint8Array(cachedDb));
-        if (options.realtimeFeedUrls) {
-          this.realtimeFeedUrls = options.realtimeFeedUrls;
+      const cacheEntry = await cache.get(cacheKey);
+      if (cacheEntry) {
+        const expired = isCacheExpired(cacheEntry.metadata, cacheExpirationMs);
+        if (expired) {
+          onProgress?.({
+            phase: "checking_cache",
+            currentFile: null,
+            filesCompleted: 0,
+            totalFiles: 0,
+            rowsProcessed: 0,
+            totalRows: 0,
+            percentComplete: 2,
+            message: "Cache expired, reprocessing..."
+          });
+          await cache.delete(cacheKey);
+        } else {
+          onProgress?.({
+            phase: "loading_from_cache",
+            currentFile: null,
+            filesCompleted: 0,
+            totalFiles: 0,
+            rowsProcessed: 0,
+            totalRows: 0,
+            percentComplete: 50,
+            message: "Loading from cache..."
+          });
+          this.db = new this.SQL.Database(new Uint8Array(cacheEntry.data));
+          if (options.realtimeFeedUrls) {
+            this.realtimeFeedUrls = options.realtimeFeedUrls;
+          }
+          if (options.stalenessThreshold !== void 0) {
+            this.stalenessThreshold = options.stalenessThreshold;
+          }
+          onProgress?.({
+            phase: "complete",
+            currentFile: null,
+            filesCompleted: 0,
+            totalFiles: 0,
+            rowsProcessed: 0,
+            totalRows: 0,
+            percentComplete: 100,
+            message: "GTFS data loaded from cache"
+          });
+          return;
         }
-        if (options.stalenessThreshold !== void 0) {
-          this.stalenessThreshold = options.stalenessThreshold;
-        }
-        onProgress?.({
-          phase: "complete",
-          currentFile: null,
-          filesCompleted: 0,
-          totalFiles: 0,
-          rowsProcessed: 0,
-          totalRows: 0,
-          percentComplete: 100,
-          message: "GTFS data loaded from cache"
-        });
-        return;
       }
       onProgress?.({
         phase: "extracting",
@@ -3089,7 +3118,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
    */
   static async getDefaultCacheStore() {
     try {
-      if (typeof window !== "undefined" && typeof indexedDB !== "undefined") {
+      if (typeof indexedDB !== "undefined") {
         const { IndexedDBCacheStore: IndexedDBCacheStore2 } = await Promise.resolve().then(() => (init_indexeddb_store(), indexeddb_store_exports));
         return new IndexedDBCacheStore2();
       } else if (typeof process !== "undefined" && process.versions?.node) {
