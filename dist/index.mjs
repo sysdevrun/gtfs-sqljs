@@ -2094,6 +2094,82 @@ function getStopTimes(db, filters = {}, stalenessThreshold = 120) {
   }
   return stopTimes;
 }
+function buildOrderedStopList(db, tripIds) {
+  if (tripIds.length === 0) {
+    return [];
+  }
+  const placeholders = tripIds.map(() => "?").join(", ");
+  const stmt = db.prepare(`
+    SELECT trip_id, stop_id, stop_sequence
+    FROM stop_times
+    WHERE trip_id IN (${placeholders})
+    ORDER BY trip_id, stop_sequence
+  `);
+  stmt.bind(tripIds);
+  const tripStopSequences = /* @__PURE__ */ new Map();
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    const tripId = String(row.trip_id);
+    const stopId = String(row.stop_id);
+    const stopSequence = Number(row.stop_sequence);
+    if (!tripStopSequences.has(tripId)) {
+      tripStopSequences.set(tripId, []);
+    }
+    tripStopSequences.get(tripId).push({ stop_id: stopId, stop_sequence: stopSequence });
+  }
+  stmt.free();
+  const orderedStopIds = [];
+  const stopIdSet = /* @__PURE__ */ new Set();
+  for (const [, stopSequence] of tripStopSequences) {
+    for (let i = 0; i < stopSequence.length; i++) {
+      const currentStop = stopSequence[i];
+      if (stopIdSet.has(currentStop.stop_id)) {
+        continue;
+      }
+      const insertIndex = findInsertionPosition(
+        orderedStopIds,
+        currentStop.stop_id,
+        stopSequence,
+        i
+      );
+      orderedStopIds.splice(insertIndex, 0, currentStop.stop_id);
+      stopIdSet.add(currentStop.stop_id);
+    }
+  }
+  if (orderedStopIds.length === 0) {
+    return [];
+  }
+  const stops = getStops(db, { stopId: orderedStopIds });
+  const stopMap = /* @__PURE__ */ new Map();
+  stops.forEach((stop) => stopMap.set(stop.stop_id, stop));
+  return orderedStopIds.map((stopId) => stopMap.get(stopId)).filter((stop) => stop !== void 0);
+}
+function findInsertionPosition(orderedStopIds, newStopId, tripStops, currentIndex) {
+  if (orderedStopIds.length === 0) {
+    return 0;
+  }
+  let beforeIndex = -1;
+  for (let i = currentIndex - 1; i >= 0; i--) {
+    const idx = orderedStopIds.indexOf(tripStops[i].stop_id);
+    if (idx !== -1) {
+      beforeIndex = idx;
+      break;
+    }
+  }
+  let afterIndex = orderedStopIds.length;
+  for (let i = currentIndex + 1; i < tripStops.length; i++) {
+    const idx = orderedStopIds.indexOf(tripStops[i].stop_id);
+    if (idx !== -1) {
+      afterIndex = idx;
+      break;
+    }
+  }
+  const insertPosition = beforeIndex + 1;
+  if (insertPosition <= afterIndex) {
+    return insertPosition;
+  }
+  return beforeIndex + 1;
+}
 function rowToStopTime(row) {
   return {
     trip_id: String(row.trip_id),
@@ -2895,6 +2971,36 @@ var GtfsSqlJs = class _GtfsSqlJs {
       finalFilters.serviceIds = serviceIds;
     }
     return getStopTimes(this.db, finalFilters, this.stalenessThreshold);
+  }
+  /**
+   * Build an ordered list of stops from multiple trips
+   *
+   * This is useful when you need to display a timetable for a route where different trips
+   * may stop at different sets of stops (e.g., express vs local service, or trips with
+   * different start/end points).
+   *
+   * The method intelligently merges stop sequences from all provided trips to create
+   * a comprehensive ordered list of all unique stops.
+   *
+   * @param tripIds - Array of trip IDs to analyze
+   * @returns Ordered array of Stop objects representing all unique stops
+   *
+   * @example
+   * // Get all trips for a route going in one direction
+   * const trips = gtfs.getTrips({ routeId: 'ROUTE_1', directionId: 0 });
+   * const tripIds = trips.map(t => t.trip_id);
+   *
+   * // Build ordered stop list for all these trips
+   * const stops = gtfs.buildOrderedStopList(tripIds);
+   *
+   * // Now you can display a timetable with all possible stops
+   * stops.forEach(stop => {
+   *   console.log(stop.stop_name);
+   * });
+   */
+  buildOrderedStopList(tripIds) {
+    if (!this.db) throw new Error("Database not initialized");
+    return buildOrderedStopList(this.db, tripIds);
   }
   // ==================== Realtime Methods ====================
   /**

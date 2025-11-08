@@ -783,6 +783,33 @@ declare class GtfsSqlJs {
         date?: string;
     }): StopTime[];
     /**
+     * Build an ordered list of stops from multiple trips
+     *
+     * This is useful when you need to display a timetable for a route where different trips
+     * may stop at different sets of stops (e.g., express vs local service, or trips with
+     * different start/end points).
+     *
+     * The method intelligently merges stop sequences from all provided trips to create
+     * a comprehensive ordered list of all unique stops.
+     *
+     * @param tripIds - Array of trip IDs to analyze
+     * @returns Ordered array of Stop objects representing all unique stops
+     *
+     * @example
+     * // Get all trips for a route going in one direction
+     * const trips = gtfs.getTrips({ routeId: 'ROUTE_1', directionId: 0 });
+     * const tripIds = trips.map(t => t.trip_id);
+     *
+     * // Build ordered stop list for all these trips
+     * const stops = gtfs.buildOrderedStopList(tripIds);
+     *
+     * // Now you can display a timetable with all possible stops
+     * stops.forEach(stop => {
+     *   console.log(stop.stop_name);
+     * });
+     */
+    buildOrderedStopList(tripIds: string[]): Stop[];
+    /**
      * Set GTFS-RT feed URLs
      */
     setRealtimeFeedUrls(urls: string[]): void;
