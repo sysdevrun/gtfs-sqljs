@@ -420,7 +420,7 @@ interface Frequency {
 /**
  * Transfer - Rules for making connections at transfer points
  */
-interface Transfer {
+interface Transfer$1 {
     from_stop_id: string;
     to_stop_id: string;
     transfer_type: number;
@@ -546,6 +546,101 @@ interface StopTimeFilters {
 }
 interface StopTimeWithRealtime extends StopTime {
     realtime?: StopTimeRealtime;
+}
+
+/**
+ * Itinerary Computation Module
+ * Computes multi-leg journeys between stops using GTFS data
+ */
+
+/**
+ * Configuration for itinerary search
+ */
+interface ItinerarySearchConfig {
+    /** Maximum number of transfers allowed (default: 3) */
+    maxTransfers?: number;
+    /** Minimum transfer time in seconds (default: 300 = 5 minutes) */
+    minTransferTime?: number;
+    /** Maximum number of itineraries to return (default: 5) */
+    maxResults?: number;
+    /** Maximum search depth for graph traversal (default: 10) */
+    maxSearchDepth?: number;
+}
+/**
+ * Filters for itinerary search
+ */
+interface ItinerarySearchFilters {
+    /** Origin stop ID */
+    fromStopId: string;
+    /** Destination stop ID */
+    toStopId: string;
+    /** Date in YYYYMMDD format */
+    date: string;
+    /** Departure time in HH:MM:SS format (leave after this time) */
+    departureTimeAfter: string;
+    /** Arrival time in HH:MM:SS format (arrive before this time, optional) */
+    departureTimeBefore?: string;
+    /** Configuration options */
+    config?: ItinerarySearchConfig;
+}
+/**
+ * A single leg of a journey (one trip on one route)
+ */
+interface ItineraryLeg {
+    /** Sequence number of this leg (0-indexed) */
+    legIndex: number;
+    /** Route information */
+    route: Route;
+    /** Trip information */
+    trip: Trip;
+    /** Direction ID */
+    directionId: number;
+    /** Departure stop */
+    fromStop: Stop;
+    /** Arrival stop */
+    toStop: Stop;
+    /** Departure time (HH:MM:SS) */
+    departureTime: string;
+    /** Arrival time (HH:MM:SS) */
+    arrivalTime: string;
+    /** All stop times for this leg (ordered) */
+    stopTimes: StopTime[];
+    /** Duration in seconds */
+    duration: number;
+}
+/**
+ * Transfer between two legs
+ */
+interface Transfer {
+    /** Stop where transfer occurs */
+    stop: Stop;
+    /** Time to wait for next leg in seconds */
+    waitTime: number;
+    /** Time when arriving at transfer stop */
+    arrivalTime: string;
+    /** Time when departing from transfer stop */
+    departureTime: string;
+}
+/**
+ * A complete itinerary from origin to destination
+ */
+interface Itinerary {
+    /** List of journey legs */
+    legs: ItineraryLeg[];
+    /** List of transfers (empty for direct routes) */
+    transfers: Transfer[];
+    /** Total number of transfers */
+    numberOfTransfers: number;
+    /** Departure time from origin */
+    departureTime: string;
+    /** Arrival time at destination */
+    arrivalTime: string;
+    /** Total journey duration in seconds */
+    totalDuration: number;
+    /** Total in-vehicle time in seconds */
+    inVehicleTime: number;
+    /** Total waiting time in seconds */
+    waitingTime: number;
 }
 
 interface TripUpdateFilters {
@@ -809,6 +904,53 @@ declare class GtfsSqlJs {
      * });
      */
     buildOrderedStopList(tripIds: string[]): Stop[];
+    /**
+     * Compute itineraries between two stops
+     *
+     * This method finds possible journeys between two stops, supporting up to 3 transfers
+     * by default. It builds a network graph and searches for compatible trip sequences.
+     *
+     * @param filters - Itinerary search filters
+     * @param filters.fromStopId - Origin stop ID
+     * @param filters.toStopId - Destination stop ID
+     * @param filters.date - Date in YYYYMMDD format
+     * @param filters.departureTimeAfter - Minimum departure time in HH:MM:SS format
+     * @param filters.departureTimeBefore - Maximum departure time in HH:MM:SS format (optional)
+     * @param filters.config - Optional configuration
+     * @param filters.config.maxTransfers - Maximum number of transfers (default: 3)
+     * @param filters.config.minTransferTime - Minimum transfer time in seconds (default: 300)
+     * @param filters.config.maxResults - Maximum number of itineraries to return (default: 5)
+     * @param filters.config.maxSearchDepth - Maximum search depth for graph traversal (default: 10)
+     * @returns Array of itineraries sorted by earliest arrival time
+     *
+     * @example
+     * // Find itineraries leaving after 8:00 AM
+     * const itineraries = gtfs.computeItineraries({
+     *   fromStopId: 'STOP_A',
+     *   toStopId: 'STOP_B',
+     *   date: '20240115',
+     *   departureTimeAfter: '08:00:00',
+     *   config: {
+     *     maxTransfers: 2,
+     *     maxResults: 10
+     *   }
+     * });
+     *
+     * // Display the itineraries
+     * itineraries.forEach(itinerary => {
+     *   console.log(`Departure: ${itinerary.departureTime}, Arrival: ${itinerary.arrivalTime}`);
+     *   console.log(`Transfers: ${itinerary.numberOfTransfers}`);
+     *   itinerary.legs.forEach(leg => {
+     *     console.log(`  ${leg.route.route_short_name}: ${leg.fromStop.stop_name} -> ${leg.toStop.stop_name}`);
+     *   });
+     * });
+     */
+    computeItineraries(filters: ItinerarySearchFilters): Itinerary[];
+    /**
+     * Clear the cached network graph
+     * Call this if you've updated GTFS data and want to rebuild the graph
+     */
+    clearItineraryCache(): void;
     /**
      * Set GTFS-RT feed URLs
      */
@@ -1105,4 +1247,4 @@ declare function getCacheStats(entries: CacheEntry[]): {
     newestEntry: number | null;
 };
 
-export { type Agency, type AgencyFilters, type Alert, AlertCause, AlertEffect, type AlertFilters, type Attribution, type CacheEntry, type CacheEntryWithData, type CacheMetadata, type CacheStore, type CacheStoreOptions, type Calendar, type CalendarDate, type ColumnDefinition, CongestionLevel, DEFAULT_CACHE_EXPIRATION_MS, type EntitySelector, type FareAttribute, type FareRule, type FeedInfo, FileSystemCacheStore, type Frequency, GTFS_SCHEMA, GtfsSqlJs, type GtfsSqlJsOptions, type IndexDefinition, IndexedDBCacheStore, type Level, OccupancyStatus, type Pathway, type Position, type RealtimeConfig, type Route, type RouteFilters, ScheduleRelationship, type Shape, type Stop, type StopFilters, type StopTime, type StopTimeEvent, type StopTimeFilters, type StopTimeRealtime, type StopTimeUpdate, type StopTimeUpdateFilters, type StopTimeUpdateWithMetadata, type StopTimeWithRealtime, type TableSchema, type TimeRange, type Transfer, type TranslatedString, type Trip, type TripFilters, type TripRealtime, type TripUpdate, type TripUpdateFilters, type TripWithRealtime, type VehicleDescriptor, type VehiclePosition, type VehiclePositionFilters, VehicleStopStatus, computeChecksum, computeZipChecksum, filterExpiredEntries, generateCacheKey, getCacheStats, isCacheExpired };
+export { type Agency, type AgencyFilters, type Alert, AlertCause, AlertEffect, type AlertFilters, type Attribution, type CacheEntry, type CacheEntryWithData, type CacheMetadata, type CacheStore, type CacheStoreOptions, type Calendar, type CalendarDate, type ColumnDefinition, CongestionLevel, DEFAULT_CACHE_EXPIRATION_MS, type EntitySelector, type FareAttribute, type FareRule, type FeedInfo, FileSystemCacheStore, type Frequency, GTFS_SCHEMA, GtfsSqlJs, type GtfsSqlJsOptions, type IndexDefinition, IndexedDBCacheStore, type Level, OccupancyStatus, type Pathway, type Position, type RealtimeConfig, type Route, type RouteFilters, ScheduleRelationship, type Shape, type Stop, type StopFilters, type StopTime, type StopTimeEvent, type StopTimeFilters, type StopTimeRealtime, type StopTimeUpdate, type StopTimeUpdateFilters, type StopTimeUpdateWithMetadata, type StopTimeWithRealtime, type TableSchema, type TimeRange, type Transfer$1 as Transfer, type TranslatedString, type Trip, type TripFilters, type TripRealtime, type TripUpdate, type TripUpdateFilters, type TripWithRealtime, type VehicleDescriptor, type VehiclePosition, type VehiclePositionFilters, VehicleStopStatus, computeChecksum, computeZipChecksum, filterExpiredEntries, generateCacheKey, getCacheStats, isCacheExpired };

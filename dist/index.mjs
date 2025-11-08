@@ -2187,6 +2187,409 @@ function rowToStopTime(row) {
   };
 }
 
+// src/queries/itineraries.ts
+var graphCache = null;
+var parentStopCache = /* @__PURE__ */ new Map();
+function getParentStop(db, stopId) {
+  if (parentStopCache.has(stopId)) {
+    return parentStopCache.get(stopId);
+  }
+  const stmt = db.prepare("SELECT * FROM stops WHERE stop_id = ?");
+  stmt.bind([stopId]);
+  if (!stmt.step()) {
+    stmt.free();
+    throw new Error(`Stop not found: ${stopId}`);
+  }
+  const row = stmt.getAsObject();
+  stmt.free();
+  const stop = {
+    stop_id: row.stop_id,
+    stop_name: row.stop_name,
+    stop_lat: row.stop_lat,
+    stop_lon: row.stop_lon,
+    stop_code: row.stop_code,
+    stop_desc: row.stop_desc,
+    zone_id: row.zone_id,
+    stop_url: row.stop_url,
+    location_type: row.location_type,
+    parent_station: row.parent_station,
+    stop_timezone: row.stop_timezone,
+    wheelchair_boarding: row.wheelchair_boarding,
+    level_id: row.level_id,
+    platform_code: row.platform_code
+  };
+  let result;
+  if (stop.parent_station) {
+    result = getParentStop(db, stop.parent_station);
+  } else {
+    result = stop;
+  }
+  parentStopCache.set(stopId, result);
+  return result;
+}
+function getActiveServiceIdsForDate(db, date) {
+  const serviceIds = [];
+  const year = parseInt(date.substring(0, 4), 10);
+  const month = parseInt(date.substring(4, 6), 10);
+  const day = parseInt(date.substring(6, 8), 10);
+  const dateObj = new Date(year, month - 1, day);
+  const dayOfWeek = dateObj.getDay();
+  const dayNames = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
+  const dayColumn = dayNames[dayOfWeek];
+  const calendarStmt = db.prepare(`
+    SELECT service_id FROM calendar
+    WHERE ${dayColumn} = 1
+      AND start_date <= ?
+      AND end_date >= ?
+  `);
+  calendarStmt.bind([date, date]);
+  while (calendarStmt.step()) {
+    serviceIds.push(calendarStmt.getAsObject().service_id);
+  }
+  calendarStmt.free();
+  const exceptionStmt = db.prepare("SELECT service_id, exception_type FROM calendar_dates WHERE date = ?");
+  exceptionStmt.bind([date]);
+  const additions = [];
+  const removals = [];
+  while (exceptionStmt.step()) {
+    const row = exceptionStmt.getAsObject();
+    const serviceId = row.service_id;
+    const exceptionType = row.exception_type;
+    if (exceptionType === 1) {
+      additions.push(serviceId);
+    } else if (exceptionType === 2) {
+      removals.push(serviceId);
+    }
+  }
+  exceptionStmt.free();
+  const finalServiceIds = serviceIds.filter((id) => !removals.includes(id)).concat(additions.filter((id) => !serviceIds.includes(id)));
+  return finalServiceIds;
+}
+function buildNetworkGraph(db, date) {
+  if (graphCache) {
+    const cached = graphCache.get(date);
+    if (cached) {
+      return cached;
+    }
+  }
+  const graph = /* @__PURE__ */ new Map();
+  const serviceIds = getActiveServiceIdsForDate(db, date);
+  if (serviceIds.length === 0) {
+    return graph;
+  }
+  const placeholders = serviceIds.map(() => "?").join(", ");
+  const query = `
+    SELECT DISTINCT
+      r.route_id, r.route_short_name, r.route_long_name, r.route_type,
+      r.agency_id, r.route_desc, r.route_url, r.route_color, r.route_text_color, r.route_sort_order,
+      t.direction_id,
+      st1.stop_id as from_stop_id,
+      st2.stop_id as to_stop_id
+    FROM routes r
+    JOIN trips t ON t.route_id = r.route_id
+    JOIN stop_times st1 ON st1.trip_id = t.trip_id
+    JOIN stop_times st2 ON st2.trip_id = t.trip_id
+    WHERE t.service_id IN (${placeholders})
+      AND st2.stop_sequence > st1.stop_sequence
+  `;
+  const stmt = db.prepare(query);
+  stmt.bind(serviceIds);
+  const edges = /* @__PURE__ */ new Map();
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    const routeId = row.route_id;
+    const directionId = row.direction_id ?? 0;
+    const fromStopId = row.from_stop_id;
+    const toStopId = row.to_stop_id;
+    const route = {
+      route_id: row.route_id,
+      route_short_name: row.route_short_name,
+      route_long_name: row.route_long_name,
+      route_type: row.route_type,
+      agency_id: row.agency_id,
+      route_desc: row.route_desc,
+      route_url: row.route_url,
+      route_color: row.route_color,
+      route_text_color: row.route_text_color,
+      route_sort_order: row.route_sort_order
+    };
+    const fromParent = getParentStop(db, fromStopId);
+    const toParent = getParentStop(db, toStopId);
+    if (fromParent.stop_id === toParent.stop_id) continue;
+    if (!graph.has(fromParent.stop_id)) {
+      graph.set(fromParent.stop_id, {
+        stopId: fromParent.stop_id,
+        stop: fromParent,
+        edges: []
+      });
+    }
+    if (!graph.has(toParent.stop_id)) {
+      graph.set(toParent.stop_id, {
+        stopId: toParent.stop_id,
+        stop: toParent,
+        edges: []
+      });
+    }
+    const edgeKey = `${fromParent.stop_id}:${toParent.stop_id}:${routeId}:${directionId}`;
+    if (!edges.has(edgeKey)) {
+      edges.set(edgeKey, /* @__PURE__ */ new Set());
+      graph.get(fromParent.stop_id).edges.push({
+        toStopId: toParent.stop_id,
+        routeId,
+        directionId,
+        route
+      });
+    }
+  }
+  stmt.free();
+  if (!graphCache) {
+    graphCache = /* @__PURE__ */ new Map();
+  }
+  graphCache.set(date, graph);
+  return graph;
+}
+function findRouteCombinations(graph, fromStopId, toStopId, maxTransfers, maxSearchDepth) {
+  const combinations = [];
+  const fromNode = graph.get(fromStopId);
+  const toNode = graph.get(toStopId);
+  if (!fromNode || !toNode) {
+    return combinations;
+  }
+  const queue = [{
+    stopId: fromStopId,
+    routeDirectionPairs: [],
+    depth: 0
+  }];
+  const visited = /* @__PURE__ */ new Set();
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (current.depth > maxSearchDepth) continue;
+    const stateKey = `${current.stopId}:${JSON.stringify(current.routeDirectionPairs)}`;
+    if (visited.has(stateKey)) continue;
+    visited.add(stateKey);
+    if (current.stopId === toStopId && current.routeDirectionPairs.length > 0) {
+      combinations.push(current.routeDirectionPairs);
+      continue;
+    }
+    if (current.routeDirectionPairs.length > maxTransfers) continue;
+    const node = graph.get(current.stopId);
+    if (!node) continue;
+    for (const edge of node.edges) {
+      const lastPair = current.routeDirectionPairs[current.routeDirectionPairs.length - 1];
+      if (lastPair && lastPair.routeId === edge.routeId && lastPair.directionId === edge.directionId) {
+        continue;
+      }
+      queue.push({
+        stopId: edge.toStopId,
+        routeDirectionPairs: [
+          ...current.routeDirectionPairs,
+          { routeId: edge.routeId, directionId: edge.directionId }
+        ],
+        depth: current.depth + 1
+      });
+    }
+  }
+  return combinations;
+}
+function timeToSeconds(time) {
+  const parts = time.split(":");
+  const hours = parseInt(parts[0], 10);
+  const minutes = parseInt(parts[1], 10);
+  const seconds = parseInt(parts[2], 10);
+  return hours * 3600 + minutes * 60 + seconds;
+}
+function findConnectingTrips(db, routeId, directionId, fromStopId, toStopId, serviceIds, afterTime, beforeTime) {
+  const results = [];
+  const servicePlaceholders = serviceIds.map(() => "?").join(", ");
+  const tripQuery = `
+    SELECT t.*, r.*
+    FROM trips t
+    JOIN routes r ON r.route_id = t.route_id
+    WHERE t.route_id = ?
+      AND t.service_id IN (${servicePlaceholders})
+      ${directionId !== null && directionId !== void 0 ? "AND t.direction_id = ?" : ""}
+  `;
+  const tripStmt = db.prepare(tripQuery);
+  const bindParams = [routeId, ...serviceIds];
+  if (directionId !== null && directionId !== void 0) {
+    bindParams.push(directionId);
+  }
+  tripStmt.bind(bindParams);
+  while (tripStmt.step()) {
+    const row = tripStmt.getAsObject();
+    const trip = {
+      trip_id: row.trip_id,
+      route_id: row.route_id,
+      service_id: row.service_id,
+      trip_headsign: row.trip_headsign,
+      trip_short_name: row.trip_short_name,
+      direction_id: row.direction_id,
+      block_id: row.block_id,
+      shape_id: row.shape_id,
+      wheelchair_accessible: row.wheelchair_accessible,
+      bikes_allowed: row.bikes_allowed
+    };
+    const route = {
+      route_id: row.route_id,
+      route_short_name: row.route_short_name,
+      route_long_name: row.route_long_name,
+      route_type: row.route_type,
+      agency_id: row.agency_id,
+      route_desc: row.route_desc,
+      route_url: row.route_url,
+      route_color: row.route_color,
+      route_text_color: row.route_text_color,
+      route_sort_order: row.route_sort_order
+    };
+    const stopTimesQuery = `
+      SELECT st.*, s.*
+      FROM stop_times st
+      JOIN stops s ON s.stop_id = st.stop_id
+      WHERE st.trip_id = ?
+      ORDER BY st.stop_sequence
+    `;
+    const stopTimesStmt = db.prepare(stopTimesQuery);
+    stopTimesStmt.bind([trip.trip_id]);
+    const allStopTimes = [];
+    let fromStopTime = null;
+    let toStopTime = null;
+    while (stopTimesStmt.step()) {
+      const stRow = stopTimesStmt.getAsObject();
+      const stopTime = {
+        trip_id: stRow.trip_id,
+        arrival_time: stRow.arrival_time,
+        departure_time: stRow.departure_time,
+        stop_id: stRow.stop_id,
+        stop_sequence: stRow.stop_sequence,
+        stop_headsign: stRow.stop_headsign,
+        pickup_type: stRow.pickup_type,
+        drop_off_type: stRow.drop_off_type,
+        continuous_pickup: stRow.continuous_pickup,
+        continuous_drop_off: stRow.continuous_drop_off,
+        shape_dist_traveled: stRow.shape_dist_traveled,
+        timepoint: stRow.timepoint,
+        stop: {
+          stop_id: stRow.stop_id,
+          stop_name: stRow.stop_name,
+          stop_lat: stRow.stop_lat,
+          stop_lon: stRow.stop_lon,
+          stop_code: stRow.stop_code,
+          stop_desc: stRow.stop_desc,
+          zone_id: stRow.zone_id,
+          stop_url: stRow.stop_url,
+          location_type: stRow.location_type,
+          parent_station: stRow.parent_station,
+          stop_timezone: stRow.stop_timezone,
+          wheelchair_boarding: stRow.wheelchair_boarding,
+          level_id: stRow.level_id,
+          platform_code: stRow.platform_code
+        }
+      };
+      allStopTimes.push(stopTime);
+      const parent = getParentStop(db, stopTime.stop_id);
+      if (parent.stop_id === fromStopId && !fromStopTime) {
+        fromStopTime = stopTime;
+      }
+      if (parent.stop_id === toStopId && fromStopTime && !toStopTime) {
+        toStopTime = stopTime;
+      }
+    }
+    stopTimesStmt.free();
+    if (fromStopTime && toStopTime) {
+      const departureSeconds = timeToSeconds(fromStopTime.departure_time);
+      if (afterTime !== void 0 && departureSeconds < afterTime) {
+        continue;
+      }
+      if (beforeTime !== void 0 && departureSeconds > beforeTime) {
+        continue;
+      }
+      results.push({
+        trip,
+        route,
+        fromStopTime,
+        toStopTime,
+        allStopTimes
+      });
+    }
+  }
+  tripStmt.free();
+  return results;
+}
+function computeItineraries(db, filters) {
+  const config = filters.config || {};
+  const maxTransfers = config.maxTransfers ?? 3;
+  const minTransferTime = config.minTransferTime ?? 300;
+  const maxResults = config.maxResults ?? 5;
+  const maxSearchDepth = config.maxSearchDepth ?? 10;
+  parentStopCache.clear();
+  const graph = buildNetworkGraph(db, filters.date);
+  const fromParentStop = getParentStop(db, filters.fromStopId);
+  const toParentStop = getParentStop(db, filters.toStopId);
+  const routeCombinations = findRouteCombinations(
+    graph,
+    fromParentStop.stop_id,
+    toParentStop.stop_id,
+    maxTransfers,
+    maxSearchDepth
+  );
+  const serviceIds = getActiveServiceIdsForDate(db, filters.date);
+  if (serviceIds.length === 0) {
+    return [];
+  }
+  const allItineraries = [];
+  const departureAfterSeconds = timeToSeconds(filters.departureTimeAfter);
+  const departureBeforeSeconds = filters.departureTimeBefore ? timeToSeconds(filters.departureTimeBefore) : Number.MAX_SAFE_INTEGER;
+  for (const routeCombination of routeCombinations) {
+    if (routeCombination.length === 1) {
+      const { routeId, directionId } = routeCombination[0];
+      const directTrips = findConnectingTrips(
+        db,
+        routeId,
+        directionId,
+        fromParentStop.stop_id,
+        toParentStop.stop_id,
+        serviceIds,
+        departureAfterSeconds,
+        departureBeforeSeconds
+      );
+      for (const { trip, route, fromStopTime, toStopTime, allStopTimes } of directTrips) {
+        const fromIndex = allStopTimes.findIndex((st) => st.stop_sequence === fromStopTime.stop_sequence);
+        const toIndex = allStopTimes.findIndex((st) => st.stop_sequence === toStopTime.stop_sequence);
+        const legStopTimes = allStopTimes.slice(fromIndex, toIndex + 1);
+        const duration = timeToSeconds(toStopTime.arrival_time) - timeToSeconds(fromStopTime.departure_time);
+        const leg = {
+          legIndex: 0,
+          route,
+          trip,
+          directionId: trip.direction_id ?? 0,
+          fromStop: fromStopTime.stop,
+          toStop: toStopTime.stop,
+          departureTime: fromStopTime.departure_time,
+          arrivalTime: toStopTime.arrival_time,
+          stopTimes: legStopTimes,
+          duration
+        };
+        allItineraries.push({
+          legs: [leg],
+          transfers: [],
+          numberOfTransfers: 0,
+          departureTime: leg.departureTime,
+          arrivalTime: leg.arrivalTime,
+          totalDuration: duration,
+          inVehicleTime: duration,
+          waitingTime: 0
+        });
+      }
+    }
+  }
+  allItineraries.sort((a, b) => timeToSeconds(a.arrivalTime) - timeToSeconds(b.arrivalTime));
+  return allItineraries.slice(0, maxResults);
+}
+function clearGraphCache() {
+  graphCache = null;
+  parentStopCache.clear();
+}
+
 // src/queries/rt-alerts.ts
 function parseAlert(row) {
   return {
@@ -3001,6 +3404,59 @@ var GtfsSqlJs = class _GtfsSqlJs {
   buildOrderedStopList(tripIds) {
     if (!this.db) throw new Error("Database not initialized");
     return buildOrderedStopList(this.db, tripIds);
+  }
+  // ==================== Itinerary Methods ====================
+  /**
+   * Compute itineraries between two stops
+   *
+   * This method finds possible journeys between two stops, supporting up to 3 transfers
+   * by default. It builds a network graph and searches for compatible trip sequences.
+   *
+   * @param filters - Itinerary search filters
+   * @param filters.fromStopId - Origin stop ID
+   * @param filters.toStopId - Destination stop ID
+   * @param filters.date - Date in YYYYMMDD format
+   * @param filters.departureTimeAfter - Minimum departure time in HH:MM:SS format
+   * @param filters.departureTimeBefore - Maximum departure time in HH:MM:SS format (optional)
+   * @param filters.config - Optional configuration
+   * @param filters.config.maxTransfers - Maximum number of transfers (default: 3)
+   * @param filters.config.minTransferTime - Minimum transfer time in seconds (default: 300)
+   * @param filters.config.maxResults - Maximum number of itineraries to return (default: 5)
+   * @param filters.config.maxSearchDepth - Maximum search depth for graph traversal (default: 10)
+   * @returns Array of itineraries sorted by earliest arrival time
+   *
+   * @example
+   * // Find itineraries leaving after 8:00 AM
+   * const itineraries = gtfs.computeItineraries({
+   *   fromStopId: 'STOP_A',
+   *   toStopId: 'STOP_B',
+   *   date: '20240115',
+   *   departureTimeAfter: '08:00:00',
+   *   config: {
+   *     maxTransfers: 2,
+   *     maxResults: 10
+   *   }
+   * });
+   *
+   * // Display the itineraries
+   * itineraries.forEach(itinerary => {
+   *   console.log(`Departure: ${itinerary.departureTime}, Arrival: ${itinerary.arrivalTime}`);
+   *   console.log(`Transfers: ${itinerary.numberOfTransfers}`);
+   *   itinerary.legs.forEach(leg => {
+   *     console.log(`  ${leg.route.route_short_name}: ${leg.fromStop.stop_name} -> ${leg.toStop.stop_name}`);
+   *   });
+   * });
+   */
+  computeItineraries(filters) {
+    if (!this.db) throw new Error("Database not initialized");
+    return computeItineraries(this.db, filters);
+  }
+  /**
+   * Clear the cached network graph
+   * Call this if you've updated GTFS data and want to rebuild the graph
+   */
+  clearItineraryCache() {
+    clearGraphCache();
   }
   // ==================== Realtime Methods ====================
   /**

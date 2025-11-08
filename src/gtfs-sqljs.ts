@@ -27,6 +27,7 @@ import {
 } from './queries/calendar';
 import { getTrips, type TripFilters, type TripWithRealtime } from './queries/trips';
 import { getStopTimes, buildOrderedStopList, type StopTimeFilters, type StopTimeWithRealtime } from './queries/stop-times';
+import { computeItineraries, clearGraphCache, type ItinerarySearchFilters, type ItinerarySearchConfig, type Itinerary, type ItineraryLeg, type Transfer } from './queries/itineraries';
 import { getAlerts as getAlertsQuery, getAllAlerts, type AlertFilters } from './queries/rt-alerts';
 import { getVehiclePositions as getVehiclePositionsQuery, getAllVehiclePositions, type VehiclePositionFilters } from './queries/rt-vehicle-positions';
 import { getTripUpdates, getAllTripUpdates, type TripUpdateFilters } from './queries/rt-trip-updates';
@@ -37,9 +38,11 @@ import type { Agency, Stop, Route, Trip, StopTime, Calendar, CalendarDate } from
 import type { Alert, VehiclePosition, TripUpdate } from './types/gtfs-rt';
 
 // Export filter types for users
-export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters };
+export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters, ItinerarySearchFilters, ItinerarySearchConfig };
 // Export RT types
 export type { Alert, VehiclePosition, TripUpdate, StopTimeUpdateWithMetadata, TripWithRealtime, StopTimeWithRealtime };
+// Export itinerary types
+export type { Itinerary, ItineraryLeg, Transfer };
 
 /**
  * Progress information for GTFS data loading
@@ -794,6 +797,62 @@ export class GtfsSqlJs {
   buildOrderedStopList(tripIds: string[]): Stop[] {
     if (!this.db) throw new Error('Database not initialized');
     return buildOrderedStopList(this.db, tripIds);
+  }
+
+  // ==================== Itinerary Methods ====================
+
+  /**
+   * Compute itineraries between two stops
+   *
+   * This method finds possible journeys between two stops, supporting up to 3 transfers
+   * by default. It builds a network graph and searches for compatible trip sequences.
+   *
+   * @param filters - Itinerary search filters
+   * @param filters.fromStopId - Origin stop ID
+   * @param filters.toStopId - Destination stop ID
+   * @param filters.date - Date in YYYYMMDD format
+   * @param filters.departureTimeAfter - Minimum departure time in HH:MM:SS format
+   * @param filters.departureTimeBefore - Maximum departure time in HH:MM:SS format (optional)
+   * @param filters.config - Optional configuration
+   * @param filters.config.maxTransfers - Maximum number of transfers (default: 3)
+   * @param filters.config.minTransferTime - Minimum transfer time in seconds (default: 300)
+   * @param filters.config.maxResults - Maximum number of itineraries to return (default: 5)
+   * @param filters.config.maxSearchDepth - Maximum search depth for graph traversal (default: 10)
+   * @returns Array of itineraries sorted by earliest arrival time
+   *
+   * @example
+   * // Find itineraries leaving after 8:00 AM
+   * const itineraries = gtfs.computeItineraries({
+   *   fromStopId: 'STOP_A',
+   *   toStopId: 'STOP_B',
+   *   date: '20240115',
+   *   departureTimeAfter: '08:00:00',
+   *   config: {
+   *     maxTransfers: 2,
+   *     maxResults: 10
+   *   }
+   * });
+   *
+   * // Display the itineraries
+   * itineraries.forEach(itinerary => {
+   *   console.log(`Departure: ${itinerary.departureTime}, Arrival: ${itinerary.arrivalTime}`);
+   *   console.log(`Transfers: ${itinerary.numberOfTransfers}`);
+   *   itinerary.legs.forEach(leg => {
+   *     console.log(`  ${leg.route.route_short_name}: ${leg.fromStop.stop_name} -> ${leg.toStop.stop_name}`);
+   *   });
+   * });
+   */
+  computeItineraries(filters: ItinerarySearchFilters): Itinerary[] {
+    if (!this.db) throw new Error('Database not initialized');
+    return computeItineraries(this.db, filters);
+  }
+
+  /**
+   * Clear the cached network graph
+   * Call this if you've updated GTFS data and want to rebuild the graph
+   */
+  clearItineraryCache(): void {
+    clearGraphCache();
   }
 
   // ==================== Realtime Methods ====================
