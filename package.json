@@ -41,6 +41,8 @@
     "url": "https://github.com/sysdevrun/gtfs-sqljs.git"
   },
   "dependencies": {
+    "@types/graphlib": "^2.1.12",
+    "graphlib": "^2.1.8",
     "jszip": "^3.10.1",
     "papaparse": "^5.5.3",
     "protobufjs": "^7.2.5",
