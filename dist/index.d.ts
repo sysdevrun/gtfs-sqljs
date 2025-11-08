@@ -1,4 +1,5 @@
 import { SqlJsStatic, Database } from 'sql.js';
+import { Graph } from 'graphlib';
 
 /**
  * GTFS Realtime TypeScript types
@@ -570,6 +571,91 @@ interface StopTimeUpdateWithMetadata extends StopTimeUpdate {
 }
 
 /**
+ * Itinerary Search Type Definitions
+ */
+
+/**
+ * Graph edge metadata: connection between stops via a route
+ */
+interface RouteEdge {
+    routeId: string;
+    directionId: number;
+    intermediateStops: string[];
+    routeShortName?: string;
+    routeLongName?: string;
+}
+/**
+ * Transit graph with metadata
+ */
+interface TransitGraph {
+    graph: Graph;
+    metadata: Map<string, RouteEdge[]>;
+    date: string;
+}
+/**
+ * Pathfinding result - a sequence of route segments
+ */
+interface ItineraryPath {
+    startStopId: string;
+    endStopId: string;
+    segments: RouteSegment[];
+    totalTransfers: number;
+}
+/**
+ * A single segment of a path (one route/direction)
+ */
+interface RouteSegment {
+    routeId: string;
+    directionId: number;
+    boardStopId: string;
+    alightStopId: string;
+    intermediateStops: string[];
+    routeShortName?: string;
+    routeLongName?: string;
+}
+/**
+ * Itinerary with matched trips
+ */
+interface ItineraryWithTrips {
+    path: ItineraryPath;
+    options: TripOption[];
+}
+/**
+ * A single trip option (complete journey)
+ */
+interface TripOption {
+    segments: TripSegment[];
+    totalDuration: number;
+    departureTime: string;
+    arrivalTime: string;
+}
+/**
+ * A single trip segment (one trip on one route)
+ */
+interface TripSegment {
+    tripId: string;
+    routeId: string;
+    directionId: number;
+    tripHeadsign?: string;
+    boardStopId: string;
+    boardStopName: string;
+    alightStopId: string;
+    alightStopName: string;
+    boardTime: string;
+    alightTime: string;
+    intermediateStops: StopWithTime[];
+}
+/**
+ * Stop with arrival/departure times
+ */
+interface StopWithTime {
+    stopId: string;
+    stopName: string;
+    arrivalTime: string;
+    departureTime: string;
+}
+
+/**
  * Progress information for GTFS data loading
  */
 interface ProgressInfo {
@@ -871,6 +957,59 @@ declare class GtfsSqlJs {
      * Returns extended type with trip_id and rt_last_updated for debugging purposes
      */
     debugExportAllStopTimeUpdates(): StopTimeUpdateWithMetadata[];
+    /**
+     * Build a transit graph for a specific date
+     * The graph represents transit connections with nodes as stops and edges as routes
+     *
+     * @param date - Date in YYYYMMDD format
+     * @returns Transit graph that can be used for pathfinding
+     *
+     * @example
+     * // Build graph for January 15, 2024
+     * const graph = gtfs.buildItineraryGraph('20240115');
+     */
+    buildItineraryGraph(date: string): TransitGraph;
+    /**
+     * Find a path between two stops in the transit graph
+     * Returns the route segments needed to travel from start to end
+     *
+     * @param startStopId - Starting stop ID (parent stop)
+     * @param endStopId - Ending stop ID (parent stop)
+     * @param graph - Transit graph built with buildItineraryGraph()
+     * @param maxTransfers - Maximum number of transfers allowed (default: 5)
+     * @returns Itinerary path with route segments, or null if no path exists
+     *
+     * @example
+     * // Find path from stop A to stop B
+     * const graph = gtfs.buildItineraryGraph('20240115');
+     * const path = gtfs.findItineraryPath('STOP_A', 'STOP_B', graph);
+     * if (path) {
+     *   console.log(`Found path with ${path.totalTransfers} transfers`);
+     * }
+     */
+    findItineraryPath(startStopId: string, endStopId: string, graph: TransitGraph, maxTransfers?: number): ItineraryPath | null;
+    /**
+     * Find trips that match a given path for a specific date and start time
+     * Returns multiple departure options with actual trip details
+     *
+     * @param path - Itinerary path from findItineraryPath()
+     * @param date - Date in YYYYMMDD format
+     * @param startTime - Earliest departure time in HH:MM:SS format
+     * @param maxOptions - Maximum number of departure options to return (default: 5)
+     * @returns Itinerary with trip options including times and stops
+     *
+     * @example
+     * // Find trips departing after 9:00 AM
+     * const graph = gtfs.buildItineraryGraph('20240115');
+     * const path = gtfs.findItineraryPath('STOP_A', 'STOP_B', graph);
+     * if (path) {
+     *   const itinerary = gtfs.findItineraryTrips(path, '20240115', '09:00:00');
+     *   for (const option of itinerary.options) {
+     *     console.log(`Depart at ${option.departureTime}, arrive at ${option.arrivalTime}`);
+     *   }
+     * }
+     */
+    findItineraryTrips(path: ItineraryPath, date: string, startTime: string, maxOptions?: number): ItineraryWithTrips;
     /**
      * Get cache statistics
      * @param cacheStore - Cache store to query (optional, auto-detects if not provided)

@@ -32,14 +32,22 @@ import { getVehiclePositions as getVehiclePositionsQuery, getAllVehiclePositions
 import { getTripUpdates, getAllTripUpdates, type TripUpdateFilters } from './queries/rt-trip-updates';
 import { getStopTimeUpdates, getAllStopTimeUpdates, type StopTimeUpdateFilters, type StopTimeUpdateWithMetadata } from './queries/rt-stop-time-updates';
 
+// Itinerary methods
+import { buildTransitGraph } from './itinerary/graph-builder';
+import { findPath } from './itinerary/pathfinder';
+import { findTripsForPath } from './itinerary/trip-matcher';
+
 // Types
 import type { Agency, Stop, Route, Trip, StopTime, Calendar, CalendarDate } from './types/gtfs';
 import type { Alert, VehiclePosition, TripUpdate } from './types/gtfs-rt';
+import type { TransitGraph, ItineraryPath, ItineraryWithTrips } from './itinerary/types';
 
 // Export filter types for users
 export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters };
 // Export RT types
 export type { Alert, VehiclePosition, TripUpdate, StopTimeUpdateWithMetadata, TripWithRealtime, StopTimeWithRealtime };
+// Export itinerary types
+export type { TransitGraph, ItineraryPath, ItineraryWithTrips } from './itinerary/types';
 
 /**
  * Progress information for GTFS data loading
@@ -920,6 +928,85 @@ export class GtfsSqlJs {
   debugExportAllStopTimeUpdates(): StopTimeUpdateWithMetadata[] {
     if (!this.db) throw new Error('Database not initialized');
     return getAllStopTimeUpdates(this.db);
+  }
+
+  // ==================== Itinerary Planning Methods ====================
+
+  /**
+   * Build a transit graph for a specific date
+   * The graph represents transit connections with nodes as stops and edges as routes
+   *
+   * @param date - Date in YYYYMMDD format
+   * @returns Transit graph that can be used for pathfinding
+   *
+   * @example
+   * // Build graph for January 15, 2024
+   * const graph = gtfs.buildItineraryGraph('20240115');
+   */
+  buildItineraryGraph(date: string): TransitGraph {
+    if (!this.db) throw new Error('Database not initialized');
+    const serviceIds = getActiveServiceIds(this.db, date);
+    return buildTransitGraph(this.db, serviceIds);
+  }
+
+  /**
+   * Find a path between two stops in the transit graph
+   * Returns the route segments needed to travel from start to end
+   *
+   * @param startStopId - Starting stop ID (parent stop)
+   * @param endStopId - Ending stop ID (parent stop)
+   * @param graph - Transit graph built with buildItineraryGraph()
+   * @param maxTransfers - Maximum number of transfers allowed (default: 5)
+   * @returns Itinerary path with route segments, or null if no path exists
+   *
+   * @example
+   * // Find path from stop A to stop B
+   * const graph = gtfs.buildItineraryGraph('20240115');
+   * const path = gtfs.findItineraryPath('STOP_A', 'STOP_B', graph);
+   * if (path) {
+   *   console.log(`Found path with ${path.totalTransfers} transfers`);
+   * }
+   */
+  findItineraryPath(
+    startStopId: string,
+    endStopId: string,
+    graph: TransitGraph,
+    maxTransfers: number = 5
+  ): ItineraryPath | null {
+    if (!this.db) throw new Error('Database not initialized');
+    return findPath(graph, startStopId, endStopId, maxTransfers);
+  }
+
+  /**
+   * Find trips that match a given path for a specific date and start time
+   * Returns multiple departure options with actual trip details
+   *
+   * @param path - Itinerary path from findItineraryPath()
+   * @param date - Date in YYYYMMDD format
+   * @param startTime - Earliest departure time in HH:MM:SS format
+   * @param maxOptions - Maximum number of departure options to return (default: 5)
+   * @returns Itinerary with trip options including times and stops
+   *
+   * @example
+   * // Find trips departing after 9:00 AM
+   * const graph = gtfs.buildItineraryGraph('20240115');
+   * const path = gtfs.findItineraryPath('STOP_A', 'STOP_B', graph);
+   * if (path) {
+   *   const itinerary = gtfs.findItineraryTrips(path, '20240115', '09:00:00');
+   *   for (const option of itinerary.options) {
+   *     console.log(`Depart at ${option.departureTime}, arrive at ${option.arrivalTime}`);
+   *   }
+   * }
+   */
+  findItineraryTrips(
+    path: ItineraryPath,
+    date: string,
+    startTime: string,
+    maxOptions: number = 5
+  ): ItineraryWithTrips {
+    if (!this.db) throw new Error('Database not initialized');
+    const serviceIds = getActiveServiceIds(this.db, date);
+    return findTripsForPath(this.db, path, serviceIds, startTime, maxOptions);
   }
 
   // ==================== Cache Management Methods ====================

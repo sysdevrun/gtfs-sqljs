@@ -2515,6 +2515,399 @@ function getAllStopTimeUpdates(db) {
   return stopTimeUpdates;
 }
 
+// src/itinerary/graph-builder.ts
+var import_graphlib = require("graphlib");
+
+// src/itinerary/parent-stops.ts
+function getTopParentStop(db, stopId, stopCache) {
+  let stop;
+  if (stopCache) {
+    stop = stopCache.get(stopId);
+  } else {
+    const stmt = db.prepare("SELECT * FROM stops WHERE stop_id = ?");
+    stmt.bind([stopId]);
+    if (stmt.step()) {
+      stop = stmt.getAsObject();
+    }
+    stmt.free();
+  }
+  if (!stop) return stopId;
+  if (!stop.parent_station) return stopId;
+  return getTopParentStop(db, stop.parent_station, stopCache);
+}
+function buildParentStopCache(db) {
+  const cache = /* @__PURE__ */ new Map();
+  const stopCache = /* @__PURE__ */ new Map();
+  const stmt = db.prepare("SELECT * FROM stops");
+  while (stmt.step()) {
+    const stop = stmt.getAsObject();
+    stopCache.set(stop.stop_id, stop);
+  }
+  stmt.free();
+  for (const [stopId] of stopCache) {
+    cache.set(stopId, getTopParentStop(db, stopId, stopCache));
+  }
+  return cache;
+}
+function getChildStops(db, parentStopId) {
+  const childStops = [];
+  const stmt = db.prepare("SELECT stop_id FROM stops WHERE parent_station = ?");
+  stmt.bind([parentStopId]);
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    childStops.push(row.stop_id);
+  }
+  stmt.free();
+  childStops.push(parentStopId);
+  return childStops;
+}
+
+// src/itinerary/graph-builder.ts
+function buildTransitGraph(db, serviceIds) {
+  const parentCache = buildParentStopCache(db);
+  const serviceIdPlaceholders = serviceIds.map(() => "?").join(", ");
+  const tripStmt = db.prepare(`
+    SELECT t.trip_id, t.route_id, t.direction_id, r.route_short_name, r.route_long_name
+    FROM trips t
+    LEFT JOIN routes r ON t.route_id = r.route_id
+    WHERE t.service_id IN (${serviceIdPlaceholders})
+  `);
+  tripStmt.bind(serviceIds);
+  const routeDirectionMap = /* @__PURE__ */ new Map();
+  while (tripStmt.step()) {
+    const row = tripStmt.getAsObject();
+    const directionId = row.direction_id ?? 0;
+    const key = `${row.route_id}_${directionId}`;
+    if (!routeDirectionMap.has(key)) {
+      routeDirectionMap.set(key, {
+        routeId: row.route_id,
+        directionId,
+        tripIds: [],
+        routeShortName: row.route_short_name,
+        routeLongName: row.route_long_name
+      });
+    }
+    routeDirectionMap.get(key).tripIds.push(row.trip_id);
+  }
+  tripStmt.free();
+  const graph = new import_graphlib.Graph({ directed: true, multigraph: true });
+  const edgeMetadata = /* @__PURE__ */ new Map();
+  for (const [, routeDir] of routeDirectionMap) {
+    const stopSequence = buildOrderedStopList(db, routeDir.tripIds);
+    if (stopSequence.length < 2) {
+      continue;
+    }
+    const parentStopSequence = [];
+    let lastParent = null;
+    for (const stop of stopSequence) {
+      const parentId = parentCache.get(stop.stop_id) || stop.stop_id;
+      if (parentId !== lastParent) {
+        parentStopSequence.push(parentId);
+        lastParent = parentId;
+      }
+    }
+    for (let i = 0; i < parentStopSequence.length - 1; i++) {
+      const fromStop = parentStopSequence[i];
+      const toStop = parentStopSequence[i + 1];
+      if (!graph.hasNode(fromStop)) {
+        graph.setNode(fromStop);
+      }
+      if (!graph.hasNode(toStop)) {
+        graph.setNode(toStop);
+      }
+      const metadataKey = `${fromStop}->${toStop}`;
+      if (!edgeMetadata.has(metadataKey)) {
+        edgeMetadata.set(metadataKey, []);
+      }
+      const existingEdges = edgeMetadata.get(metadataKey);
+      const alreadyExists = existingEdges.some(
+        (e) => e.routeId === routeDir.routeId && e.directionId === routeDir.directionId
+      );
+      if (!alreadyExists) {
+        const routeEdge = {
+          routeId: routeDir.routeId,
+          directionId: routeDir.directionId,
+          intermediateStops: [],
+          // No intermediate stops for direct connections
+          routeShortName: routeDir.routeShortName,
+          routeLongName: routeDir.routeLongName
+        };
+        existingEdges.push(routeEdge);
+        graph.setEdge(fromStop, toStop, {
+          routeId: routeDir.routeId,
+          directionId: routeDir.directionId,
+          weight: 1
+        });
+      }
+    }
+  }
+  return {
+    graph,
+    metadata: edgeMetadata,
+    date: serviceIds.join(",")
+    // Store service IDs for reference
+  };
+}
+
+// src/itinerary/pathfinder.ts
+var import_graphlib2 = require("graphlib");
+function findPath(transitGraph, startStopId, endStopId, maxTransfers = 5) {
+  const { graph, metadata } = transitGraph;
+  if (!graph.hasNode(startStopId)) {
+    throw new Error(`Start stop ${startStopId} not found in graph`);
+  }
+  if (!graph.hasNode(endStopId)) {
+    throw new Error(`End stop ${endStopId} not found in graph`);
+  }
+  if (startStopId === endStopId) {
+    return {
+      startStopId,
+      endStopId,
+      segments: [],
+      totalTransfers: 0
+    };
+  }
+  const dijkstraResult = import_graphlib2.alg.dijkstra(graph, startStopId, (e) => {
+    const edgeData = graph.edge(e);
+    return edgeData?.weight || 1;
+  });
+  if (!dijkstraResult[endStopId] || dijkstraResult[endStopId].distance === Infinity) {
+    return null;
+  }
+  const pathNodes = [];
+  let currentNode = endStopId;
+  while (currentNode !== startStopId) {
+    pathNodes.unshift(currentNode);
+    const predecessor = dijkstraResult[currentNode].predecessor;
+    if (!predecessor) break;
+    currentNode = predecessor;
+  }
+  pathNodes.unshift(startStopId);
+  const segments = [];
+  for (let i = 0; i < pathNodes.length - 1; i++) {
+    const from = pathNodes[i];
+    const to = pathNodes[i + 1];
+    const edgeKey = `${from}->${to}`;
+    const routeOptions = metadata.get(edgeKey) || [];
+    if (routeOptions.length > 0) {
+      const routeEdge = routeOptions[0];
+      segments.push({
+        routeId: routeEdge.routeId,
+        directionId: routeEdge.directionId,
+        boardStopId: from,
+        alightStopId: to,
+        intermediateStops: routeEdge.intermediateStops,
+        routeShortName: routeEdge.routeShortName,
+        routeLongName: routeEdge.routeLongName
+      });
+    }
+  }
+  const totalTransfers = segments.length - 1;
+  if (totalTransfers > maxTransfers) {
+    return null;
+  }
+  return {
+    startStopId,
+    endStopId,
+    segments,
+    totalTransfers
+  };
+}
+
+// src/itinerary/time-utils.ts
+function gtfsTimeToSeconds(time) {
+  const [h, m, s] = time.split(":").map(Number);
+  return h * 3600 + m * 60 + s;
+}
+function secondsToGtfsTime(seconds) {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor(seconds % 3600 / 60);
+  const s = seconds % 60;
+  return `${String(h).padStart(2, "0")}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+function compareGtfsTime(time1, time2) {
+  return gtfsTimeToSeconds(time1) - gtfsTimeToSeconds(time2);
+}
+function addMinutesToTime(time, minutes) {
+  const seconds = gtfsTimeToSeconds(time);
+  const newSeconds = seconds + minutes * 60;
+  return secondsToGtfsTime(newSeconds);
+}
+function calculateDuration(startTime, endTime) {
+  return gtfsTimeToSeconds(endTime) - gtfsTimeToSeconds(startTime);
+}
+
+// src/itinerary/trip-matcher.ts
+var DEFAULT_TRANSFER_TIME_MINUTES = 5;
+function findTripsForPath(db, path, serviceIds, startTime, maxOptions = 5) {
+  const options = [];
+  for (let optionIdx = 0; optionIdx < maxOptions; optionIdx++) {
+    const tripOption = findSingleTripOption(
+      db,
+      path,
+      serviceIds,
+      startTime,
+      optionIdx
+    );
+    if (tripOption) {
+      options.push(tripOption);
+      if (tripOption.segments.length > 0) {
+        startTime = addMinutesToTime(tripOption.departureTime, 1);
+      }
+    } else {
+      break;
+    }
+  }
+  return { path, options };
+}
+function findSingleTripOption(db, path, serviceIds, startTime, skipCount) {
+  const tripSegments = [];
+  let currentTime = startTime;
+  for (const segment of path.segments) {
+    const tripSegment = findTripSegment(
+      db,
+      segment.routeId,
+      segment.directionId,
+      segment.boardStopId,
+      segment.alightStopId,
+      serviceIds,
+      currentTime,
+      skipCount
+    );
+    if (!tripSegment) {
+      return null;
+    }
+    tripSegments.push(tripSegment);
+    currentTime = addMinutesToTime(
+      tripSegment.alightTime,
+      DEFAULT_TRANSFER_TIME_MINUTES
+    );
+  }
+  if (tripSegments.length === 0) {
+    return null;
+  }
+  return {
+    segments: tripSegments,
+    totalDuration: calculateDuration(
+      tripSegments[0].boardTime,
+      tripSegments[tripSegments.length - 1].alightTime
+    ),
+    departureTime: tripSegments[0].boardTime,
+    arrivalTime: tripSegments[tripSegments.length - 1].alightTime
+  };
+}
+function findTripSegment(db, routeId, directionId, boardStopId, alightStopId, serviceIds, afterTime, skipCount) {
+  const boardChildStops = getChildStops(db, boardStopId);
+  const alightChildStops = getChildStops(db, alightStopId);
+  const serviceIdPlaceholders = serviceIds.map(() => "?").join(", ");
+  const tripStmt = db.prepare(`
+    SELECT trip_id, trip_headsign
+    FROM trips
+    WHERE route_id = ?
+      AND (direction_id = ? OR direction_id IS NULL)
+      AND service_id IN (${serviceIdPlaceholders})
+  `);
+  tripStmt.bind([routeId, directionId, ...serviceIds]);
+  const tripIds = [];
+  while (tripStmt.step()) {
+    const row = tripStmt.getAsObject();
+    tripIds.push(row);
+  }
+  tripStmt.free();
+  if (tripIds.length === 0) {
+    return null;
+  }
+  const candidates = [];
+  for (const trip of tripIds) {
+    const segment = buildTripSegment(
+      db,
+      trip.trip_id,
+      trip.trip_headsign,
+      routeId,
+      directionId,
+      boardChildStops,
+      alightChildStops,
+      boardStopId,
+      alightStopId,
+      afterTime
+    );
+    if (segment) {
+      candidates.push(segment);
+    }
+  }
+  candidates.sort((a, b) => compareGtfsTime(a.boardTime, b.boardTime));
+  return candidates[skipCount] || null;
+}
+function buildTripSegment(db, tripId, tripHeadsign, routeId, directionId, boardChildStops, alightChildStops, boardStopId, alightStopId, afterTime) {
+  const stopTimesStmt = db.prepare(`
+    SELECT stop_id, stop_sequence, arrival_time, departure_time
+    FROM stop_times
+    WHERE trip_id = ?
+    ORDER BY stop_sequence
+  `);
+  stopTimesStmt.bind([tripId]);
+  const stopTimes = [];
+  while (stopTimesStmt.step()) {
+    const row = stopTimesStmt.getAsObject();
+    stopTimes.push(row);
+  }
+  stopTimesStmt.free();
+  let boardIdx = -1;
+  let alightIdx = -1;
+  for (let i = 0; i < stopTimes.length; i++) {
+    if (boardIdx === -1 && boardChildStops.includes(stopTimes[i].stop_id)) {
+      boardIdx = i;
+    } else if (boardIdx !== -1 && alightChildStops.includes(stopTimes[i].stop_id)) {
+      alightIdx = i;
+      break;
+    }
+  }
+  if (boardIdx === -1 || alightIdx === -1 || boardIdx >= alightIdx) {
+    return null;
+  }
+  const boardTime = stopTimes[boardIdx].departure_time;
+  const alightTime = stopTimes[alightIdx].arrival_time;
+  if (compareGtfsTime(boardTime, afterTime) < 0) {
+    return null;
+  }
+  const boardStop = getStopName(db, stopTimes[boardIdx].stop_id);
+  const alightStop = getStopName(db, stopTimes[alightIdx].stop_id);
+  const intermediateStops = [];
+  for (let i = boardIdx + 1; i < alightIdx; i++) {
+    const st = stopTimes[i];
+    intermediateStops.push({
+      stopId: st.stop_id,
+      stopName: getStopName(db, st.stop_id),
+      arrivalTime: st.arrival_time,
+      departureTime: st.departure_time
+    });
+  }
+  return {
+    tripId,
+    routeId,
+    directionId,
+    tripHeadsign,
+    boardStopId: stopTimes[boardIdx].stop_id,
+    boardStopName: boardStop,
+    alightStopId: stopTimes[alightIdx].stop_id,
+    alightStopName: alightStop,
+    boardTime,
+    alightTime,
+    intermediateStops
+  };
+}
+function getStopName(db, stopId) {
+  const stmt = db.prepare("SELECT stop_name FROM stops WHERE stop_id = ?");
+  stmt.bind([stopId]);
+  let name = stopId;
+  if (stmt.step()) {
+    const row = stmt.getAsObject();
+    name = row.stop_name;
+  }
+  stmt.free();
+  return name;
+}
+
 // src/gtfs-sqljs.ts
 var LIB_VERSION = "0.1.0";
 var GtfsSqlJs = class _GtfsSqlJs {
@@ -3154,6 +3547,71 @@ var GtfsSqlJs = class _GtfsSqlJs {
   debugExportAllStopTimeUpdates() {
     if (!this.db) throw new Error("Database not initialized");
     return getAllStopTimeUpdates(this.db);
+  }
+  // ==================== Itinerary Planning Methods ====================
+  /**
+   * Build a transit graph for a specific date
+   * The graph represents transit connections with nodes as stops and edges as routes
+   *
+   * @param date - Date in YYYYMMDD format
+   * @returns Transit graph that can be used for pathfinding
+   *
+   * @example
+   * // Build graph for January 15, 2024
+   * const graph = gtfs.buildItineraryGraph('20240115');
+   */
+  buildItineraryGraph(date) {
+    if (!this.db) throw new Error("Database not initialized");
+    const serviceIds = getActiveServiceIds(this.db, date);
+    return buildTransitGraph(this.db, serviceIds);
+  }
+  /**
+   * Find a path between two stops in the transit graph
+   * Returns the route segments needed to travel from start to end
+   *
+   * @param startStopId - Starting stop ID (parent stop)
+   * @param endStopId - Ending stop ID (parent stop)
+   * @param graph - Transit graph built with buildItineraryGraph()
+   * @param maxTransfers - Maximum number of transfers allowed (default: 5)
+   * @returns Itinerary path with route segments, or null if no path exists
+   *
+   * @example
+   * // Find path from stop A to stop B
+   * const graph = gtfs.buildItineraryGraph('20240115');
+   * const path = gtfs.findItineraryPath('STOP_A', 'STOP_B', graph);
+   * if (path) {
+   *   console.log(`Found path with ${path.totalTransfers} transfers`);
+   * }
+   */
+  findItineraryPath(startStopId, endStopId, graph, maxTransfers = 5) {
+    if (!this.db) throw new Error("Database not initialized");
+    return findPath(graph, startStopId, endStopId, maxTransfers);
+  }
+  /**
+   * Find trips that match a given path for a specific date and start time
+   * Returns multiple departure options with actual trip details
+   *
+   * @param path - Itinerary path from findItineraryPath()
+   * @param date - Date in YYYYMMDD format
+   * @param startTime - Earliest departure time in HH:MM:SS format
+   * @param maxOptions - Maximum number of departure options to return (default: 5)
+   * @returns Itinerary with trip options including times and stops
+   *
+   * @example
+   * // Find trips departing after 9:00 AM
+   * const graph = gtfs.buildItineraryGraph('20240115');
+   * const path = gtfs.findItineraryPath('STOP_A', 'STOP_B', graph);
+   * if (path) {
+   *   const itinerary = gtfs.findItineraryTrips(path, '20240115', '09:00:00');
+   *   for (const option of itinerary.options) {
+   *     console.log(`Depart at ${option.departureTime}, arrive at ${option.arrivalTime}`);
+   *   }
+   * }
+   */
+  findItineraryTrips(path, date, startTime, maxOptions = 5) {
+    if (!this.db) throw new Error("Database not initialized");
+    const serviceIds = getActiveServiceIds(this.db, date);
+    return findTripsForPath(this.db, path, serviceIds, startTime, maxOptions);
   }
   // ==================== Cache Management Methods ====================
   /**
