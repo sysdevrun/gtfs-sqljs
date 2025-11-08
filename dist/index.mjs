@@ -2495,7 +2495,7 @@ function findConnectingTrips(db, routeId, directionId, fromStopId, toStopId, ser
       }
     }
     stopTimesStmt.free();
-    if (fromStopTime && toStopTime) {
+    if (fromStopTime && (toStopId === "" || toStopTime)) {
       const departureSeconds = timeToSeconds(fromStopTime.departure_time);
       if (afterTime !== void 0 && departureSeconds < afterTime) {
         continue;
@@ -2503,17 +2503,257 @@ function findConnectingTrips(db, routeId, directionId, fromStopId, toStopId, ser
       if (beforeTime !== void 0 && departureSeconds > beforeTime) {
         continue;
       }
+      const finalToStopTime = toStopTime || allStopTimes[allStopTimes.length - 1];
       results.push({
         trip,
         route,
         fromStopTime,
-        toStopTime,
+        toStopTime: finalToStopTime,
         allStopTimes
       });
     }
   }
   tripStmt.free();
   return results;
+}
+function findConnectionPoints(db, route1Id, direction1Id, route2Id, direction2Id, serviceIds) {
+  const connectionPoints = /* @__PURE__ */ new Set();
+  const servicePlaceholders = serviceIds.map(() => "?").join(", ");
+  const query = `
+    SELECT DISTINCT s1.stop_id
+    FROM stop_times st1
+    JOIN trips t1 ON t1.trip_id = st1.trip_id
+    JOIN stops s1 ON s1.stop_id = st1.stop_id
+    JOIN stop_times st2 ON st2.stop_id = st1.stop_id
+    JOIN trips t2 ON t2.trip_id = st2.trip_id
+    WHERE t1.route_id = ?
+      AND t1.service_id IN (${servicePlaceholders})
+      ${direction1Id !== null && direction1Id !== void 0 ? "AND t1.direction_id = ?" : ""}
+      AND t2.route_id = ?
+      AND t2.service_id IN (${servicePlaceholders})
+      ${direction2Id !== null && direction2Id !== void 0 ? "AND t2.direction_id = ?" : ""}
+  `;
+  const stmt = db.prepare(query);
+  const bindParams = [route1Id, ...serviceIds];
+  if (direction1Id !== null && direction1Id !== void 0) {
+    bindParams.push(direction1Id);
+  }
+  bindParams.push(route2Id, ...serviceIds);
+  if (direction2Id !== null && direction2Id !== void 0) {
+    bindParams.push(direction2Id);
+  }
+  stmt.bind(bindParams);
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    const stopId = row.stop_id;
+    const parentStop = getParentStop(db, stopId);
+    connectionPoints.add(parentStop.stop_id);
+  }
+  stmt.free();
+  return Array.from(connectionPoints);
+}
+function findMultiLegItineraries(db, routeCombination, fromStopId, toStopId, serviceIds, departureAfterSeconds, departureBeforeSeconds, minTransferTime, allItineraries, graph) {
+  const MAX_ITINERARIES_PER_COMBINATION = 50;
+  let iterationCount = 0;
+  function buildLegs(legIndex, currentLegs, lastArrivalTime, lastStopId) {
+    if (iterationCount >= MAX_ITINERARIES_PER_COMBINATION) {
+      return false;
+    }
+    if (legIndex === routeCombination.length) {
+      const transfers = [];
+      let totalWaitingTime = 0;
+      for (let i = 0; i < currentLegs.length - 1; i++) {
+        const currentLeg = currentLegs[i];
+        const nextLeg = currentLegs[i + 1];
+        const waitTime = timeToSeconds(nextLeg.departureTime) - timeToSeconds(currentLeg.arrivalTime);
+        totalWaitingTime += waitTime;
+        transfers.push({
+          stop: currentLeg.toStop,
+          waitTime,
+          arrivalTime: currentLeg.arrivalTime,
+          departureTime: nextLeg.departureTime
+        });
+      }
+      const departureTime = currentLegs[0].departureTime;
+      const arrivalTime = currentLegs[currentLegs.length - 1].arrivalTime;
+      const totalDuration = timeToSeconds(arrivalTime) - timeToSeconds(departureTime);
+      const inVehicleTime = currentLegs.reduce((sum, leg) => sum + leg.duration, 0);
+      allItineraries.push({
+        legs: currentLegs,
+        transfers,
+        numberOfTransfers: transfers.length,
+        departureTime,
+        arrivalTime,
+        totalDuration,
+        inVehicleTime,
+        waitingTime: totalWaitingTime
+      });
+      iterationCount++;
+      return iterationCount < MAX_ITINERARIES_PER_COMBINATION;
+    }
+    const { routeId, directionId } = routeCombination[legIndex];
+    const isFirstLeg = legIndex === 0;
+    const isLastLeg = legIndex === routeCombination.length - 1;
+    if (isFirstLeg) {
+      const firstLegTrips = findConnectingTrips(
+        db,
+        routeId,
+        directionId,
+        fromStopId,
+        isLastLeg ? toStopId : "",
+        // If only leg, connect to destination
+        serviceIds,
+        departureAfterSeconds,
+        departureBeforeSeconds
+      );
+      const limitedFirstLegTrips = firstLegTrips.slice(0, 20);
+      for (const { trip, route, fromStopTime, toStopTime, allStopTimes } of limitedFirstLegTrips) {
+        if (!isLastLeg) {
+          const nextRoute = routeCombination[legIndex + 1];
+          const connectionPoints = findConnectionPoints(
+            db,
+            routeId,
+            directionId,
+            nextRoute.routeId,
+            nextRoute.directionId,
+            serviceIds
+          );
+          const limitedConnectionPoints = connectionPoints.slice(0, 5);
+          for (const transferStopId of limitedConnectionPoints) {
+            const transferStopIndex = allStopTimes.findIndex((st) => {
+              const parent = getParentStop(db, st.stop_id);
+              return parent.stop_id === transferStopId;
+            });
+            if (transferStopIndex === -1) continue;
+            if (transferStopIndex <= allStopTimes.findIndex((st) => st.stop_sequence === fromStopTime.stop_sequence)) continue;
+            const transferStopTime = allStopTimes[transferStopIndex];
+            const fromIndex = allStopTimes.findIndex((st) => st.stop_sequence === fromStopTime.stop_sequence);
+            const toIndex = transferStopIndex;
+            const legStopTimes = allStopTimes.slice(fromIndex, toIndex + 1);
+            const duration = timeToSeconds(transferStopTime.arrival_time) - timeToSeconds(fromStopTime.departure_time);
+            const leg = {
+              legIndex,
+              route,
+              trip,
+              directionId: trip.direction_id ?? 0,
+              fromStop: fromStopTime.stop,
+              toStop: transferStopTime.stop,
+              departureTime: fromStopTime.departure_time,
+              arrivalTime: transferStopTime.arrival_time,
+              stopTimes: legStopTimes,
+              duration
+            };
+            const shouldContinue = buildLegs(
+              legIndex + 1,
+              [...currentLegs, leg],
+              timeToSeconds(transferStopTime.arrival_time),
+              transferStopId
+            );
+            if (!shouldContinue) return false;
+          }
+        } else {
+          const fromIndex = allStopTimes.findIndex((st) => st.stop_sequence === fromStopTime.stop_sequence);
+          const toIndex = allStopTimes.findIndex((st) => st.stop_sequence === toStopTime.stop_sequence);
+          const legStopTimes = allStopTimes.slice(fromIndex, toIndex + 1);
+          const duration = timeToSeconds(toStopTime.arrival_time) - timeToSeconds(fromStopTime.departure_time);
+          const leg = {
+            legIndex,
+            route,
+            trip,
+            directionId: trip.direction_id ?? 0,
+            fromStop: fromStopTime.stop,
+            toStop: toStopTime.stop,
+            departureTime: fromStopTime.departure_time,
+            arrivalTime: toStopTime.arrival_time,
+            stopTimes: legStopTimes,
+            duration
+          };
+          const shouldContinue = buildLegs(legIndex + 1, [...currentLegs, leg], 0, "");
+          if (!shouldContinue) return false;
+        }
+      }
+    } else {
+      const earliestDeparture = lastArrivalTime + minTransferTime;
+      const connectingTrips = findConnectingTrips(
+        db,
+        routeId,
+        directionId,
+        lastStopId,
+        isLastLeg ? toStopId : "",
+        serviceIds,
+        earliestDeparture,
+        departureBeforeSeconds
+      );
+      const limitedTrips = connectingTrips.slice(0, 20);
+      for (const { trip, route, fromStopTime, toStopTime, allStopTimes } of limitedTrips) {
+        if (isLastLeg) {
+          const fromIndex = allStopTimes.findIndex((st) => st.stop_sequence === fromStopTime.stop_sequence);
+          const toIndex = allStopTimes.findIndex((st) => st.stop_sequence === toStopTime.stop_sequence);
+          const legStopTimes = allStopTimes.slice(fromIndex, toIndex + 1);
+          const duration = timeToSeconds(toStopTime.arrival_time) - timeToSeconds(fromStopTime.departure_time);
+          const leg = {
+            legIndex,
+            route,
+            trip,
+            directionId: trip.direction_id ?? 0,
+            fromStop: fromStopTime.stop,
+            toStop: toStopTime.stop,
+            departureTime: fromStopTime.departure_time,
+            arrivalTime: toStopTime.arrival_time,
+            stopTimes: legStopTimes,
+            duration
+          };
+          const shouldContinue = buildLegs(legIndex + 1, [...currentLegs, leg], 0, "");
+          if (!shouldContinue) return false;
+        } else {
+          const nextRoute = routeCombination[legIndex + 1];
+          const connectionPoints = findConnectionPoints(
+            db,
+            routeId,
+            directionId,
+            nextRoute.routeId,
+            nextRoute.directionId,
+            serviceIds
+          );
+          const limitedConnectionPoints = connectionPoints.slice(0, 5);
+          for (const transferStopId of limitedConnectionPoints) {
+            const transferStopIndex = allStopTimes.findIndex((st) => {
+              const parent = getParentStop(db, st.stop_id);
+              return parent.stop_id === transferStopId;
+            });
+            if (transferStopIndex === -1) continue;
+            if (transferStopIndex <= allStopTimes.findIndex((st) => st.stop_sequence === fromStopTime.stop_sequence)) continue;
+            const transferStopTime = allStopTimes[transferStopIndex];
+            const fromIndex = allStopTimes.findIndex((st) => st.stop_sequence === fromStopTime.stop_sequence);
+            const toIndex = transferStopIndex;
+            const legStopTimes = allStopTimes.slice(fromIndex, toIndex + 1);
+            const duration = timeToSeconds(transferStopTime.arrival_time) - timeToSeconds(fromStopTime.departure_time);
+            const leg = {
+              legIndex,
+              route,
+              trip,
+              directionId: trip.direction_id ?? 0,
+              fromStop: fromStopTime.stop,
+              toStop: transferStopTime.stop,
+              departureTime: fromStopTime.departure_time,
+              arrivalTime: transferStopTime.arrival_time,
+              stopTimes: legStopTimes,
+              duration
+            };
+            const shouldContinue = buildLegs(
+              legIndex + 1,
+              [...currentLegs, leg],
+              timeToSeconds(transferStopTime.arrival_time),
+              transferStopId
+            );
+            if (!shouldContinue) return false;
+          }
+        }
+      }
+    }
+    return true;
+  }
+  buildLegs(0, [], 0, "");
 }
 function computeItineraries(db, filters) {
   const config = filters.config || {};
@@ -2580,6 +2820,19 @@ function computeItineraries(db, filters) {
           waitingTime: 0
         });
       }
+    } else {
+      findMultiLegItineraries(
+        db,
+        routeCombination,
+        fromParentStop.stop_id,
+        toParentStop.stop_id,
+        serviceIds,
+        departureAfterSeconds,
+        departureBeforeSeconds,
+        minTransferTime,
+        allItineraries,
+        graph
+      );
     }
   }
   allItineraries.sort((a, b) => timeToSeconds(a.arrivalTime) - timeToSeconds(b.arrivalTime));
