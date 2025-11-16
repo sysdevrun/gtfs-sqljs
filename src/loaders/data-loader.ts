@@ -102,7 +102,7 @@ export async function loadGTFSData(
       totalFiles: sortedFiles.length,
       rowsProcessed,
       totalRows,
-      percentComplete: 15 + Math.floor((rowsProcessed / totalRows) * 70),
+      percentComplete: 40 + Math.floor((rowsProcessed / totalRows) * 35),
       message: `Loading ${fileName} (${fileRows.toLocaleString()} rows)`,
     });
 
@@ -115,7 +115,7 @@ export async function loadGTFSData(
         totalFiles: sortedFiles.length,
         rowsProcessed: currentProgress,
         totalRows,
-        percentComplete: 15 + Math.floor((currentProgress / totalRows) * 70),
+        percentComplete: 40 + Math.floor((currentProgress / totalRows) * 35),
         message: `Loading ${fileName} (${processedInFile.toLocaleString()}/${fileRows.toLocaleString()} rows)`,
       });
     });
@@ -130,7 +130,7 @@ export async function loadGTFSData(
       totalFiles: sortedFiles.length,
       rowsProcessed,
       totalRows,
-      percentComplete: 15 + Math.floor((rowsProcessed / totalRows) * 70),
+      percentComplete: 40 + Math.floor((rowsProcessed / totalRows) * 35),
       message: `Completed ${fileName}`,
     });
   }

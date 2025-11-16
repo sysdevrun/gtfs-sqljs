@@ -573,7 +573,7 @@ interface StopTimeUpdateWithMetadata extends StopTimeUpdate {
  * Progress information for GTFS data loading
  */
 interface ProgressInfo {
-    phase: 'checking_cache' | 'loading_from_cache' | 'downloading' | 'extracting' | 'creating_schema' | 'inserting_data' | 'creating_indexes' | 'analyzing' | 'saving_cache' | 'complete';
+    phase: 'checking_cache' | 'loading_from_cache' | 'downloading' | 'extracting' | 'creating_schema' | 'inserting_data' | 'creating_indexes' | 'analyzing' | 'loading_realtime' | 'saving_cache' | 'complete';
     currentFile: string | null;
     filesCompleted: number;
     totalFiles: number;
