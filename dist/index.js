@@ -804,8 +804,10 @@ async function fetchZip(source, onProgress) {
           currentFile: null,
           filesCompleted: 0,
           totalFiles: 0,
-          rowsProcessed: receivedLength,
-          totalRows: total,
+          rowsProcessed: 0,
+          totalRows: 0,
+          bytesDownloaded: receivedLength,
+          totalBytes: total,
           percentComplete: Math.min(percentComplete, 30),
           message: `Downloading GTFS ZIP (${(receivedLength / 1024 / 1024).toFixed(1)} MB / ${(total / 1024 / 1024).toFixed(1)} MB)`
         });

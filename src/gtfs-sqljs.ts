@@ -51,6 +51,8 @@ export interface ProgressInfo {
   totalFiles: number;
   rowsProcessed: number;
   totalRows: number;
+  bytesDownloaded?: number;  // Bytes downloaded (used during 'downloading' phase)
+  totalBytes?: number;        // Total bytes to download (used during 'downloading' phase)
   percentComplete: number; // 0-100
   message: string;
 }
