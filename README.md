@@ -269,20 +269,21 @@ const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
 
 The loading process goes through these phases:
 
-1. **`checking_cache`** - Checking if cached database exists (0-2%)
+1. **`checking_cache`** - Checking if cached database exists (0%)
 2. **`loading_from_cache`** - Loading from cache (if found, jumps to 100%)
-3. **`downloading`** - Downloading GTFS ZIP file (2-5%)
-4. **`creating_schema`** - Creating database tables (5-15%)
-5. **`extracting`** - Extracting GTFS ZIP file (15-20%)
-6. **`inserting_data`** - Importing data from CSV files (20-85%)
-7. **`creating_indexes`** - Building database indexes (85-95%)
-8. **`analyzing`** - Optimizing query performance (95-98%)
-9. **`saving_cache`** - Saving to cache (98-99%)
-10. **`complete`** - Load complete (100%)
+3. **`downloading`** - Downloading GTFS ZIP file (1-30%)
+4. **`extracting`** - Extracting GTFS ZIP file (35%)
+5. **`creating_schema`** - Creating database tables (40%)
+6. **`inserting_data`** - Importing data from CSV files (40-75%)
+7. **`creating_indexes`** - Building database indexes (75-85%)
+8. **`analyzing`** - Optimizing query performance (85-90%)
+9. **`loading_realtime`** - Loading realtime data from feeds (90-95%) *(if configured)*
+10. **`saving_cache`** - Saving to cache (95-98%)
+11. **`complete`** - Load complete (100%)
 
-**Note:** When a cached database is found, phases 3-9 are skipped, and loading completes in <1 second.
+**Note:** When a cached database is found, phases 3-10 are skipped, and loading completes in <1 second.
 
-**Note:** If `realtimeFeedUrls` are configured, GTFS-RT data will be fetched automatically after the load completes (but won't affect the progress percentage).
+**Note:** The `loading_realtime` phase only occurs if `realtimeFeedUrls` are configured during initialization.
 
 #### Web Worker Example
 
@@ -328,13 +329,16 @@ worker.postMessage({ type: 'load', url: 'https://example.com/gtfs.zip' });
 
 ```typescript
 interface ProgressInfo {
-  phase: 'downloading' | 'extracting' | 'creating_schema' | 'inserting_data' |
-         'creating_indexes' | 'analyzing' | 'complete';
+  phase: 'checking_cache' | 'loading_from_cache' | 'downloading' | 'extracting' |
+         'creating_schema' | 'inserting_data' | 'creating_indexes' | 'analyzing' |
+         'loading_realtime' | 'saving_cache' | 'complete';
   currentFile: string | null;        // e.g., "stop_times.txt"
   filesCompleted: number;            // Files processed so far
   totalFiles: number;                // Total number of files
-  rowsProcessed: number;             // Rows imported so far
-  totalRows: number;                 // Total rows to import
+  rowsProcessed: number;             // CSV rows imported so far
+  totalRows: number;                 // Total CSV rows to import
+  bytesDownloaded?: number;          // Bytes downloaded (during 'downloading' phase)
+  totalBytes?: number;               // Total bytes to download (during 'downloading' phase)
   percentComplete: number;           // 0-100
   message: string;                   // Human-readable status message
 }
