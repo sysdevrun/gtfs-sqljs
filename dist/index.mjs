@@ -751,7 +751,7 @@ async function fetchZip(source, onProgress) {
       while (!done) {
         const result = await reader.read();
         done = result.done;
-        if (done) break;
+        if (done || !result.value) break;
         chunks.push(result.value);
         receivedLength += result.value.length;
         const downloadPercent = receivedLength / total * 100;

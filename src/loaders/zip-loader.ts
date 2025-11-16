@@ -83,7 +83,7 @@ export async function fetchZip(source: string, onProgress?: ProgressCallback): P
         const result = await reader.read();
         done = result.done;
 
-        if (done) break;
+        if (done || !result.value) break;
 
         chunks.push(result.value);
         receivedLength += result.value.length;
