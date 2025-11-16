@@ -77,14 +77,16 @@ export async function fetchZip(source: string, onProgress?: ProgressCallback): P
       const reader = response.body.getReader();
       const chunks: Uint8Array[] = [];
       let receivedLength = 0;
+      let done = false;
 
-      while (true) {
-        const { done, value } = await reader.read();
+      while (!done) {
+        const result = await reader.read();
+        done = result.done;
 
-        if (done) break;
+        if (done || !result.value) break;
 
-        chunks.push(value);
-        receivedLength += value.length;
+        chunks.push(result.value);
+        receivedLength += result.value.length;
 
         // Calculate download progress (0-100%)
         const downloadPercent = (receivedLength / total) * 100;
@@ -97,8 +99,10 @@ export async function fetchZip(source: string, onProgress?: ProgressCallback): P
           currentFile: null,
           filesCompleted: 0,
           totalFiles: 0,
-          rowsProcessed: receivedLength,
-          totalRows: total,
+          rowsProcessed: 0,
+          totalRows: 0,
+          bytesDownloaded: receivedLength,
+          totalBytes: total,
           percentComplete: Math.min(percentComplete, 30),
           message: `Downloading GTFS ZIP (${(receivedLength / 1024 / 1024).toFixed(1)} MB / ${(total / 1024 / 1024).toFixed(1)} MB)`,
         });

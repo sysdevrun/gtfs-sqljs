@@ -579,6 +579,8 @@ interface ProgressInfo {
     totalFiles: number;
     rowsProcessed: number;
     totalRows: number;
+    bytesDownloaded?: number;
+    totalBytes?: number;
     percentComplete: number;
     message: string;
 }
