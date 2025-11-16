@@ -77,14 +77,16 @@ export async function fetchZip(source: string, onProgress?: ProgressCallback): P
       const reader = response.body.getReader();
       const chunks: Uint8Array[] = [];
       let receivedLength = 0;
+      let done = false;
 
-      while (true) {
-        const { done, value } = await reader.read();
+      while (!done) {
+        const result = await reader.read();
+        done = result.done;
 
         if (done) break;
 
-        chunks.push(value);
-        receivedLength += value.length;
+        chunks.push(result.value);
+        receivedLength += result.value.length;
 
         // Calculate download progress (0-100%)
         const downloadPercent = (receivedLength / total) * 100;
