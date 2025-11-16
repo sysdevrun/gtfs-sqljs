@@ -226,18 +226,7 @@ export class GtfsSqlJs {
       // Fetch raw zip data for checksum (only if zipPath is a string)
       let zipData: ArrayBuffer;
       if (typeof zipPath === 'string') {
-        onProgress?.({
-          phase: 'downloading',
-          currentFile: null,
-          filesCompleted: 0,
-          totalFiles: 0,
-          rowsProcessed: 0,
-          totalRows: 0,
-          percentComplete: 2,
-          message: 'Downloading GTFS ZIP file',
-        });
-
-        zipData = await fetchZip(zipPath);
+        zipData = await fetchZip(zipPath, onProgress);
       } else {
         // zipPath is already ArrayBuffer or Uint8Array
         zipData = zipPath as ArrayBuffer;
@@ -369,21 +358,10 @@ export class GtfsSqlJs {
     }
 
     // No cache - use normal loading flow
-    onProgress?.({
-      phase: 'downloading',
-      currentFile: null,
-      filesCompleted: 0,
-      totalFiles: 0,
-      rowsProcessed: 0,
-      totalRows: 0,
-      percentComplete: 0,
-      message: 'Downloading GTFS ZIP file',
-    });
-
     // Fetch zip data
     let zipData: ArrayBuffer;
     if (typeof zipPath === 'string') {
-      zipData = await fetchZip(zipPath);
+      zipData = await fetchZip(zipPath, onProgress);
     } else {
       zipData = zipPath as ArrayBuffer;
     }
