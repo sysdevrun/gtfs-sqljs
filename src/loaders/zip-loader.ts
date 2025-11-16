@@ -3,6 +3,7 @@
  */
 
 import JSZip from 'jszip';
+import type { ProgressCallback } from '../gtfs-sqljs';
 
 export interface GTFSFiles {
   [filename: string]: string;
@@ -48,19 +49,70 @@ export async function loadGTFSZip(source: string | ArrayBuffer | Uint8Array): Pr
 
 /**
  * Fetch ZIP file from URL or file path (exported for checksum computation)
+ * @param source - URL or file path to GTFS ZIP file
+ * @param onProgress - Optional progress callback for download tracking
  */
-export async function fetchZip(source: string): Promise<ArrayBuffer> {
+export async function fetchZip(source: string, onProgress?: ProgressCallback): Promise<ArrayBuffer> {
   // Check if source is a URL
   const isUrl = source.startsWith('http://') || source.startsWith('https://');
 
-  // For URLs, always use fetch
+  // For URLs, always use fetch with progress tracking
   if (isUrl) {
     if (typeof fetch !== 'undefined') {
       const response = await fetch(source);
       if (!response.ok) {
         throw new Error(`Failed to fetch GTFS ZIP: ${response.status} ${response.statusText}`);
       }
-      return await response.arrayBuffer();
+
+      // Get content length for progress calculation
+      const contentLength = response.headers.get('content-length');
+      const total = contentLength ? parseInt(contentLength, 10) : null;
+
+      // If no progress callback or no content-length, just use arrayBuffer()
+      if (!onProgress || !total || !response.body) {
+        return await response.arrayBuffer();
+      }
+
+      // Stream the response with progress tracking
+      const reader = response.body.getReader();
+      const chunks: Uint8Array[] = [];
+      let receivedLength = 0;
+
+      while (true) {
+        const { done, value } = await reader.read();
+
+        if (done) break;
+
+        chunks.push(value);
+        receivedLength += value.length;
+
+        // Calculate download progress (0-100%)
+        const downloadPercent = (receivedLength / total) * 100;
+        // Map download progress to overall progress (1% → 30%)
+        const percentComplete = Math.floor(1 + (downloadPercent * 29 / 100));
+
+        // Report progress
+        onProgress({
+          phase: 'downloading',
+          currentFile: null,
+          filesCompleted: 0,
+          totalFiles: 0,
+          rowsProcessed: receivedLength,
+          totalRows: total,
+          percentComplete: Math.min(percentComplete, 30),
+          message: `Downloading GTFS ZIP (${(receivedLength / 1024 / 1024).toFixed(1)} MB / ${(total / 1024 / 1024).toFixed(1)} MB)`,
+        });
+      }
+
+      // Combine chunks into a single ArrayBuffer
+      const allChunks = new Uint8Array(receivedLength);
+      let position = 0;
+      for (const chunk of chunks) {
+        allChunks.set(chunk, position);
+        position += chunk.length;
+      }
+
+      return allChunks.buffer;
     }
     throw new Error('fetch is not available to load URL');
   }

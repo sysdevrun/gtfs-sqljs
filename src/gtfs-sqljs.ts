@@ -45,7 +45,7 @@ export type { Alert, VehiclePosition, TripUpdate, StopTimeUpdateWithMetadata, Tr
  * Progress information for GTFS data loading
  */
 export interface ProgressInfo {
-  phase: 'checking_cache' | 'loading_from_cache' | 'downloading' | 'extracting' | 'creating_schema' | 'inserting_data' | 'creating_indexes' | 'analyzing' | 'saving_cache' | 'complete';
+  phase: 'checking_cache' | 'loading_from_cache' | 'downloading' | 'extracting' | 'creating_schema' | 'inserting_data' | 'creating_indexes' | 'analyzing' | 'loading_realtime' | 'saving_cache' | 'complete';
   currentFile: string | null;
   filesCompleted: number;
   totalFiles: number;
@@ -226,18 +226,7 @@ export class GtfsSqlJs {
       // Fetch raw zip data for checksum (only if zipPath is a string)
       let zipData: ArrayBuffer;
       if (typeof zipPath === 'string') {
-        onProgress?.({
-          phase: 'downloading',
-          currentFile: null,
-          filesCompleted: 0,
-          totalFiles: 0,
-          rowsProcessed: 0,
-          totalRows: 0,
-          percentComplete: 2,
-          message: 'Downloading GTFS ZIP file',
-        });
-
-        zipData = await fetchZip(zipPath);
+        zipData = await fetchZip(zipPath, onProgress);
       } else {
         // zipPath is already ArrayBuffer or Uint8Array
         zipData = zipPath as ArrayBuffer;
@@ -319,17 +308,6 @@ export class GtfsSqlJs {
       }
 
       // Cache miss - continue with normal loading but use already-fetched zip data
-      onProgress?.({
-        phase: 'extracting',
-        currentFile: null,
-        filesCompleted: 0,
-        totalFiles: 0,
-        rowsProcessed: 0,
-        totalRows: 0,
-        percentComplete: 5,
-        message: 'Extracting GTFS ZIP file',
-      });
-
       await this.loadFromZipData(zipData, options, onProgress);
 
       // Save to cache
@@ -369,21 +347,10 @@ export class GtfsSqlJs {
     }
 
     // No cache - use normal loading flow
-    onProgress?.({
-      phase: 'downloading',
-      currentFile: null,
-      filesCompleted: 0,
-      totalFiles: 0,
-      rowsProcessed: 0,
-      totalRows: 0,
-      percentComplete: 0,
-      message: 'Downloading GTFS ZIP file',
-    });
-
     // Fetch zip data
     let zipData: ArrayBuffer;
     if (typeof zipPath === 'string') {
-      zipData = await fetchZip(zipPath);
+      zipData = await fetchZip(zipPath, onProgress);
     } else {
       zipData = zipPath as ArrayBuffer;
     }
@@ -416,17 +383,6 @@ export class GtfsSqlJs {
     this.db = new this.SQL!.Database();
 
     // Apply performance PRAGMAs for bulk loading
-    onProgress?.({
-      phase: 'creating_schema',
-      currentFile: null,
-      filesCompleted: 0,
-      totalFiles: 0,
-      rowsProcessed: 0,
-      totalRows: 0,
-      percentComplete: 10,
-      message: 'Optimizing database for bulk import',
-    });
-
     this.db.run('PRAGMA synchronous = OFF');        // Skip fsync for performance
     this.db.run('PRAGMA journal_mode = MEMORY');    // Keep journal in memory
     this.db.run('PRAGMA temp_store = MEMORY');      // Temp tables in memory
@@ -441,7 +397,7 @@ export class GtfsSqlJs {
       totalFiles: 0,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 15,
+      percentComplete: 40,
       message: 'Creating database tables',
     });
 
@@ -461,7 +417,7 @@ export class GtfsSqlJs {
       totalFiles: 0,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 20,
+      percentComplete: 35,
       message: 'Extracting GTFS ZIP file',
     });
 
@@ -475,7 +431,7 @@ export class GtfsSqlJs {
       totalFiles: Object.keys(files).length,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 25,
+      percentComplete: 40,
       message: 'Starting data import',
     });
 
@@ -489,7 +445,7 @@ export class GtfsSqlJs {
       totalFiles: Object.keys(files).length,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 85,
+      percentComplete: 75,
       message: 'Creating database indexes',
     });
 
@@ -498,7 +454,7 @@ export class GtfsSqlJs {
     for (const statement of createIndexStatements) {
       this.db.run(statement);
       indexCount++;
-      const indexProgress = 85 + Math.floor((indexCount / createIndexStatements.length) * 10);
+      const indexProgress = 75 + Math.floor((indexCount / createIndexStatements.length) * 10);
       onProgress?.({
         phase: 'creating_indexes',
         currentFile: null,
@@ -519,7 +475,7 @@ export class GtfsSqlJs {
       totalFiles: Object.keys(files).length,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 95,
+      percentComplete: 85,
       message: 'Optimizing query performance',
     });
 
@@ -539,6 +495,17 @@ export class GtfsSqlJs {
 
     // Auto-fetch realtime data if feed URLs are configured
     if (this.realtimeFeedUrls.length > 0) {
+      onProgress?.({
+        phase: 'loading_realtime',
+        currentFile: null,
+        filesCompleted: 0,
+        totalFiles: this.realtimeFeedUrls.length,
+        rowsProcessed: 0,
+        totalRows: 0,
+        percentComplete: 90,
+        message: `Loading realtime data from ${this.realtimeFeedUrls.length} feed${this.realtimeFeedUrls.length > 1 ? 's' : ''}`,
+      });
+
       try {
         await loadRealtimeData(this.db, this.realtimeFeedUrls);
       } catch (error) {

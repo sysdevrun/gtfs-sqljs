@@ -731,7 +731,7 @@ async function loadGTFSZip(source) {
   await Promise.all(filePromises);
   return files;
 }
-async function fetchZip(source) {
+async function fetchZip(source, onProgress) {
   const isUrl = source.startsWith("http://") || source.startsWith("https://");
   if (isUrl) {
     if (typeof fetch !== "undefined") {
@@ -739,7 +739,39 @@ async function fetchZip(source) {
       if (!response.ok) {
         throw new Error(`Failed to fetch GTFS ZIP: ${response.status} ${response.statusText}`);
       }
-      return await response.arrayBuffer();
+      const contentLength = response.headers.get("content-length");
+      const total = contentLength ? parseInt(contentLength, 10) : null;
+      if (!onProgress || !total || !response.body) {
+        return await response.arrayBuffer();
+      }
+      const reader = response.body.getReader();
+      const chunks = [];
+      let receivedLength = 0;
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        chunks.push(value);
+        receivedLength += value.length;
+        const downloadPercent = receivedLength / total * 100;
+        const percentComplete = Math.floor(1 + downloadPercent * 29 / 100);
+        onProgress({
+          phase: "downloading",
+          currentFile: null,
+          filesCompleted: 0,
+          totalFiles: 0,
+          rowsProcessed: receivedLength,
+          totalRows: total,
+          percentComplete: Math.min(percentComplete, 30),
+          message: `Downloading GTFS ZIP (${(receivedLength / 1024 / 1024).toFixed(1)} MB / ${(total / 1024 / 1024).toFixed(1)} MB)`
+        });
+      }
+      const allChunks = new Uint8Array(receivedLength);
+      let position = 0;
+      for (const chunk of chunks) {
+        allChunks.set(chunk, position);
+        position += chunk.length;
+      }
+      return allChunks.buffer;
     }
     throw new Error("fetch is not available to load URL");
   }
@@ -847,7 +879,7 @@ async function loadGTFSData(db, files, skipFiles, onProgress) {
       totalFiles: sortedFiles.length,
       rowsProcessed,
       totalRows,
-      percentComplete: 15 + Math.floor(rowsProcessed / totalRows * 70),
+      percentComplete: 40 + Math.floor(rowsProcessed / totalRows * 35),
       message: `Loading ${fileName} (${fileRows.toLocaleString()} rows)`
     });
     await loadTableData(db, schema, content, (processedInFile) => {
@@ -859,7 +891,7 @@ async function loadGTFSData(db, files, skipFiles, onProgress) {
         totalFiles: sortedFiles.length,
         rowsProcessed: currentProgress,
         totalRows,
-        percentComplete: 15 + Math.floor(currentProgress / totalRows * 70),
+        percentComplete: 40 + Math.floor(currentProgress / totalRows * 35),
         message: `Loading ${fileName} (${processedInFile.toLocaleString()}/${fileRows.toLocaleString()} rows)`
       });
     });
@@ -872,7 +904,7 @@ async function loadGTFSData(db, files, skipFiles, onProgress) {
       totalFiles: sortedFiles.length,
       rowsProcessed,
       totalRows,
-      percentComplete: 15 + Math.floor(rowsProcessed / totalRows * 70),
+      percentComplete: 40 + Math.floor(rowsProcessed / totalRows * 35),
       message: `Completed ${fileName}`
     });
   }
@@ -2542,17 +2574,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
       });
       let zipData2;
       if (typeof zipPath === "string") {
-        onProgress?.({
-          phase: "downloading",
-          currentFile: null,
-          filesCompleted: 0,
-          totalFiles: 0,
-          rowsProcessed: 0,
-          totalRows: 0,
-          percentComplete: 2,
-          message: "Downloading GTFS ZIP file"
-        });
-        zipData2 = await fetchZip(zipPath);
+        zipData2 = await fetchZip(zipPath, onProgress);
       } else {
         zipData2 = zipPath;
       }
@@ -2612,16 +2634,6 @@ var GtfsSqlJs = class _GtfsSqlJs {
           return;
         }
       }
-      onProgress?.({
-        phase: "extracting",
-        currentFile: null,
-        filesCompleted: 0,
-        totalFiles: 0,
-        rowsProcessed: 0,
-        totalRows: 0,
-        percentComplete: 5,
-        message: "Extracting GTFS ZIP file"
-      });
       await this.loadFromZipData(zipData2, options, onProgress);
       onProgress?.({
         phase: "saving_cache",
@@ -2654,19 +2666,9 @@ var GtfsSqlJs = class _GtfsSqlJs {
       });
       return;
     }
-    onProgress?.({
-      phase: "downloading",
-      currentFile: null,
-      filesCompleted: 0,
-      totalFiles: 0,
-      rowsProcessed: 0,
-      totalRows: 0,
-      percentComplete: 0,
-      message: "Downloading GTFS ZIP file"
-    });
     let zipData;
     if (typeof zipPath === "string") {
-      zipData = await fetchZip(zipPath);
+      zipData = await fetchZip(zipPath, onProgress);
     } else {
       zipData = zipPath;
     }
@@ -2688,16 +2690,6 @@ var GtfsSqlJs = class _GtfsSqlJs {
    */
   async loadFromZipData(zipData, options, onProgress) {
     this.db = new this.SQL.Database();
-    onProgress?.({
-      phase: "creating_schema",
-      currentFile: null,
-      filesCompleted: 0,
-      totalFiles: 0,
-      rowsProcessed: 0,
-      totalRows: 0,
-      percentComplete: 10,
-      message: "Optimizing database for bulk import"
-    });
     this.db.run("PRAGMA synchronous = OFF");
     this.db.run("PRAGMA journal_mode = MEMORY");
     this.db.run("PRAGMA temp_store = MEMORY");
@@ -2710,7 +2702,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
       totalFiles: 0,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 15,
+      percentComplete: 40,
       message: "Creating database tables"
     });
     const createTableStatements = getAllCreateTableStatements();
@@ -2725,7 +2717,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
       totalFiles: 0,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 20,
+      percentComplete: 35,
       message: "Extracting GTFS ZIP file"
     });
     const files = await loadGTFSZip(zipData);
@@ -2736,7 +2728,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
       totalFiles: Object.keys(files).length,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 25,
+      percentComplete: 40,
       message: "Starting data import"
     });
     await loadGTFSData(this.db, files, options.skipFiles, onProgress);
@@ -2747,7 +2739,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
       totalFiles: Object.keys(files).length,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 85,
+      percentComplete: 75,
       message: "Creating database indexes"
     });
     const createIndexStatements = getAllCreateIndexStatements();
@@ -2755,7 +2747,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
     for (const statement of createIndexStatements) {
       this.db.run(statement);
       indexCount++;
-      const indexProgress = 85 + Math.floor(indexCount / createIndexStatements.length * 10);
+      const indexProgress = 75 + Math.floor(indexCount / createIndexStatements.length * 10);
       onProgress?.({
         phase: "creating_indexes",
         currentFile: null,
@@ -2774,7 +2766,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
       totalFiles: Object.keys(files).length,
       rowsProcessed: 0,
       totalRows: 0,
-      percentComplete: 95,
+      percentComplete: 85,
       message: "Optimizing query performance"
     });
     this.db.run("ANALYZE");
@@ -2787,6 +2779,16 @@ var GtfsSqlJs = class _GtfsSqlJs {
       this.stalenessThreshold = options.stalenessThreshold;
     }
     if (this.realtimeFeedUrls.length > 0) {
+      onProgress?.({
+        phase: "loading_realtime",
+        currentFile: null,
+        filesCompleted: 0,
+        totalFiles: this.realtimeFeedUrls.length,
+        rowsProcessed: 0,
+        totalRows: 0,
+        percentComplete: 90,
+        message: `Loading realtime data from ${this.realtimeFeedUrls.length} feed${this.realtimeFeedUrls.length > 1 ? "s" : ""}`
+      });
       try {
         await loadRealtimeData(this.db, this.realtimeFeedUrls);
       } catch (error) {
