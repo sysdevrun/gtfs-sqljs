@@ -2383,6 +2383,88 @@ function getAllAlerts(db) {
   return alerts;
 }
 
+// src/queries/rt-stop-time-updates.ts
+function parseStopTimeUpdate(row) {
+  const stu = {
+    stop_sequence: row.stop_sequence !== null ? Number(row.stop_sequence) : void 0,
+    stop_id: row.stop_id ? String(row.stop_id) : void 0,
+    schedule_relationship: row.schedule_relationship !== null ? Number(row.schedule_relationship) : void 0,
+    trip_id: String(row.trip_id),
+    rt_last_updated: Number(row.rt_last_updated)
+  };
+  if (row.arrival_delay !== null || row.arrival_time !== null || row.arrival_uncertainty !== null) {
+    stu.arrival = {
+      delay: row.arrival_delay !== null ? Number(row.arrival_delay) : void 0,
+      time: row.arrival_time !== null ? Number(row.arrival_time) : void 0,
+      uncertainty: row.arrival_uncertainty !== null ? Number(row.arrival_uncertainty) : void 0
+    };
+  }
+  if (row.departure_delay !== null || row.departure_time !== null || row.departure_uncertainty !== null) {
+    stu.departure = {
+      delay: row.departure_delay !== null ? Number(row.departure_delay) : void 0,
+      time: row.departure_time !== null ? Number(row.departure_time) : void 0,
+      uncertainty: row.departure_uncertainty !== null ? Number(row.departure_uncertainty) : void 0
+    };
+  }
+  return stu;
+}
+function getStopTimeUpdates(db, filters = {}, stalenessThreshold = 120) {
+  const { tripId, stopId, stopSequence, limit } = filters;
+  const conditions = [];
+  const params = [];
+  if (tripId) {
+    const tripIds = Array.isArray(tripId) ? tripId : [tripId];
+    if (tripIds.length > 0) {
+      const placeholders = tripIds.map(() => "?").join(", ");
+      conditions.push(`trip_id IN (${placeholders})`);
+      params.push(...tripIds);
+    }
+  }
+  if (stopId) {
+    const stopIds = Array.isArray(stopId) ? stopId : [stopId];
+    if (stopIds.length > 0) {
+      const placeholders = stopIds.map(() => "?").join(", ");
+      conditions.push(`stop_id IN (${placeholders})`);
+      params.push(...stopIds);
+    }
+  }
+  if (stopSequence !== void 0) {
+    const stopSequences = Array.isArray(stopSequence) ? stopSequence : [stopSequence];
+    if (stopSequences.length > 0) {
+      const placeholders = stopSequences.map(() => "?").join(", ");
+      conditions.push(`stop_sequence IN (${placeholders})`);
+      params.push(...stopSequences);
+    }
+  }
+  const now = Math.floor(Date.now() / 1e3);
+  const staleThreshold = now - stalenessThreshold;
+  conditions.push("rt_last_updated >= ?");
+  params.push(staleThreshold);
+  let sql = "SELECT * FROM rt_stop_time_updates";
+  if (conditions.length > 0) {
+    sql += " WHERE " + conditions.join(" AND ");
+  }
+  sql += " ORDER BY trip_id, stop_sequence";
+  if (limit) {
+    sql += " LIMIT ?";
+    params.push(limit);
+  }
+  const stmt = db.prepare(sql);
+  if (params.length > 0) {
+    stmt.bind(params);
+  }
+  const stopTimeUpdates = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    stopTimeUpdates.push(parseStopTimeUpdate(row));
+  }
+  stmt.free();
+  return stopTimeUpdates;
+}
+function getAllStopTimeUpdates(db) {
+  return getStopTimeUpdates(db, {}, Number.MAX_SAFE_INTEGER);
+}
+
 // src/queries/rt-trip-updates.ts
 function parseTripUpdate(row) {
   const tu = {
@@ -2443,6 +2525,21 @@ function getTripUpdates(db, filters = {}, stalenessThreshold = 120) {
     tripUpdates.push(parseTripUpdate(row));
   }
   stmt.free();
+  if (tripUpdates.length > 0) {
+    const tripIds = tripUpdates.map((tu) => tu.trip_id);
+    const stopTimeUpdates = getStopTimeUpdates(db, { tripId: tripIds }, stalenessThreshold);
+    const stopTimesByTripId = /* @__PURE__ */ new Map();
+    for (const stu of stopTimeUpdates) {
+      if (!stu.trip_id) continue;
+      if (!stopTimesByTripId.has(stu.trip_id)) {
+        stopTimesByTripId.set(stu.trip_id, []);
+      }
+      stopTimesByTripId.get(stu.trip_id).push(stu);
+    }
+    for (const tu of tripUpdates) {
+      tu.stop_time_update = stopTimesByTripId.get(tu.trip_id) || [];
+    }
+  }
   return tripUpdates;
 }
 function getAllTripUpdates(db) {
@@ -2454,101 +2551,22 @@ function getAllTripUpdates(db) {
     tripUpdates.push(parseTripUpdate(row));
   }
   stmt.free();
+  if (tripUpdates.length > 0) {
+    const tripIds = tripUpdates.map((tu) => tu.trip_id);
+    const stopTimeUpdates = getStopTimeUpdates(db, { tripId: tripIds }, Number.MAX_SAFE_INTEGER);
+    const stopTimesByTripId = /* @__PURE__ */ new Map();
+    for (const stu of stopTimeUpdates) {
+      if (!stu.trip_id) continue;
+      if (!stopTimesByTripId.has(stu.trip_id)) {
+        stopTimesByTripId.set(stu.trip_id, []);
+      }
+      stopTimesByTripId.get(stu.trip_id).push(stu);
+    }
+    for (const tu of tripUpdates) {
+      tu.stop_time_update = stopTimesByTripId.get(tu.trip_id) || [];
+    }
+  }
   return tripUpdates;
-}
-
-// src/queries/rt-stop-time-updates.ts
-function parseStopTimeUpdate(row) {
-  const stu = {
-    stop_sequence: row.stop_sequence !== null ? Number(row.stop_sequence) : void 0,
-    stop_id: row.stop_id ? String(row.stop_id) : void 0,
-    schedule_relationship: row.schedule_relationship !== null ? Number(row.schedule_relationship) : void 0
-  };
-  if (row.arrival_delay !== null || row.arrival_time !== null || row.arrival_uncertainty !== null) {
-    stu.arrival = {
-      delay: row.arrival_delay !== null ? Number(row.arrival_delay) : void 0,
-      time: row.arrival_time !== null ? Number(row.arrival_time) : void 0,
-      uncertainty: row.arrival_uncertainty !== null ? Number(row.arrival_uncertainty) : void 0
-    };
-  }
-  if (row.departure_delay !== null || row.departure_time !== null || row.departure_uncertainty !== null) {
-    stu.departure = {
-      delay: row.departure_delay !== null ? Number(row.departure_delay) : void 0,
-      time: row.departure_time !== null ? Number(row.departure_time) : void 0,
-      uncertainty: row.departure_uncertainty !== null ? Number(row.departure_uncertainty) : void 0
-    };
-  }
-  return stu;
-}
-function parseStopTimeUpdateWithMetadata(row) {
-  const stu = parseStopTimeUpdate(row);
-  stu.trip_id = String(row.trip_id);
-  stu.rt_last_updated = Number(row.rt_last_updated);
-  return stu;
-}
-function getStopTimeUpdates(db, filters = {}, stalenessThreshold = 120) {
-  const { tripId, stopId, stopSequence, limit } = filters;
-  const conditions = [];
-  const params = [];
-  if (tripId) {
-    const tripIds = Array.isArray(tripId) ? tripId : [tripId];
-    if (tripIds.length > 0) {
-      const placeholders = tripIds.map(() => "?").join(", ");
-      conditions.push(`trip_id IN (${placeholders})`);
-      params.push(...tripIds);
-    }
-  }
-  if (stopId) {
-    const stopIds = Array.isArray(stopId) ? stopId : [stopId];
-    if (stopIds.length > 0) {
-      const placeholders = stopIds.map(() => "?").join(", ");
-      conditions.push(`stop_id IN (${placeholders})`);
-      params.push(...stopIds);
-    }
-  }
-  if (stopSequence !== void 0) {
-    const stopSequences = Array.isArray(stopSequence) ? stopSequence : [stopSequence];
-    if (stopSequences.length > 0) {
-      const placeholders = stopSequences.map(() => "?").join(", ");
-      conditions.push(`stop_sequence IN (${placeholders})`);
-      params.push(...stopSequences);
-    }
-  }
-  const now = Math.floor(Date.now() / 1e3);
-  const staleThreshold = now - stalenessThreshold;
-  conditions.push("rt_last_updated >= ?");
-  params.push(staleThreshold);
-  let sql = "SELECT * FROM rt_stop_time_updates";
-  if (conditions.length > 0) {
-    sql += " WHERE " + conditions.join(" AND ");
-  }
-  sql += " ORDER BY trip_id, stop_sequence";
-  if (limit) {
-    sql += " LIMIT ?";
-    params.push(limit);
-  }
-  const stmt = db.prepare(sql);
-  if (params.length > 0) {
-    stmt.bind(params);
-  }
-  const stopTimeUpdates = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
-    stopTimeUpdates.push(parseStopTimeUpdate(row));
-  }
-  stmt.free();
-  return stopTimeUpdates;
-}
-function getAllStopTimeUpdates(db) {
-  const sql = "SELECT * FROM rt_stop_time_updates ORDER BY trip_id, stop_sequence";
-  const stmt = db.prepare(sql);
-  const stopTimeUpdates = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
-    stopTimeUpdates.push(parseStopTimeUpdateWithMetadata(row));
-  }
-  stmt.free();
-  return stopTimeUpdates;
 }
 
 // src/gtfs-sqljs.ts
@@ -3155,7 +3173,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
   }
   /**
    * Export all stop time updates without staleness filtering (for debugging)
-   * Returns extended type with trip_id and rt_last_updated for debugging purposes
+   * Returns stop time updates with trip_id and rt_last_updated populated
    */
   debugExportAllStopTimeUpdates() {
     if (!this.db) throw new Error("Database not initialized");

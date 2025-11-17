@@ -9,13 +9,15 @@ export interface StopTimeUpdateFilters {
 }
 
 /**
- * Parse stop time update from database row
+ * Parse stop time update from database row (includes trip_id and rt_last_updated)
  */
 function parseStopTimeUpdate(row: Record<string, unknown>): StopTimeUpdate {
   const stu: StopTimeUpdate = {
     stop_sequence: row.stop_sequence !== null ? Number(row.stop_sequence) : undefined,
     stop_id: row.stop_id ? String(row.stop_id) : undefined,
-    schedule_relationship: row.schedule_relationship !== null ? Number(row.schedule_relationship) : undefined
+    schedule_relationship: row.schedule_relationship !== null ? Number(row.schedule_relationship) : undefined,
+    trip_id: String(row.trip_id),
+    rt_last_updated: Number(row.rt_last_updated)
   };
 
   // Arrival event
@@ -40,26 +42,9 @@ function parseStopTimeUpdate(row: Record<string, unknown>): StopTimeUpdate {
 }
 
 /**
- * Extended StopTimeUpdate with trip_id and rt_last_updated for debugging
- */
-export interface StopTimeUpdateWithMetadata extends StopTimeUpdate {
-  trip_id: string;
-  rt_last_updated: number;
-}
-
-/**
- * Parse stop time update with metadata from database row
- */
-function parseStopTimeUpdateWithMetadata(row: Record<string, unknown>): StopTimeUpdateWithMetadata {
-  const stu = parseStopTimeUpdate(row) as StopTimeUpdateWithMetadata;
-  stu.trip_id = String(row.trip_id);
-  stu.rt_last_updated = Number(row.rt_last_updated);
-  return stu;
-}
-
-/**
  * Get stop time updates with optional filters
  * - Filters support both single values and arrays
+ * - Returns stop time updates with trip_id and rt_last_updated populated
  */
 export function getStopTimeUpdates(
   db: Database,
@@ -137,18 +122,8 @@ export function getStopTimeUpdates(
 
 /**
  * Get all stop time updates without staleness filtering (for debugging)
- * Returns extended type with trip_id and rt_last_updated for debugging purposes
+ * Convenience wrapper for getStopTimeUpdates() with no staleness threshold
  */
-export function getAllStopTimeUpdates(db: Database): StopTimeUpdateWithMetadata[] {
-  const sql = 'SELECT * FROM rt_stop_time_updates ORDER BY trip_id, stop_sequence';
-  const stmt = db.prepare(sql);
-
-  const stopTimeUpdates: StopTimeUpdateWithMetadata[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
-    stopTimeUpdates.push(parseStopTimeUpdateWithMetadata(row));
-  }
-
-  stmt.free();
-  return stopTimeUpdates;
+export function getAllStopTimeUpdates(db: Database): StopTimeUpdate[] {
+  return getStopTimeUpdates(db, {}, Number.MAX_SAFE_INTEGER);
 }

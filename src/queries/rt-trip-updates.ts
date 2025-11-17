@@ -1,5 +1,6 @@
 import type { Database } from 'sql.js';
-import type { TripUpdate } from '../types/gtfs-rt';
+import type { TripUpdate, StopTimeUpdate } from '../types/gtfs-rt';
+import { getStopTimeUpdates } from './rt-stop-time-updates';
 
 export interface TripUpdateFilters {
   tripId?: string;
@@ -96,6 +97,30 @@ export function getTripUpdates(
   }
 
   stmt.free();
+
+  // Populate stop_time_update arrays
+  if (tripUpdates.length > 0) {
+    const tripIds = tripUpdates.map(tu => tu.trip_id);
+
+    // Query stop time updates for all retrieved trip IDs
+    const stopTimeUpdates = getStopTimeUpdates(db, { tripId: tripIds }, stalenessThreshold);
+
+    // Group stop time updates by trip_id
+    const stopTimesByTripId = new Map<string, StopTimeUpdate[]>();
+    for (const stu of stopTimeUpdates) {
+      if (!stu.trip_id) continue; // Skip if trip_id is not populated
+      if (!stopTimesByTripId.has(stu.trip_id)) {
+        stopTimesByTripId.set(stu.trip_id, []);
+      }
+      stopTimesByTripId.get(stu.trip_id)!.push(stu);
+    }
+
+    // Populate each trip update's stop_time_update array
+    for (const tu of tripUpdates) {
+      tu.stop_time_update = stopTimesByTripId.get(tu.trip_id) || [];
+    }
+  }
+
   return tripUpdates;
 }
 
@@ -125,5 +150,29 @@ export function getAllTripUpdates(db: Database): TripUpdate[] {
   }
 
   stmt.free();
+
+  // Populate stop_time_update arrays (no staleness filtering for debug function)
+  if (tripUpdates.length > 0) {
+    const tripIds = tripUpdates.map(tu => tu.trip_id);
+
+    // Query stop time updates for all retrieved trip IDs (use very large threshold to disable staleness filtering)
+    const stopTimeUpdates = getStopTimeUpdates(db, { tripId: tripIds }, Number.MAX_SAFE_INTEGER);
+
+    // Group stop time updates by trip_id
+    const stopTimesByTripId = new Map<string, StopTimeUpdate[]>();
+    for (const stu of stopTimeUpdates) {
+      if (!stu.trip_id) continue; // Skip if trip_id is not populated
+      if (!stopTimesByTripId.has(stu.trip_id)) {
+        stopTimesByTripId.set(stu.trip_id, []);
+      }
+      stopTimesByTripId.get(stu.trip_id)!.push(stu);
+    }
+
+    // Populate each trip update's stop_time_update array
+    for (const tu of tripUpdates) {
+      tu.stop_time_update = stopTimesByTripId.get(tu.trip_id) || [];
+    }
+  }
+
   return tripUpdates;
 }

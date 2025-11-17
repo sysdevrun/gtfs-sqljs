@@ -1,0 +1,9 @@
+{
+  "name": "dummy-test",
+  "version": "1.0.0",
+  "description": "Test installation from GitHub",
+  "private": true,
+  "dependencies": {
+    "gtfs-sqljs": "github:sysdevrun/gtfs-sqljs#main"
+  }
+}

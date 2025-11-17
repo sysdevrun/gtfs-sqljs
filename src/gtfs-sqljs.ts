@@ -30,16 +30,16 @@ import { getStopTimes, buildOrderedStopList, type StopTimeFilters, type StopTime
 import { getAlerts as getAlertsQuery, getAllAlerts, type AlertFilters } from './queries/rt-alerts';
 import { getVehiclePositions as getVehiclePositionsQuery, getAllVehiclePositions, type VehiclePositionFilters } from './queries/rt-vehicle-positions';
 import { getTripUpdates, getAllTripUpdates, type TripUpdateFilters } from './queries/rt-trip-updates';
-import { getStopTimeUpdates, getAllStopTimeUpdates, type StopTimeUpdateFilters, type StopTimeUpdateWithMetadata } from './queries/rt-stop-time-updates';
+import { getStopTimeUpdates, getAllStopTimeUpdates, type StopTimeUpdateFilters } from './queries/rt-stop-time-updates';
 
 // Types
 import type { Agency, Stop, Route, Trip, StopTime, Calendar, CalendarDate } from './types/gtfs';
-import type { Alert, VehiclePosition, TripUpdate } from './types/gtfs-rt';
+import type { Alert, VehiclePosition, TripUpdate, StopTimeUpdate } from './types/gtfs-rt';
 
 // Export filter types for users
 export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters };
 // Export RT types
-export type { Alert, VehiclePosition, TripUpdate, StopTimeUpdateWithMetadata, TripWithRealtime, StopTimeWithRealtime };
+export type { Alert, VehiclePosition, TripUpdate, TripWithRealtime, StopTimeWithRealtime };
 
 /**
  * Progress information for GTFS data loading
@@ -884,9 +884,9 @@ export class GtfsSqlJs {
 
   /**
    * Export all stop time updates without staleness filtering (for debugging)
-   * Returns extended type with trip_id and rt_last_updated for debugging purposes
+   * Returns stop time updates with trip_id and rt_last_updated populated
    */
-  debugExportAllStopTimeUpdates(): StopTimeUpdateWithMetadata[] {
+  debugExportAllStopTimeUpdates(): StopTimeUpdate[] {
     if (!this.db) throw new Error('Database not initialized');
     return getAllStopTimeUpdates(this.db);
   }

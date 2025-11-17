@@ -148,6 +148,8 @@ export interface StopTimeUpdate {
   arrival?: StopTimeEvent;
   departure?: StopTimeEvent;
   schedule_relationship?: ScheduleRelationship;
+  trip_id?: string;              // Present when queried from database
+  rt_last_updated?: number;      // Present when queried from database (UNIX timestamp)
 }
 
 export interface TripUpdate {

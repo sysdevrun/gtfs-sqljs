@@ -19,7 +19,6 @@ export {
   type Alert,
   type VehiclePosition,
   type TripUpdate,
-  type StopTimeUpdateWithMetadata,
   type TripWithRealtime,
   type StopTimeWithRealtime
 } from './gtfs-sqljs';

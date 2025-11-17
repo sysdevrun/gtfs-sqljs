@@ -131,6 +131,8 @@ interface StopTimeUpdate {
     arrival?: StopTimeEvent;
     departure?: StopTimeEvent;
     schedule_relationship?: ScheduleRelationship;
+    trip_id?: string;
+    rt_last_updated?: number;
 }
 interface TripUpdate {
     trip_id: string;
@@ -561,13 +563,6 @@ interface StopTimeUpdateFilters {
     stopSequence?: number | number[];
     limit?: number;
 }
-/**
- * Extended StopTimeUpdate with trip_id and rt_last_updated for debugging
- */
-interface StopTimeUpdateWithMetadata extends StopTimeUpdate {
-    trip_id: string;
-    rt_last_updated: number;
-}
 
 /**
  * Progress information for GTFS data loading
@@ -870,9 +865,9 @@ declare class GtfsSqlJs {
     debugExportAllTripUpdates(): TripUpdate[];
     /**
      * Export all stop time updates without staleness filtering (for debugging)
-     * Returns extended type with trip_id and rt_last_updated for debugging purposes
+     * Returns stop time updates with trip_id and rt_last_updated populated
      */
-    debugExportAllStopTimeUpdates(): StopTimeUpdateWithMetadata[];
+    debugExportAllStopTimeUpdates(): StopTimeUpdate[];
     /**
      * Get cache statistics
      * @param cacheStore - Cache store to query (optional, auto-detects if not provided)
@@ -1107,4 +1102,4 @@ declare function getCacheStats(entries: CacheEntry[]): {
     newestEntry: number | null;
 };
 
-export { type Agency, type AgencyFilters, type Alert, AlertCause, AlertEffect, type AlertFilters, type Attribution, type CacheEntry, type CacheEntryWithData, type CacheMetadata, type CacheStore, type CacheStoreOptions, type Calendar, type CalendarDate, type ColumnDefinition, CongestionLevel, DEFAULT_CACHE_EXPIRATION_MS, type EntitySelector, type FareAttribute, type FareRule, type FeedInfo, FileSystemCacheStore, type Frequency, GTFS_SCHEMA, GtfsSqlJs, type GtfsSqlJsOptions, type IndexDefinition, IndexedDBCacheStore, type Level, OccupancyStatus, type Pathway, type Position, type RealtimeConfig, type Route, type RouteFilters, ScheduleRelationship, type Shape, type Stop, type StopFilters, type StopTime, type StopTimeEvent, type StopTimeFilters, type StopTimeRealtime, type StopTimeUpdate, type StopTimeUpdateFilters, type StopTimeUpdateWithMetadata, type StopTimeWithRealtime, type TableSchema, type TimeRange, type Transfer, type TranslatedString, type Trip, type TripFilters, type TripRealtime, type TripUpdate, type TripUpdateFilters, type TripWithRealtime, type VehicleDescriptor, type VehiclePosition, type VehiclePositionFilters, VehicleStopStatus, computeChecksum, computeZipChecksum, filterExpiredEntries, generateCacheKey, getCacheStats, isCacheExpired };
+export { type Agency, type AgencyFilters, type Alert, AlertCause, AlertEffect, type AlertFilters, type Attribution, type CacheEntry, type CacheEntryWithData, type CacheMetadata, type CacheStore, type CacheStoreOptions, type Calendar, type CalendarDate, type ColumnDefinition, CongestionLevel, DEFAULT_CACHE_EXPIRATION_MS, type EntitySelector, type FareAttribute, type FareRule, type FeedInfo, FileSystemCacheStore, type Frequency, GTFS_SCHEMA, GtfsSqlJs, type GtfsSqlJsOptions, type IndexDefinition, IndexedDBCacheStore, type Level, OccupancyStatus, type Pathway, type Position, type RealtimeConfig, type Route, type RouteFilters, ScheduleRelationship, type Shape, type Stop, type StopFilters, type StopTime, type StopTimeEvent, type StopTimeFilters, type StopTimeRealtime, type StopTimeUpdate, type StopTimeUpdateFilters, type StopTimeWithRealtime, type TableSchema, type TimeRange, type Transfer, type TranslatedString, type Trip, type TripFilters, type TripRealtime, type TripUpdate, type TripUpdateFilters, type TripWithRealtime, type VehicleDescriptor, type VehiclePosition, type VehiclePositionFilters, VehicleStopStatus, computeChecksum, computeZipChecksum, filterExpiredEntries, generateCacheKey, getCacheStats, isCacheExpired };
