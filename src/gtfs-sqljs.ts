@@ -11,6 +11,7 @@ import { loadRealtimeData } from './loaders/gtfs-rt-loader';
 import type { CacheStore } from './cache/types';
 import { computeZipChecksum, generateCacheKey } from './cache/checksum';
 import { DEFAULT_CACHE_EXPIRATION_MS, isCacheExpired } from './cache/utils';
+import { wrapDatabaseWithLogger } from './utils/query-logger';
 
 // Library version from package.json
 const LIB_VERSION = '0.1.0';
@@ -40,6 +41,8 @@ import type { Alert, VehiclePosition, TripUpdate, StopTimeUpdate } from './types
 export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters };
 // Export RT types
 export type { Alert, VehiclePosition, TripUpdate, TripWithRealtime, StopTimeWithRealtime };
+// Export query logging types
+export type { QueryLogEntry } from './utils/query-logger';
 
 /**
  * Progress information for GTFS data loading
@@ -132,6 +135,17 @@ export interface GtfsSqlJsOptions {
    * Default: 7 days (604800000 ms)
    */
   cacheExpirationMs?: number;
+
+  /**
+   * Optional: Enable SQL query logging to console
+   * When enabled, all SQL queries will be logged with:
+   * - SQL statement text
+   * - Bound parameters
+   * - Execution time in milliseconds
+   * - Number of rows affected/returned
+   * Default: false
+   */
+  enableQueryLogging?: boolean;
 }
 
 export class GtfsSqlJs {
@@ -286,6 +300,11 @@ export class GtfsSqlJs {
 
           this.db = new this.SQL.Database(new Uint8Array(cacheEntry.data));
 
+          // Wrap with query logger if enabled
+          if (options.enableQueryLogging) {
+            this.db = wrapDatabaseWithLogger(this.db);
+          }
+
           // Set RT configuration
           if (options.realtimeFeedUrls) {
             this.realtimeFeedUrls = options.realtimeFeedUrls;
@@ -383,6 +402,11 @@ export class GtfsSqlJs {
   ): Promise<void> {
     // Create new database
     this.db = new this.SQL!.Database();
+
+    // Wrap with query logger if enabled
+    if (options.enableQueryLogging) {
+      this.db = wrapDatabaseWithLogger(this.db);
+    }
 
     // Apply performance PRAGMAs for bulk loading
     this.db.run('PRAGMA synchronous = OFF');        // Skip fsync for performance
@@ -529,6 +553,11 @@ export class GtfsSqlJs {
 
     // Load existing database
     this.db = new this.SQL.Database(new Uint8Array(database));
+
+    // Wrap with query logger if enabled
+    if (options.enableQueryLogging) {
+      this.db = wrapDatabaseWithLogger(this.db);
+    }
 
     // Ensure RT tables exist (in case loading old database)
     createRealtimeTables(this.db);

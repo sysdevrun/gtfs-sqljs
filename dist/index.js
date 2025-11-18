@@ -1543,6 +1543,103 @@ function generateCacheKey(checksum, libVersion, dataVersion, filesize, source, s
 // src/gtfs-sqljs.ts
 init_utils();
 
+// src/utils/query-logger.ts
+function wrapDatabaseWithLogger(db) {
+  const logQuery = (entry) => {
+    const hasParams = entry.params != null && (Array.isArray(entry.params) && entry.params.length > 0 || !Array.isArray(entry.params) && Object.keys(entry.params).length > 0);
+    const paramsStr = hasParams ? ` | params: ${JSON.stringify(entry.params)}` : "";
+    const rowsStr = entry.rowsAffected !== void 0 ? ` | ${entry.rowsAffected} rows` : "";
+    const sql = entry.sql.replace(/\s+/g, " ").trim();
+    console.log(`[GTFS-SQL] ${sql}${paramsStr} | ${entry.executionTimeMs.toFixed(2)}ms${rowsStr}`);
+  };
+  const wrapStatement = (stmt, sql, params) => {
+    const originalRun = stmt.run.bind(stmt);
+    const originalStep = stmt.step.bind(stmt);
+    const originalBind = stmt.bind.bind(stmt);
+    let boundParams = params;
+    let stepCount = 0;
+    let hasStartedStepping = false;
+    stmt.bind = function(values) {
+      boundParams = values;
+      return originalBind(values);
+    };
+    stmt.run = function(values) {
+      const runParams = values !== void 0 ? values : boundParams;
+      const start = Date.now();
+      originalRun(values);
+      const executionTime = Date.now() - start;
+      logQuery({
+        sql,
+        params: runParams,
+        executionTimeMs: executionTime,
+        rowsAffected: stmt.getAsObject() ? 1 : void 0,
+        timestamp: start
+      });
+    };
+    stmt.step = function() {
+      if (!hasStartedStepping) {
+        hasStartedStepping = true;
+        stepCount = 0;
+      }
+      const start = Date.now();
+      const hasRow = originalStep();
+      const executionTime = Date.now() - start;
+      if (hasRow) {
+        stepCount++;
+      } else {
+        logQuery({
+          sql,
+          params: boundParams,
+          executionTimeMs: executionTime,
+          rowsAffected: stepCount,
+          timestamp: start
+        });
+      }
+      return hasRow;
+    };
+    return stmt;
+  };
+  return new Proxy(db, {
+    get(target, prop, receiver) {
+      const original = Reflect.get(target, prop, receiver);
+      if (prop === "run") {
+        return function(sql) {
+          const start = Date.now();
+          const result = original.call(target, sql);
+          const executionTime = Date.now() - start;
+          logQuery({
+            sql,
+            executionTimeMs: executionTime,
+            timestamp: start
+          });
+          return result;
+        };
+      }
+      if (prop === "exec") {
+        return function(sql) {
+          const start = Date.now();
+          const result = original.call(target, sql);
+          const executionTime = Date.now() - start;
+          logQuery({
+            sql,
+            executionTimeMs: executionTime,
+            rowsAffected: Array.isArray(result) ? result.length : void 0,
+            timestamp: start
+          });
+          return result;
+        };
+      }
+      if (prop === "prepare") {
+        return function(sql, params) {
+          const stmt = original.call(target, sql, params);
+          return wrapStatement(stmt, sql, params);
+        };
+      }
+      return original;
+    }
+  });
+}
+
 // src/queries/agencies.ts
 function getAgencies(db, filters = {}) {
   const { agencyId, limit } = filters;
@@ -2682,6 +2779,9 @@ var GtfsSqlJs = class _GtfsSqlJs {
             message: "Loading from cache..."
           });
           this.db = new this.SQL.Database(new Uint8Array(cacheEntry.data));
+          if (options.enableQueryLogging) {
+            this.db = wrapDatabaseWithLogger(this.db);
+          }
           if (options.realtimeFeedUrls) {
             this.realtimeFeedUrls = options.realtimeFeedUrls;
           }
@@ -2757,6 +2857,9 @@ var GtfsSqlJs = class _GtfsSqlJs {
    */
   async loadFromZipData(zipData, options, onProgress) {
     this.db = new this.SQL.Database();
+    if (options.enableQueryLogging) {
+      this.db = wrapDatabaseWithLogger(this.db);
+    }
     this.db.run("PRAGMA synchronous = OFF");
     this.db.run("PRAGMA journal_mode = MEMORY");
     this.db.run("PRAGMA temp_store = MEMORY");
@@ -2869,6 +2972,9 @@ var GtfsSqlJs = class _GtfsSqlJs {
   async initFromDatabase(database, options) {
     this.SQL = options.SQL || await (0, import_sql.default)(options.locateFile ? { locateFile: options.locateFile } : {});
     this.db = new this.SQL.Database(new Uint8Array(database));
+    if (options.enableQueryLogging) {
+      this.db = wrapDatabaseWithLogger(this.db);
+    }
     createRealtimeTables(this.db);
     if (options.realtimeFeedUrls) {
       this.realtimeFeedUrls = options.realtimeFeedUrls;

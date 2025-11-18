@@ -643,6 +643,16 @@ interface GtfsSqlJsOptions {
      * Default: 7 days (604800000 ms)
      */
     cacheExpirationMs?: number;
+    /**
+     * Optional: Enable SQL query logging to console
+     * When enabled, all SQL queries will be logged with:
+     * - SQL statement text
+     * - Bound parameters
+     * - Execution time in milliseconds
+     * - Number of rows affected/returned
+     * Default: false
+     */
+    enableQueryLogging?: boolean;
 }
 declare class GtfsSqlJs {
     private db;

@@ -29,6 +29,7 @@ Try the live demo to explore GTFS data, view routes with colors, and see trip sc
 - ✅ Flexible filter-based query API - combine multiple filters easily
 - ✅ Agency query support with agency-based filtering
 - ✅ Full TypeScript support with comprehensive types
+- ✅ **SQL query logging** - Debug and optimize with detailed query logs
 - ✅ Works in both browser and Node.js
 - ✅ Efficient querying with indexed SQLite database
 - ✅ Proper handling of GTFS required/optional fields
@@ -977,6 +978,36 @@ while (stmt.step()) {
 
 stmt.free();
 ```
+
+#### SQL Query Logging
+
+Enable SQL query logging to see all queries executed by the library in the console. This is useful for debugging, performance analysis, and understanding how the library works internally.
+
+```typescript
+// Enable query logging
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  enableQueryLogging: true  // Logs all SQL queries to console
+});
+
+// All queries will now be logged to console with:
+// - SQL statement text
+// - Bound parameters
+// - Execution time in milliseconds
+// - Number of rows affected/returned
+
+// Example output:
+// [GTFS-SQL] SELECT * FROM stops WHERE stop_name LIKE ? LIMIT ? | params: ["%Station%",10] | 2.45ms | 8 rows
+// [GTFS-SQL] SELECT * FROM routes WHERE route_id = ? | params: ["ROUTE_1"] | 0.82ms | 1 rows
+// [GTFS-SQL] CREATE INDEX idx_trips_route_id ON trips(route_id) | 145.32ms
+```
+
+**Use cases:**
+- **Debugging**: See exactly what queries are being executed
+- **Performance analysis**: Identify slow queries
+- **Learning**: Understand how the library translates filters into SQL
+- **Optimization**: Find opportunities to add indexes or optimize queries
+
+**Note:** Query logging has minimal performance impact when disabled (default). When enabled, it adds a small overhead for logging operations.
 
 #### Close Database
 
