@@ -537,14 +537,29 @@ export async function loadRealtimeData(db: Database, feedUrls: string[]): Promis
     }
   }
 
-  // Insert into database
-  if (allAlerts.length > 0) {
-    insertAlerts(db, allAlerts, now);
-  }
-  if (allVehiclePositions.length > 0) {
-    insertVehiclePositions(db, allVehiclePositions, now);
-  }
-  if (allTripUpdates.length > 0) {
-    insertTripUpdates(db, allTripUpdates, now);
+  // Clear old data and insert new data in a single transaction
+  db.run('BEGIN TRANSACTION');
+  try {
+    // Clear all realtime tables
+    db.run('DELETE FROM rt_stop_time_updates');
+    db.run('DELETE FROM rt_trip_updates');
+    db.run('DELETE FROM rt_vehicle_positions');
+    db.run('DELETE FROM rt_alerts');
+
+    // Insert new data
+    if (allAlerts.length > 0) {
+      insertAlerts(db, allAlerts, now);
+    }
+    if (allVehiclePositions.length > 0) {
+      insertVehiclePositions(db, allVehiclePositions, now);
+    }
+    if (allTripUpdates.length > 0) {
+      insertTripUpdates(db, allTripUpdates, now);
+    }
+
+    db.run('COMMIT');
+  } catch (error) {
+    db.run('ROLLBACK');
+    throw error;
   }
 }

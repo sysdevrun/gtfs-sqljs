@@ -1443,14 +1443,25 @@ async function loadRealtimeData(db, feedUrls) {
       }
     }
   }
-  if (allAlerts.length > 0) {
-    insertAlerts(db, allAlerts, now);
-  }
-  if (allVehiclePositions.length > 0) {
-    insertVehiclePositions(db, allVehiclePositions, now);
-  }
-  if (allTripUpdates.length > 0) {
-    insertTripUpdates(db, allTripUpdates, now);
+  db.run("BEGIN TRANSACTION");
+  try {
+    db.run("DELETE FROM rt_stop_time_updates");
+    db.run("DELETE FROM rt_trip_updates");
+    db.run("DELETE FROM rt_vehicle_positions");
+    db.run("DELETE FROM rt_alerts");
+    if (allAlerts.length > 0) {
+      insertAlerts(db, allAlerts, now);
+    }
+    if (allVehiclePositions.length > 0) {
+      insertVehiclePositions(db, allVehiclePositions, now);
+    }
+    if (allTripUpdates.length > 0) {
+      insertTripUpdates(db, allTripUpdates, now);
+    }
+    db.run("COMMIT");
+  } catch (error) {
+    db.run("ROLLBACK");
+    throw error;
   }
 }
 
