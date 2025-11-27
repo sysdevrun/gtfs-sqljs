@@ -142,6 +142,7 @@ export class GtfsSqlJs {
   private SQL: SqlJsStatic | null = null;
   private realtimeFeedUrls: string[] = [];
   private stalenessThreshold: number = 120;
+  private lastRealtimeFetchTimestamp: number | null = null;
 
   /**
    * Private constructor - use static factory methods instead
@@ -876,6 +877,14 @@ export class GtfsSqlJs {
   }
 
   /**
+   * Get timestamp of the last successful realtime data fetch and insertion
+   * @returns Unix timestamp in seconds, or null if no realtime data has been fetched
+   */
+  getLastRealtimeFetchTimestamp(): number | null {
+    return this.lastRealtimeFetchTimestamp;
+  }
+
+  /**
    * Fetch and load GTFS Realtime data from configured feed URLs or provided URLs
    * @param urls - Optional array of feed URLs. If not provided, uses configured feed URLs
    */
@@ -888,6 +897,7 @@ export class GtfsSqlJs {
     }
 
     await loadRealtimeData(this.db, feedUrls);
+    this.lastRealtimeFetchTimestamp = Math.floor(Date.now() / 1000);
   }
 
   /**
