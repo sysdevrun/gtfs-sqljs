@@ -727,6 +727,15 @@ await gtfs.fetchRealtimeData(['./path/to/feed.pb']);
 // Update configuration
 gtfs.setRealtimeFeedUrls(['https://example.com/new-feed']);
 gtfs.setStalenessThreshold(60); // 60 seconds
+
+// Check when realtime data was last fetched
+const lastFetch = gtfs.getLastRealtimeFetchTimestamp();
+if (lastFetch) {
+  const ageSeconds = Math.floor(Date.now() / 1000) - lastFetch;
+  console.log(`RT data is ${ageSeconds} seconds old`);
+} else {
+  console.log('No RT data has been fetched yet');
+}
 ```
 
 #### Querying Alerts
@@ -1164,6 +1173,7 @@ All methods support flexible filtering with both single values and arrays:
 - `getRealtimeFeedUrls()` - Get configured RT feed URLs
 - `setStalenessThreshold(seconds)` - Set staleness threshold (default: 120 seconds)
 - `getStalenessThreshold()` - Get current staleness threshold
+- `getLastRealtimeFetchTimestamp()` - Get Unix timestamp (seconds) of last successful RT fetch, or null if never fetched
 - `getAlerts(filters?)` - Get alerts (filters: alertId, routeId, stopId, tripId, activeOnly, cause, effect, limit)
 - `getVehiclePositions(filters?)` - Get vehicle positions (filters: tripId, routeId, vehicleId, limit)
 - `getTripUpdates(filters?)` - Get trip updates (filters: tripId, routeId, limit)
