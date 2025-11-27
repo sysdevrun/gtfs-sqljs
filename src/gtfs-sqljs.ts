@@ -27,19 +27,22 @@ import {
 } from './queries/calendar';
 import { getTrips, type TripFilters, type TripWithRealtime } from './queries/trips';
 import { getStopTimes, buildOrderedStopList, type StopTimeFilters, type StopTimeWithRealtime } from './queries/stop-times';
+import { getShapes, getShapesToGeojson, type ShapeFilters, type GeoJsonFeatureCollection } from './queries/shapes';
 import { getAlerts as getAlertsQuery, getAllAlerts, type AlertFilters } from './queries/rt-alerts';
 import { getVehiclePositions as getVehiclePositionsQuery, getAllVehiclePositions, type VehiclePositionFilters } from './queries/rt-vehicle-positions';
 import { getTripUpdates, getAllTripUpdates, type TripUpdateFilters } from './queries/rt-trip-updates';
 import { getStopTimeUpdates, getAllStopTimeUpdates, type StopTimeUpdateFilters } from './queries/rt-stop-time-updates';
 
 // Types
-import type { Agency, Stop, Route, Trip, StopTime, Calendar, CalendarDate } from './types/gtfs';
+import type { Agency, Stop, Route, Trip, StopTime, Calendar, CalendarDate, Shape } from './types/gtfs';
 import type { Alert, VehiclePosition, TripUpdate, StopTimeUpdate } from './types/gtfs-rt';
 
 // Export filter types for users
-export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters };
+export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, ShapeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters };
 // Export RT types
 export type { Alert, VehiclePosition, TripUpdate, TripWithRealtime, StopTimeWithRealtime };
+// Export GeoJSON types
+export type { GeoJsonFeatureCollection };
 
 /**
  * Progress information for GTFS data loading
@@ -683,6 +686,83 @@ export class GtfsSqlJs {
     }
 
     return getTrips(this.db, finalFilters, this.stalenessThreshold);
+  }
+
+  // ==================== Shape Methods ====================
+
+  /**
+   * Get shapes with optional filters
+   *
+   * @param filters - Optional filters
+   * @param filters.shapeId - Filter by shape ID (single value or array)
+   * @param filters.routeId - Filter by route ID (single value or array) - joins with trips table
+   * @param filters.tripId - Filter by trip ID (single value or array) - joins with trips table
+   * @param filters.limit - Limit number of results
+   *
+   * @example
+   * // Get all points for a specific shape
+   * const shapes = gtfs.getShapes({ shapeId: 'SHAPE_1' });
+   *
+   * @example
+   * // Get shapes for a specific route
+   * const shapes = gtfs.getShapes({ routeId: 'ROUTE_1' });
+   *
+   * @example
+   * // Get shapes for multiple trips
+   * const shapes = gtfs.getShapes({ tripId: ['TRIP_1', 'TRIP_2'] });
+   */
+  getShapes(filters?: ShapeFilters): Shape[] {
+    if (!this.db) throw new Error('Database not initialized');
+    return getShapes(this.db, filters);
+  }
+
+  /**
+   * Get shapes as GeoJSON FeatureCollection
+   *
+   * Each shape is converted to a LineString Feature with route properties.
+   * Coordinates are in [longitude, latitude] format per GeoJSON spec.
+   *
+   * @param filters - Optional filters (same as getShapes)
+   * @param filters.shapeId - Filter by shape ID (single value or array)
+   * @param filters.routeId - Filter by route ID (single value or array)
+   * @param filters.tripId - Filter by trip ID (single value or array)
+   * @param filters.limit - Limit number of results
+   * @param precision - Number of decimal places for coordinates (default: 6, ~10cm precision)
+   *
+   * @returns GeoJSON FeatureCollection with LineString features
+   *
+   * @example
+   * // Get all shapes as GeoJSON
+   * const geojson = gtfs.getShapesToGeojson();
+   *
+   * @example
+   * // Get shapes for a route with lower precision
+   * const geojson = gtfs.getShapesToGeojson({ routeId: 'ROUTE_1' }, 5);
+   *
+   * @example
+   * // Result structure:
+   * // {
+   * //   type: 'FeatureCollection',
+   * //   features: [{
+   * //     type: 'Feature',
+   * //     properties: {
+   * //       shape_id: 'SHAPE_1',
+   * //       route_id: 'ROUTE_1',
+   * //       route_short_name: '1',
+   * //       route_long_name: 'Main Street',
+   * //       route_type: 3,
+   * //       route_color: 'FF0000'
+   * //     },
+   * //     geometry: {
+   * //       type: 'LineString',
+   * //       coordinates: [[-122.123456, 37.123456], ...]
+   * //     }
+   * //   }]
+   * // }
+   */
+  getShapesToGeojson(filters?: ShapeFilters, precision: number = 6): GeoJsonFeatureCollection {
+    if (!this.db) throw new Error('Database not initialized');
+    return getShapesToGeojson(this.db, filters, precision);
   }
 
   // ==================== Stop Time Methods ====================

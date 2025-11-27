@@ -550,6 +550,39 @@ interface StopTimeWithRealtime extends StopTime {
     realtime?: StopTimeRealtime;
 }
 
+/**
+ * Shape Query Methods
+ */
+
+interface ShapeFilters {
+    shapeId?: string | string[];
+    routeId?: string | string[];
+    tripId?: string | string[];
+    limit?: number;
+}
+interface GeoJsonGeometry {
+    type: 'LineString';
+    coordinates: number[][];
+}
+interface GeoJsonFeature {
+    type: 'Feature';
+    properties: {
+        shape_id: string;
+        route_id?: string;
+        route_short_name?: string;
+        route_long_name?: string;
+        route_type?: number;
+        route_color?: string;
+        route_text_color?: string;
+        agency_id?: string;
+    };
+    geometry: GeoJsonGeometry;
+}
+interface GeoJsonFeatureCollection {
+    type: 'FeatureCollection';
+    features: GeoJsonFeature[];
+}
+
 interface TripUpdateFilters {
     tripId?: string;
     routeId?: string;
@@ -744,6 +777,73 @@ declare class GtfsSqlJs {
     getTrips(filters?: TripFilters & {
         date?: string;
     }): Trip[];
+    /**
+     * Get shapes with optional filters
+     *
+     * @param filters - Optional filters
+     * @param filters.shapeId - Filter by shape ID (single value or array)
+     * @param filters.routeId - Filter by route ID (single value or array) - joins with trips table
+     * @param filters.tripId - Filter by trip ID (single value or array) - joins with trips table
+     * @param filters.limit - Limit number of results
+     *
+     * @example
+     * // Get all points for a specific shape
+     * const shapes = gtfs.getShapes({ shapeId: 'SHAPE_1' });
+     *
+     * @example
+     * // Get shapes for a specific route
+     * const shapes = gtfs.getShapes({ routeId: 'ROUTE_1' });
+     *
+     * @example
+     * // Get shapes for multiple trips
+     * const shapes = gtfs.getShapes({ tripId: ['TRIP_1', 'TRIP_2'] });
+     */
+    getShapes(filters?: ShapeFilters): Shape[];
+    /**
+     * Get shapes as GeoJSON FeatureCollection
+     *
+     * Each shape is converted to a LineString Feature with route properties.
+     * Coordinates are in [longitude, latitude] format per GeoJSON spec.
+     *
+     * @param filters - Optional filters (same as getShapes)
+     * @param filters.shapeId - Filter by shape ID (single value or array)
+     * @param filters.routeId - Filter by route ID (single value or array)
+     * @param filters.tripId - Filter by trip ID (single value or array)
+     * @param filters.limit - Limit number of results
+     * @param precision - Number of decimal places for coordinates (default: 6, ~10cm precision)
+     *
+     * @returns GeoJSON FeatureCollection with LineString features
+     *
+     * @example
+     * // Get all shapes as GeoJSON
+     * const geojson = gtfs.getShapesToGeojson();
+     *
+     * @example
+     * // Get shapes for a route with lower precision
+     * const geojson = gtfs.getShapesToGeojson({ routeId: 'ROUTE_1' }, 5);
+     *
+     * @example
+     * // Result structure:
+     * // {
+     * //   type: 'FeatureCollection',
+     * //   features: [{
+     * //     type: 'Feature',
+     * //     properties: {
+     * //       shape_id: 'SHAPE_1',
+     * //       route_id: 'ROUTE_1',
+     * //       route_short_name: '1',
+     * //       route_long_name: 'Main Street',
+     * //       route_type: 3,
+     * //       route_color: 'FF0000'
+     * //     },
+     * //     geometry: {
+     * //       type: 'LineString',
+     * //       coordinates: [[-122.123456, 37.123456], ...]
+     * //     }
+     * //   }]
+     * // }
+     */
+    getShapesToGeojson(filters?: ShapeFilters, precision?: number): GeoJsonFeatureCollection;
     /**
      * Get stop times with optional filters
      *
@@ -1102,4 +1202,4 @@ declare function getCacheStats(entries: CacheEntry[]): {
     newestEntry: number | null;
 };
 
-export { type Agency, type AgencyFilters, type Alert, AlertCause, AlertEffect, type AlertFilters, type Attribution, type CacheEntry, type CacheEntryWithData, type CacheMetadata, type CacheStore, type CacheStoreOptions, type Calendar, type CalendarDate, type ColumnDefinition, CongestionLevel, DEFAULT_CACHE_EXPIRATION_MS, type EntitySelector, type FareAttribute, type FareRule, type FeedInfo, FileSystemCacheStore, type Frequency, GTFS_SCHEMA, GtfsSqlJs, type GtfsSqlJsOptions, type IndexDefinition, IndexedDBCacheStore, type Level, OccupancyStatus, type Pathway, type Position, type RealtimeConfig, type Route, type RouteFilters, ScheduleRelationship, type Shape, type Stop, type StopFilters, type StopTime, type StopTimeEvent, type StopTimeFilters, type StopTimeRealtime, type StopTimeUpdate, type StopTimeUpdateFilters, type StopTimeWithRealtime, type TableSchema, type TimeRange, type Transfer, type TranslatedString, type Trip, type TripFilters, type TripRealtime, type TripUpdate, type TripUpdateFilters, type TripWithRealtime, type VehicleDescriptor, type VehiclePosition, type VehiclePositionFilters, VehicleStopStatus, computeChecksum, computeZipChecksum, filterExpiredEntries, generateCacheKey, getCacheStats, isCacheExpired };
+export { type Agency, type AgencyFilters, type Alert, AlertCause, AlertEffect, type AlertFilters, type Attribution, type CacheEntry, type CacheEntryWithData, type CacheMetadata, type CacheStore, type CacheStoreOptions, type Calendar, type CalendarDate, type ColumnDefinition, CongestionLevel, DEFAULT_CACHE_EXPIRATION_MS, type EntitySelector, type FareAttribute, type FareRule, type FeedInfo, FileSystemCacheStore, type Frequency, GTFS_SCHEMA, type GeoJsonFeatureCollection, GtfsSqlJs, type GtfsSqlJsOptions, type IndexDefinition, IndexedDBCacheStore, type Level, OccupancyStatus, type Pathway, type Position, type RealtimeConfig, type Route, type RouteFilters, ScheduleRelationship, type Shape, type ShapeFilters, type Stop, type StopFilters, type StopTime, type StopTimeEvent, type StopTimeFilters, type StopTimeRealtime, type StopTimeUpdate, type StopTimeUpdateFilters, type StopTimeWithRealtime, type TableSchema, type TimeRange, type Transfer, type TranslatedString, type Trip, type TripFilters, type TripRealtime, type TripUpdate, type TripUpdateFilters, type TripWithRealtime, type VehicleDescriptor, type VehiclePosition, type VehiclePositionFilters, VehicleStopStatus, computeChecksum, computeZipChecksum, filterExpiredEntries, generateCacheKey, getCacheStats, isCacheExpired };

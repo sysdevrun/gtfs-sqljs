@@ -12,6 +12,7 @@ export {
   type RouteFilters,
   type TripFilters,
   type StopTimeFilters,
+  type ShapeFilters,
   type AlertFilters,
   type VehiclePositionFilters,
   type TripUpdateFilters,
@@ -20,7 +21,8 @@ export {
   type VehiclePosition,
   type TripUpdate,
   type TripWithRealtime,
-  type StopTimeWithRealtime
+  type StopTimeWithRealtime,
+  type GeoJsonFeatureCollection
 } from './gtfs-sqljs';
 
 // Export GTFS types
