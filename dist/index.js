@@ -2268,6 +2268,166 @@ function rowToStopTime(row) {
   };
 }
 
+// src/queries/shapes.ts
+function getShapes(db, filters = {}) {
+  const { shapeId, routeId, tripId, limit } = filters;
+  const needsTripsJoin = routeId !== void 0 || tripId !== void 0;
+  const conditions = [];
+  const params = [];
+  if (shapeId) {
+    const shapeIds = Array.isArray(shapeId) ? shapeId : [shapeId];
+    if (shapeIds.length > 0) {
+      const placeholders = shapeIds.map(() => "?").join(", ");
+      conditions.push(needsTripsJoin ? `s.shape_id IN (${placeholders})` : `shape_id IN (${placeholders})`);
+      params.push(...shapeIds);
+    }
+  }
+  if (tripId) {
+    const tripIds = Array.isArray(tripId) ? tripId : [tripId];
+    if (tripIds.length > 0) {
+      const placeholders = tripIds.map(() => "?").join(", ");
+      conditions.push(`t.trip_id IN (${placeholders})`);
+      params.push(...tripIds);
+    }
+  }
+  if (routeId) {
+    const routeIds = Array.isArray(routeId) ? routeId : [routeId];
+    if (routeIds.length > 0) {
+      const placeholders = routeIds.map(() => "?").join(", ");
+      conditions.push(`t.route_id IN (${placeholders})`);
+      params.push(...routeIds);
+    }
+  }
+  let sql;
+  if (needsTripsJoin) {
+    sql = `
+      SELECT s.* FROM shapes s
+      WHERE s.shape_id IN (
+        SELECT DISTINCT t.shape_id FROM trips t
+        WHERE t.shape_id IS NOT NULL
+        ${conditions.length > 0 ? " AND " + conditions.join(" AND ") : ""}
+      )
+      ORDER BY s.shape_id, s.shape_pt_sequence
+    `;
+  } else {
+    sql = "SELECT * FROM shapes";
+    if (conditions.length > 0) {
+      sql += " WHERE " + conditions.join(" AND ");
+    }
+    sql += " ORDER BY shape_id, shape_pt_sequence";
+  }
+  if (limit) {
+    sql += " LIMIT ?";
+    params.push(limit);
+  }
+  const stmt = db.prepare(sql);
+  if (params.length > 0) {
+    stmt.bind(params);
+  }
+  const shapes = [];
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    shapes.push(rowToShape(row));
+  }
+  stmt.free();
+  return shapes;
+}
+function getShapesToGeojson(db, filters = {}, precision = 6) {
+  const shapes = getShapes(db, filters);
+  const shapeGroups = /* @__PURE__ */ new Map();
+  for (const shape of shapes) {
+    const group = shapeGroups.get(shape.shape_id);
+    if (group) {
+      group.push(shape);
+    } else {
+      shapeGroups.set(shape.shape_id, [shape]);
+    }
+  }
+  const shapeRouteMap = getRoutesByShapeIds(db, Array.from(shapeGroups.keys()));
+  const features = [];
+  const multiplier = Math.pow(10, precision);
+  for (const [shapeId, points] of shapeGroups) {
+    points.sort((a, b) => a.shape_pt_sequence - b.shape_pt_sequence);
+    const coordinates = points.map((point) => [
+      Math.round(point.shape_pt_lon * multiplier) / multiplier,
+      Math.round(point.shape_pt_lat * multiplier) / multiplier
+    ]);
+    const route = shapeRouteMap.get(shapeId);
+    const properties = {
+      shape_id: shapeId
+    };
+    if (route) {
+      properties.route_id = route.route_id;
+      properties.route_short_name = route.route_short_name;
+      properties.route_long_name = route.route_long_name;
+      properties.route_type = route.route_type;
+      if (route.route_color) properties.route_color = route.route_color;
+      if (route.route_text_color) properties.route_text_color = route.route_text_color;
+      if (route.agency_id) properties.agency_id = route.agency_id;
+    }
+    features.push({
+      type: "Feature",
+      properties,
+      geometry: {
+        type: "LineString",
+        coordinates
+      }
+    });
+  }
+  return {
+    type: "FeatureCollection",
+    features
+  };
+}
+function getRoutesByShapeIds(db, shapeIds) {
+  if (shapeIds.length === 0) {
+    return /* @__PURE__ */ new Map();
+  }
+  const placeholders = shapeIds.map(() => "?").join(", ");
+  const sql = `
+    SELECT DISTINCT t.shape_id, r.*
+    FROM trips t
+    INNER JOIN routes r ON t.route_id = r.route_id
+    WHERE t.shape_id IN (${placeholders})
+    GROUP BY t.shape_id
+  `;
+  const stmt = db.prepare(sql);
+  stmt.bind(shapeIds);
+  const result = /* @__PURE__ */ new Map();
+  while (stmt.step()) {
+    const row = stmt.getAsObject();
+    const shapeId = String(row.shape_id);
+    result.set(shapeId, rowToRoute2(row));
+  }
+  stmt.free();
+  return result;
+}
+function rowToShape(row) {
+  return {
+    shape_id: String(row.shape_id),
+    shape_pt_lat: Number(row.shape_pt_lat),
+    shape_pt_lon: Number(row.shape_pt_lon),
+    shape_pt_sequence: Number(row.shape_pt_sequence),
+    shape_dist_traveled: row.shape_dist_traveled !== null ? Number(row.shape_dist_traveled) : void 0
+  };
+}
+function rowToRoute2(row) {
+  return {
+    route_id: String(row.route_id),
+    route_short_name: row.route_short_name ? String(row.route_short_name) : "",
+    route_long_name: row.route_long_name ? String(row.route_long_name) : "",
+    route_type: Number(row.route_type),
+    agency_id: row.agency_id ? String(row.agency_id) : void 0,
+    route_desc: row.route_desc ? String(row.route_desc) : void 0,
+    route_url: row.route_url ? String(row.route_url) : void 0,
+    route_color: row.route_color ? String(row.route_color) : void 0,
+    route_text_color: row.route_text_color ? String(row.route_text_color) : void 0,
+    route_sort_order: row.route_sort_order !== null ? Number(row.route_sort_order) : void 0,
+    continuous_pickup: row.continuous_pickup !== null ? Number(row.continuous_pickup) : void 0,
+    continuous_drop_off: row.continuous_drop_off !== null ? Number(row.continuous_drop_off) : void 0
+  };
+}
+
 // src/queries/rt-alerts.ts
 function parseAlert(row) {
   return {
@@ -2997,6 +3157,80 @@ var GtfsSqlJs = class _GtfsSqlJs {
       finalFilters.serviceIds = serviceIds;
     }
     return getTrips(this.db, finalFilters, this.stalenessThreshold);
+  }
+  // ==================== Shape Methods ====================
+  /**
+   * Get shapes with optional filters
+   *
+   * @param filters - Optional filters
+   * @param filters.shapeId - Filter by shape ID (single value or array)
+   * @param filters.routeId - Filter by route ID (single value or array) - joins with trips table
+   * @param filters.tripId - Filter by trip ID (single value or array) - joins with trips table
+   * @param filters.limit - Limit number of results
+   *
+   * @example
+   * // Get all points for a specific shape
+   * const shapes = gtfs.getShapes({ shapeId: 'SHAPE_1' });
+   *
+   * @example
+   * // Get shapes for a specific route
+   * const shapes = gtfs.getShapes({ routeId: 'ROUTE_1' });
+   *
+   * @example
+   * // Get shapes for multiple trips
+   * const shapes = gtfs.getShapes({ tripId: ['TRIP_1', 'TRIP_2'] });
+   */
+  getShapes(filters) {
+    if (!this.db) throw new Error("Database not initialized");
+    return getShapes(this.db, filters);
+  }
+  /**
+   * Get shapes as GeoJSON FeatureCollection
+   *
+   * Each shape is converted to a LineString Feature with route properties.
+   * Coordinates are in [longitude, latitude] format per GeoJSON spec.
+   *
+   * @param filters - Optional filters (same as getShapes)
+   * @param filters.shapeId - Filter by shape ID (single value or array)
+   * @param filters.routeId - Filter by route ID (single value or array)
+   * @param filters.tripId - Filter by trip ID (single value or array)
+   * @param filters.limit - Limit number of results
+   * @param precision - Number of decimal places for coordinates (default: 6, ~10cm precision)
+   *
+   * @returns GeoJSON FeatureCollection with LineString features
+   *
+   * @example
+   * // Get all shapes as GeoJSON
+   * const geojson = gtfs.getShapesToGeojson();
+   *
+   * @example
+   * // Get shapes for a route with lower precision
+   * const geojson = gtfs.getShapesToGeojson({ routeId: 'ROUTE_1' }, 5);
+   *
+   * @example
+   * // Result structure:
+   * // {
+   * //   type: 'FeatureCollection',
+   * //   features: [{
+   * //     type: 'Feature',
+   * //     properties: {
+   * //       shape_id: 'SHAPE_1',
+   * //       route_id: 'ROUTE_1',
+   * //       route_short_name: '1',
+   * //       route_long_name: 'Main Street',
+   * //       route_type: 3,
+   * //       route_color: 'FF0000'
+   * //     },
+   * //     geometry: {
+   * //       type: 'LineString',
+   * //       coordinates: [[-122.123456, 37.123456], ...]
+   * //     }
+   * //   }]
+   * // }
+   */
+  getShapesToGeojson(filters, precision = 6) {
+    if (!this.db) throw new Error("Database not initialized");
+    return getShapesToGeojson(this.db, filters, precision);
   }
   // ==================== Stop Time Methods ====================
   /**

@@ -136,6 +136,43 @@ export async function createTestDatabase(SQL: SqlJsStatic): Promise<ArrayBuffer>
     ['TRIP4', '07:15:00', '07:15:00', 'STOP3', 2]
   );
 
+  // Shapes - SHAPE1 for ROUTE1 (Main Line)
+  db.run(
+    'INSERT INTO shapes (shape_id, shape_pt_lat, shape_pt_lon, shape_pt_sequence, shape_dist_traveled) VALUES (?, ?, ?, ?, ?)',
+    ['SHAPE1', 40.7128, -74.0060, 1, 0.0]
+  );
+  db.run(
+    'INSERT INTO shapes (shape_id, shape_pt_lat, shape_pt_lon, shape_pt_sequence, shape_dist_traveled) VALUES (?, ?, ?, ?, ?)',
+    ['SHAPE1', 40.7133, -74.0065, 2, 100.5]
+  );
+  db.run(
+    'INSERT INTO shapes (shape_id, shape_pt_lat, shape_pt_lon, shape_pt_sequence, shape_dist_traveled) VALUES (?, ?, ?, ?, ?)',
+    ['SHAPE1', 40.7138, -74.0070, 3, 200.0]
+  );
+  db.run(
+    'INSERT INTO shapes (shape_id, shape_pt_lat, shape_pt_lon, shape_pt_sequence, shape_dist_traveled) VALUES (?, ?, ?, ?, ?)',
+    ['SHAPE1', 40.7143, -74.0075, 4, 300.0]
+  );
+  db.run(
+    'INSERT INTO shapes (shape_id, shape_pt_lat, shape_pt_lon, shape_pt_sequence, shape_dist_traveled) VALUES (?, ?, ?, ?, ?)',
+    ['SHAPE1', 40.7148, -74.0080, 5, 400.0]
+  );
+
+  // Shapes - SHAPE2 for ROUTE2 (Express Line)
+  db.run(
+    'INSERT INTO shapes (shape_id, shape_pt_lat, shape_pt_lon, shape_pt_sequence) VALUES (?, ?, ?, ?)',
+    ['SHAPE2', 40.7128, -74.0060, 1]
+  );
+  db.run(
+    'INSERT INTO shapes (shape_id, shape_pt_lat, shape_pt_lon, shape_pt_sequence) VALUES (?, ?, ?, ?)',
+    ['SHAPE2', 40.7148, -74.0080, 2]
+  );
+
+  // Update trips to reference shapes
+  db.run('UPDATE trips SET shape_id = ? WHERE trip_id IN (?, ?)', ['SHAPE1', 'TRIP1', 'TRIP2']);
+  db.run('UPDATE trips SET shape_id = ? WHERE trip_id = ?', ['SHAPE1', 'TRIP3']);
+  db.run('UPDATE trips SET shape_id = ? WHERE trip_id = ?', ['SHAPE2', 'TRIP4']);
+
   // Export database
   const data = db.export();
   db.close();
