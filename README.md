@@ -411,6 +411,16 @@ const stopTimes = gtfs.getStopTimes({
   - `directionId`: number - Filter by direction
   - `limit`: number - Limit results
 
+- `getShapes(filters?)`:
+  - `shapeId`: string | string[] - Filter by shape ID
+  - `routeId`: string | string[] - Filter by route (via trips table)
+  - `tripId`: string | string[] - Filter by trip
+  - `limit`: number - Limit results
+
+- `getShapesToGeojson(filters?, precision?)`:
+  - Same filters as `getShapes`
+  - `precision`: number - Decimal places for coordinates (default: 6)
+
 #### Get Stop Information
 
 ```typescript
@@ -610,6 +620,80 @@ const stops = gtfs.buildOrderedStopList(tripIds);
 // Result: [A, B, C, D, E, F] - all stops in correct order
 // Now you can create a timetable showing all stops with departure times
 ```
+
+#### Get Shape Information
+
+Shapes define the path a vehicle takes along a route. Use `getShapes()` to get raw shape point data and `getShapesToGeojson()` to get shapes as GeoJSON for mapping.
+
+```typescript
+// Get all shape points for a specific shape
+const shapePoints = gtfs.getShapes({ shapeId: 'SHAPE_1' });
+console.log(`Shape has ${shapePoints.length} points`);
+
+// Get shapes for a specific route
+const routeShapes = gtfs.getShapes({ routeId: 'ROUTE_1' });
+
+// Get shapes for multiple trips
+const tripShapes = gtfs.getShapes({ tripId: ['TRIP_1', 'TRIP_2'] });
+
+// Each shape point contains:
+// - shape_id: string
+// - shape_pt_lat: number
+// - shape_pt_lon: number
+// - shape_pt_sequence: number
+// - shape_dist_traveled?: number (optional)
+```
+
+#### Get Shapes as GeoJSON
+
+Convert shapes to GeoJSON format for use with mapping libraries (Leaflet, Mapbox, etc.):
+
+```typescript
+// Get all shapes as GeoJSON FeatureCollection
+const geojson = gtfs.getShapesToGeojson();
+
+// Get shapes for a specific route
+const routeGeojson = gtfs.getShapesToGeojson({ routeId: 'ROUTE_1' });
+
+// Customize coordinate precision (default: 6 decimals = ~10cm)
+const lowPrecision = gtfs.getShapesToGeojson({ routeId: 'ROUTE_1' }, 4); // ~11m precision
+
+// GeoJSON structure:
+// {
+//   type: 'FeatureCollection',
+//   features: [{
+//     type: 'Feature',
+//     properties: {
+//       shape_id: 'SHAPE_1',
+//       route_id: 'ROUTE_1',
+//       route_short_name: '1',
+//       route_long_name: 'Main Street',
+//       route_type: 3,
+//       route_color: 'FF0000',
+//       route_text_color: 'FFFFFF',
+//       agency_id: 'AGENCY_1'
+//     },
+//     geometry: {
+//       type: 'LineString',
+//       coordinates: [[-122.123456, 37.123456], [-122.234567, 37.234567], ...]
+//     }
+//   }]
+// }
+
+// Use with Leaflet
+const geoJsonLayer = L.geoJSON(geojson, {
+  style: (feature) => ({
+    color: `#${feature.properties.route_color || '000000'}`,
+    weight: 3
+  })
+}).addTo(map);
+```
+
+**Precision values:**
+- `6` decimals: ~10cm precision (default)
+- `5` decimals: ~1m precision
+- `4` decimals: ~11m precision
+- `3` decimals: ~111m precision
 
 ### GTFS Realtime Support
 
@@ -1063,6 +1147,8 @@ All methods support flexible filtering with both single values and arrays:
 - `getRoutes(filters?)` - Get routes (filters: routeId, agencyId, limit)
 - `getTrips(filters?)` - Get trips (filters: tripId, routeId, serviceIds, directionId, agencyId, includeRealtime, limit, date)
 - `getStopTimes(filters?)` - Get stop times (filters: tripId, stopId, routeId, serviceIds, directionId, agencyId, includeRealtime, limit, date)
+- `getShapes(filters?)` - Get shape points (filters: shapeId, routeId, tripId, limit)
+- `getShapesToGeojson(filters?, precision?)` - Get shapes as GeoJSON FeatureCollection (same filters, precision default: 6)
 - `buildOrderedStopList(tripIds)` - Build an ordered list of stops from multiple trips (handles express/local variations)
 
 #### Calendar Methods
@@ -1101,8 +1187,10 @@ This library is written in TypeScript and provides full type definitions for all
 ```typescript
 import type {
   // Static GTFS types
-  Stop, Route, Trip, StopTime,
-  TripFilters, StopTimeFilters,
+  Stop, Route, Trip, StopTime, Shape,
+  TripFilters, StopTimeFilters, ShapeFilters,
+  // GeoJSON types
+  GeoJsonFeatureCollection,
   // GTFS-RT types
   Alert, VehiclePosition, TripWithRealtime, StopTimeWithRealtime,
   AlertFilters, VehiclePositionFilters,
