@@ -1,14 +1,15 @@
-import type { CacheStore, CacheMetadata, CacheEntry, CacheEntryWithData, CacheStoreOptions } from './types';
-
 /**
  * IndexedDB-based cache store for browsers
+ *
+ * Copy this file to your project and import it as needed.
  *
  * Stores GTFS databases in IndexedDB for fast access on subsequent loads.
  * Suitable for large databases (100s of MB to several GB depending on browser limits).
  *
  * @example
  * ```typescript
- * import { GtfsSqlJs, IndexedDBCacheStore } from 'gtfs-sqljs';
+ * import { GtfsSqlJs } from 'gtfs-sqljs';
+ * import { IndexedDBCacheStore } from './IndexedDBCacheStore';
  *
  * const cache = new IndexedDBCacheStore();
  * const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', {
@@ -17,6 +18,9 @@ import type { CacheStore, CacheMetadata, CacheEntry, CacheEntryWithData, CacheSt
  * });
  * ```
  */
+
+import type { CacheStore, CacheMetadata, CacheEntry, CacheEntryWithData, CacheStoreOptions } from 'gtfs-sqljs';
+
 export class IndexedDBCacheStore implements CacheStore {
   private dbName: string;
   private storeName = 'gtfs-cache';

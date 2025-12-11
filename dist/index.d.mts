@@ -654,14 +654,11 @@ interface GtfsSqlJsOptions {
     onProgress?: ProgressCallback;
     /**
      * Optional: Cache store for persisting processed GTFS databases
-     * Use IndexedDBCacheStore (browser) or FileSystemCacheStore (Node.js)
-     * or implement your own CacheStore
+     * Implement your own CacheStore or copy one from examples/cache/:
+     * - IndexedDBCacheStore (browser)
+     * - FileSystemCacheStore (Node.js only)
      *
-     * If not provided, caching is enabled by default with:
-     * - IndexedDBCacheStore in browsers
-     * - FileSystemCacheStore in Node.js
-     *
-     * Set to `null` to disable caching
+     * If not provided, caching is disabled.
      */
     cache?: CacheStore | null;
     /**
@@ -682,6 +679,7 @@ declare class GtfsSqlJs {
     private SQL;
     private realtimeFeedUrls;
     private stalenessThreshold;
+    private lastRealtimeFetchTimestamp;
     /**
      * Private constructor - use static factory methods instead
      */
@@ -923,6 +921,11 @@ declare class GtfsSqlJs {
      */
     getStalenessThreshold(): number;
     /**
+     * Get timestamp of the last successful realtime data fetch and insertion
+     * @returns Unix timestamp in seconds, or null if no realtime data has been fetched
+     */
+    getLastRealtimeFetchTimestamp(): number | null;
+    /**
      * Fetch and load GTFS Realtime data from configured feed URLs or provided URLs
      * @param urls - Optional array of feed URLs. If not provided, uses configured feed URLs
      */
@@ -970,10 +973,10 @@ declare class GtfsSqlJs {
     debugExportAllStopTimeUpdates(): StopTimeUpdate[];
     /**
      * Get cache statistics
-     * @param cacheStore - Cache store to query (optional, auto-detects if not provided)
+     * @param cacheStore - Cache store to query (required)
      * @returns Cache statistics including size, entry count, and age information
      */
-    static getCacheStats(cacheStore?: CacheStore): Promise<{
+    static getCacheStats(cacheStore: CacheStore): Promise<{
         totalEntries: number;
         activeEntries: number;
         expiredEntries: number;
@@ -984,28 +987,23 @@ declare class GtfsSqlJs {
     }>;
     /**
      * Clean expired cache entries
-     * @param cacheStore - Cache store to clean (optional, auto-detects if not provided)
+     * @param cacheStore - Cache store to clean (required)
      * @param expirationMs - Expiration time in milliseconds (default: 7 days)
      * @returns Number of entries deleted
      */
-    static cleanExpiredCache(cacheStore?: CacheStore, expirationMs?: number): Promise<number>;
+    static cleanExpiredCache(cacheStore: CacheStore, expirationMs?: number): Promise<number>;
     /**
      * Clear all cache entries
-     * @param cacheStore - Cache store to clear (optional, auto-detects if not provided)
+     * @param cacheStore - Cache store to clear (required)
      */
-    static clearCache(cacheStore?: CacheStore): Promise<void>;
+    static clearCache(cacheStore: CacheStore): Promise<void>;
     /**
      * List all cache entries
-     * @param cacheStore - Cache store to query (optional, auto-detects if not provided)
+     * @param cacheStore - Cache store to query (required)
      * @param includeExpired - Include expired entries (default: false)
      * @returns Array of cache entries with metadata
      */
-    static listCache(cacheStore?: CacheStore, includeExpired?: boolean): Promise<CacheEntry[]>;
-    /**
-     * Get the default cache store for the current environment
-     * @returns Default cache store or null if unavailable
-     */
-    private static getDefaultCacheStore;
+    static listCache(cacheStore: CacheStore, includeExpired?: boolean): Promise<CacheEntry[]>;
 }
 
 /**
@@ -1029,120 +1027,6 @@ interface IndexDefinition {
     unique?: boolean;
 }
 declare const GTFS_SCHEMA: TableSchema[];
-
-/**
- * IndexedDB-based cache store for browsers
- *
- * Stores GTFS databases in IndexedDB for fast access on subsequent loads.
- * Suitable for large databases (100s of MB to several GB depending on browser limits).
- *
- * @example
- * ```typescript
- * import { GtfsSqlJs, IndexedDBCacheStore } from 'gtfs-sqljs';
- *
- * const cache = new IndexedDBCacheStore();
- * const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', {
- *   cache,
- *   cacheVersion: '1.0'
- * });
- * ```
- */
-declare class IndexedDBCacheStore implements CacheStore {
-    private dbName;
-    private storeName;
-    private version;
-    constructor(options?: CacheStoreOptions);
-    /**
-     * Open IndexedDB connection
-     */
-    private openDB;
-    /**
-     * Get a cached database with metadata
-     */
-    get(key: string): Promise<CacheEntryWithData | null>;
-    /**
-     * Store a database in cache
-     */
-    set(key: string, data: ArrayBuffer, metadata: CacheMetadata): Promise<void>;
-    /**
-     * Check if a cache entry exists
-     */
-    has(key: string): Promise<boolean>;
-    /**
-     * Delete a specific cache entry
-     */
-    delete(key: string): Promise<void>;
-    /**
-     * Clear all cache entries
-     */
-    clear(): Promise<void>;
-    /**
-     * List all cached entries
-     */
-    list(): Promise<CacheEntry[]>;
-}
-
-/**
- * File system-based cache store for Node.js
- *
- * Stores GTFS databases as files on disk for fast access on subsequent loads.
- * Suitable for any size database (limited only by disk space).
- *
- * @example
- * ```typescript
- * import { GtfsSqlJs, FileSystemCacheStore } from 'gtfs-sqljs';
- *
- * const cache = new FileSystemCacheStore({ dir: './.cache/gtfs' });
- * const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', {
- *   cache,
- *   cacheVersion: '1.0'
- * });
- * ```
- */
-declare class FileSystemCacheStore implements CacheStore {
-    private cacheDir;
-    constructor(options?: CacheStoreOptions);
-    /**
-     * Get the cache directory path (lazy initialization)
-     */
-    private getCacheDir;
-    /**
-     * Ensure cache directory exists
-     */
-    private ensureCacheDir;
-    /**
-     * Get file path for a cache key
-     */
-    private getFilePath;
-    /**
-     * Get metadata file path for a cache key
-     */
-    private getMetadataPath;
-    /**
-     * Get a cached database with metadata
-     */
-    get(key: string): Promise<CacheEntryWithData | null>;
-    /**
-     * Store a database in cache
-     */
-    set(key: string, data: ArrayBuffer, metadata: CacheMetadata): Promise<void>;
-    /**
-     * Check if a cache entry exists
-     */
-    has(key: string): Promise<boolean>;
-    /**
-     * Delete a specific cache entry
-     */
-    delete(key: string): Promise<void>;
-    /**
-     * Clear all cache entries
-     */
-    clear(): Promise<void>;
-    /**
-     * List all cached entries
-     */
-    list(): Promise<CacheEntry[]>;
-}
 
 /**
  * Compute SHA-256 checksum of data
@@ -1202,4 +1086,4 @@ declare function getCacheStats(entries: CacheEntry[]): {
     newestEntry: number | null;
 };
 
-export { type Agency, type AgencyFilters, type Alert, AlertCause, AlertEffect, type AlertFilters, type Attribution, type CacheEntry, type CacheEntryWithData, type CacheMetadata, type CacheStore, type CacheStoreOptions, type Calendar, type CalendarDate, type ColumnDefinition, CongestionLevel, DEFAULT_CACHE_EXPIRATION_MS, type EntitySelector, type FareAttribute, type FareRule, type FeedInfo, FileSystemCacheStore, type Frequency, GTFS_SCHEMA, type GeoJsonFeatureCollection, GtfsSqlJs, type GtfsSqlJsOptions, type IndexDefinition, IndexedDBCacheStore, type Level, OccupancyStatus, type Pathway, type Position, type RealtimeConfig, type Route, type RouteFilters, ScheduleRelationship, type Shape, type ShapeFilters, type Stop, type StopFilters, type StopTime, type StopTimeEvent, type StopTimeFilters, type StopTimeRealtime, type StopTimeUpdate, type StopTimeUpdateFilters, type StopTimeWithRealtime, type TableSchema, type TimeRange, type Transfer, type TranslatedString, type Trip, type TripFilters, type TripRealtime, type TripUpdate, type TripUpdateFilters, type TripWithRealtime, type VehicleDescriptor, type VehiclePosition, type VehiclePositionFilters, VehicleStopStatus, computeChecksum, computeZipChecksum, filterExpiredEntries, generateCacheKey, getCacheStats, isCacheExpired };
+export { type Agency, type AgencyFilters, type Alert, AlertCause, AlertEffect, type AlertFilters, type Attribution, type CacheEntry, type CacheEntryWithData, type CacheMetadata, type CacheStore, type CacheStoreOptions, type Calendar, type CalendarDate, type ColumnDefinition, CongestionLevel, DEFAULT_CACHE_EXPIRATION_MS, type EntitySelector, type FareAttribute, type FareRule, type FeedInfo, type Frequency, GTFS_SCHEMA, type GeoJsonFeatureCollection, GtfsSqlJs, type GtfsSqlJsOptions, type IndexDefinition, type Level, OccupancyStatus, type Pathway, type Position, type RealtimeConfig, type Route, type RouteFilters, ScheduleRelationship, type Shape, type ShapeFilters, type Stop, type StopFilters, type StopTime, type StopTimeEvent, type StopTimeFilters, type StopTimeRealtime, type StopTimeUpdate, type StopTimeUpdateFilters, type StopTimeWithRealtime, type TableSchema, type TimeRange, type Transfer, type TranslatedString, type Trip, type TripFilters, type TripRealtime, type TripUpdate, type TripUpdateFilters, type TripWithRealtime, type VehicleDescriptor, type VehiclePosition, type VehiclePositionFilters, VehicleStopStatus, computeChecksum, computeZipChecksum, filterExpiredEntries, generateCacheKey, getCacheStats, isCacheExpired };

@@ -81,10 +81,9 @@ export type {
   CacheStoreOptions
 } from './cache/types';
 
-// Export cache store implementations
-export { IndexedDBCacheStore } from './cache/indexeddb-store';
-export { FileSystemCacheStore } from './cache/fs-store';
-
 // Export cache utilities
 export { computeChecksum, computeZipChecksum, generateCacheKey } from './cache/checksum';
 export { isCacheExpired, filterExpiredEntries, getCacheStats, DEFAULT_CACHE_EXPIRATION_MS } from './cache/utils';
+
+// Note: Cache store implementations (IndexedDBCacheStore, FileSystemCacheStore) are available
+// in examples/cache/ directory. Copy them to your project as needed.

@@ -111,14 +111,11 @@ export interface GtfsSqlJsOptions {
 
   /**
    * Optional: Cache store for persisting processed GTFS databases
-   * Use IndexedDBCacheStore (browser) or FileSystemCacheStore (Node.js)
-   * or implement your own CacheStore
+   * Implement your own CacheStore or copy one from examples/cache/:
+   * - IndexedDBCacheStore (browser)
+   * - FileSystemCacheStore (Node.js only)
    *
-   * If not provided, caching is enabled by default with:
-   * - IndexedDBCacheStore in browsers
-   * - FileSystemCacheStore in Node.js
-   *
-   * Set to `null` to disable caching
+   * If not provided, caching is disabled.
    */
   cache?: CacheStore | null;
 
@@ -189,32 +186,9 @@ export class GtfsSqlJs {
     this.SQL = options.SQL || (await initSqlJs(options.locateFile ? { locateFile: options.locateFile } : {}));
 
     // Determine cache store to use
-    let cache: CacheStore | null = null;
-
-    if (userCache === null) {
-      // User explicitly disabled caching
-      cache = null;
-    } else if (userCache) {
-      // User provided a cache store
-      cache = userCache;
-    } else {
-      // Auto-detect environment and create default cache store
-      try {
-        if (typeof indexedDB !== 'undefined') {
-          // Browser/Web Worker environment - use IndexedDB
-          const { IndexedDBCacheStore } = await import('./cache/indexeddb-store');
-          cache = new IndexedDBCacheStore();
-        } else if (typeof process !== 'undefined' && process.versions?.node) {
-          // Node.js environment - use FileSystem
-          const { FileSystemCacheStore } = await import('./cache/fs-store');
-          cache = new FileSystemCacheStore();
-        }
-      } catch (error) {
-        // Fallback to no caching if import fails
-        console.warn('Failed to initialize default cache store:', error);
-        cache = null;
-      }
-    }
+    // Cache store must be provided explicitly by the user
+    // See examples/cache/ for available implementations
+    const cache: CacheStore | null = userCache === null ? null : (userCache || null);
 
     // Check cache if enabled
     if (cache) {
@@ -985,108 +959,81 @@ export class GtfsSqlJs {
 
   /**
    * Get cache statistics
-   * @param cacheStore - Cache store to query (optional, auto-detects if not provided)
+   * @param cacheStore - Cache store to query (required)
    * @returns Cache statistics including size, entry count, and age information
    */
-  static async getCacheStats(cacheStore?: CacheStore) {
+  static async getCacheStats(cacheStore: CacheStore) {
     const { getCacheStats } = await import('./cache/utils');
-    const cache = cacheStore || await this.getDefaultCacheStore();
 
-    if (!cache) {
-      throw new Error('No cache store available');
+    if (!cacheStore) {
+      throw new Error('Cache store is required');
     }
 
-    const entries = await cache.list?.() || [];
+    const entries = await cacheStore.list?.() || [];
     return getCacheStats(entries);
   }
 
   /**
    * Clean expired cache entries
-   * @param cacheStore - Cache store to clean (optional, auto-detects if not provided)
+   * @param cacheStore - Cache store to clean (required)
    * @param expirationMs - Expiration time in milliseconds (default: 7 days)
    * @returns Number of entries deleted
    */
   static async cleanExpiredCache(
-    cacheStore?: CacheStore,
+    cacheStore: CacheStore,
     expirationMs: number = DEFAULT_CACHE_EXPIRATION_MS
   ): Promise<number> {
     const { filterExpiredEntries } = await import('./cache/utils');
-    const cache = cacheStore || await this.getDefaultCacheStore();
 
-    if (!cache || !cache.list) {
-      throw new Error('No cache store available or cache store does not support listing');
+    if (!cacheStore || !cacheStore.list) {
+      throw new Error('Cache store is required and must support listing');
     }
 
-    const allEntries = await cache.list();
+    const allEntries = await cacheStore.list();
     const expiredEntries = allEntries.filter(entry =>
       !filterExpiredEntries([entry], expirationMs).length
     );
 
     // Delete expired entries
-    await Promise.all(expiredEntries.map(entry => cache.delete(entry.key)));
+    await Promise.all(expiredEntries.map(entry => cacheStore.delete(entry.key)));
 
     return expiredEntries.length;
   }
 
   /**
    * Clear all cache entries
-   * @param cacheStore - Cache store to clear (optional, auto-detects if not provided)
+   * @param cacheStore - Cache store to clear (required)
    */
-  static async clearCache(cacheStore?: CacheStore): Promise<void> {
-    const cache = cacheStore || await this.getDefaultCacheStore();
-
-    if (!cache) {
-      throw new Error('No cache store available');
+  static async clearCache(cacheStore: CacheStore): Promise<void> {
+    if (!cacheStore) {
+      throw new Error('Cache store is required');
     }
 
-    await cache.clear();
+    await cacheStore.clear();
   }
 
   /**
    * List all cache entries
-   * @param cacheStore - Cache store to query (optional, auto-detects if not provided)
+   * @param cacheStore - Cache store to query (required)
    * @param includeExpired - Include expired entries (default: false)
    * @returns Array of cache entries with metadata
    */
   static async listCache(
-    cacheStore?: CacheStore,
+    cacheStore: CacheStore,
     includeExpired: boolean = false
   ) {
     const { filterExpiredEntries } = await import('./cache/utils');
-    const cache = cacheStore || await this.getDefaultCacheStore();
 
-    if (!cache || !cache.list) {
-      throw new Error('No cache store available or cache store does not support listing');
+    if (!cacheStore || !cacheStore.list) {
+      throw new Error('Cache store is required and must support listing');
     }
 
-    const entries = await cache.list();
+    const entries = await cacheStore.list();
 
     if (includeExpired) {
       return entries;
     }
 
     return filterExpiredEntries(entries);
-  }
-
-  /**
-   * Get the default cache store for the current environment
-   * @returns Default cache store or null if unavailable
-   */
-  private static async getDefaultCacheStore(): Promise<CacheStore | null> {
-    try {
-      if (typeof indexedDB !== 'undefined') {
-        // Browser/Web Worker environment - use IndexedDB
-        const { IndexedDBCacheStore } = await import('./cache/indexeddb-store');
-        return new IndexedDBCacheStore();
-      } else if (typeof process !== 'undefined' && process.versions?.node) {
-        // Node.js environment - use FileSystem
-        const { FileSystemCacheStore } = await import('./cache/fs-store');
-        return new FileSystemCacheStore();
-      }
-    } catch (error) {
-      console.warn('Failed to initialize default cache store:', error);
-    }
-
-    return null;
   }
 }
