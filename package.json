@@ -1,6 +1,6 @@
 {
   "name": "gtfs-sqljs",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "Load GTFS data into sql.js SQLite database for querying in browser and Node.js",
   "type": "module",
   "main": "./dist/index.js",

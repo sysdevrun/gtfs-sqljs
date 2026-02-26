@@ -157,7 +157,7 @@ export const GTFS_SCHEMA: TableSchema[] = [
       { name: 'price', type: 'REAL', required: true },
       { name: 'currency_type', type: 'TEXT', required: true },
       { name: 'payment_method', type: 'INTEGER', required: true },
-      { name: 'transfers', type: 'INTEGER', required: true },
+      { name: 'transfers', type: 'INTEGER', required: false },
       { name: 'agency_id', type: 'TEXT', required: false },
       { name: 'transfer_duration', type: 'INTEGER', required: false },
     ],

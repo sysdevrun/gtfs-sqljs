@@ -140,7 +140,8 @@ export interface FareAttribute {
   price: number;
   currency_type: string;
   payment_method: number;
-  transfers: number;
+  /** Number of transfers permitted. null means unlimited. */
+  transfers: number | null;
 
   // Optional fields
   agency_id?: string;
