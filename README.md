@@ -408,7 +408,7 @@ const agencies = gtfs.getAgencies({ limit: 5 });
 const serviceIds = gtfs.getActiveServiceIds('20240115');
 
 // Get calendar by service ID
-const calendar = gtfs.getCalendarByServiceId('WEEKDAY');
+const calendars = gtfs.getCalendars({ serviceId: 'WEEKDAY' });
 
 // Get calendar date exceptions
 const exceptions = gtfs.getCalendarDates('WEEKDAY');
@@ -1100,7 +1100,7 @@ All methods support flexible filtering with both single values and arrays:
 
 #### Calendar Methods
 - `getActiveServiceIds(date)` - Get active service IDs for a date (YYYYMMDD format)
-- `getCalendarByServiceId(serviceId)` - Get calendar by service_id
+- `getCalendars(filters?)` - Get calendars (filters: serviceId, limit)
 - `getCalendarDates(serviceId)` - Get calendar date exceptions for a service
 - `getCalendarDatesForDate(date)` - Get calendar exceptions for a specific date
 
@@ -1148,7 +1148,7 @@ import type {
   ProgressInfo, ProgressCallback
 } from 'gtfs-sqljs';
 
-const stop: Stop = gtfs.getStopById('STOP_123')!;
+const stops: Stop[] = gtfs.getStops({ stopId: 'STOP_123' });
 
 // Use filter types for better type safety
 const filters: TripFilters = {

@@ -2,7 +2,8 @@
 
 ## Upcoming release
 
--
+- Replace `getCalendarByServiceId(serviceId)` with `getCalendars(filters?)` for consistent filter-based API
+- Fix README: replace non-existent `getStopById` with `getStops({ stopId })`
 
 ## 0.1.2
 
