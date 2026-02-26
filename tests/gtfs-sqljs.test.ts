@@ -130,6 +130,11 @@ describe('GtfsSqlJs', () => {
       expect(trips.every(t => t.direction_id === 0)).toBe(true);
     });
 
+    it('should return empty array for out-of-range date', () => {
+      const trips = gtfs.getTrips({ date: '19700101' });
+      expect(trips).toEqual([]);
+    });
+
     it('should get multiple trips by ID array', () => {
       const trips = gtfs.getTrips({ tripId: ['TRIP1', 'TRIP2'] });
       expect(trips.length).toBeGreaterThanOrEqual(1);
@@ -156,6 +161,11 @@ describe('GtfsSqlJs', () => {
     it('should get stop times with direction filter', () => {
       const stopTimes = gtfs.getStopTimes({ stopId: 'STOP1', routeId: 'ROUTE1', date: '20240101', directionId: 0 });
       expect(stopTimes.length).toBeGreaterThan(0);
+    });
+
+    it('should return empty array for out-of-range date', () => {
+      const stopTimes = gtfs.getStopTimes({ date: '19700101' });
+      expect(stopTimes).toEqual([]);
     });
 
     it('should get multiple stop times by trip ID array', () => {

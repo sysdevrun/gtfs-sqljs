@@ -129,11 +129,10 @@ export function getTrips(
 
   if (serviceIds) {
     const serviceIdArray = Array.isArray(serviceIds) ? serviceIds : [serviceIds];
-    if (serviceIdArray.length > 0) {
-      const placeholders = serviceIdArray.map(() => '?').join(', ');
-      conditions.push(needsRoutesJoin ? `t.service_id IN (${placeholders})` : `service_id IN (${placeholders})`);
-      params.push(...serviceIdArray);
-    }
+    if (serviceIdArray.length === 0) return [];  // No matching services → no results
+    const placeholders = serviceIdArray.map(() => '?').join(', ');
+    conditions.push(needsRoutesJoin ? `t.service_id IN (${placeholders})` : `service_id IN (${placeholders})`);
+    params.push(...serviceIdArray);
   }
 
   if (directionId !== undefined) {

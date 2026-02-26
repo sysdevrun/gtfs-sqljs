@@ -4,6 +4,10 @@
 
 -
 
+## 0.2.1
+
+- Fix `getStopTimes` and `getTrips` returning all results instead of none when called with a date outside the feed's validity range
+
 ## 0.2.0
 
 - Add `pickupType` and `dropOffType` filters to `getStopTimes`, with `COALESCE` handling so NULL (empty) is treated as 0 (regular) per GTFS spec
