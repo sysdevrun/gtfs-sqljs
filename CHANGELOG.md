@@ -2,6 +2,11 @@
 
 ## Upcoming release
 
+-
+
+## 0.1.2
+
+- Remove dist/ from repository (built at publish time)
 - Upgrade vitest from v1 to v4
 - Upgrade ESLint from v8 to v9 with flat config migration
 - Upgrade @typescript-eslint from v6 to v8 (via typescript-eslint)
