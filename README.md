@@ -7,6 +7,8 @@
   <p>A TypeScript library for loading <a href="https://gtfs.org/documentation/schedule/reference/">GTFS</a> (General Transit Feed Specification) data into a <a href="https://sql.js.org/">sql.js</a> SQLite database for querying in both browser and Node.js environments.</p>
 </div>
 
+> **[Live Demo](https://sysdevrun.github.io/gtfs-sqljs-demo/)** — A fully static demo website with GTFS and GTFS-RT data running in a Web Worker, with no backend.
+
 ## Author
 
 **Théophile Helleboid / SysDevRun**
