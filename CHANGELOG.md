@@ -6,11 +6,8 @@
 
 ## 0.2.2
 
-- Allow `fare_attributes.transfers` to be empty (NULL), meaning unlimited transfers per GTFS spec
-
-## 0.2.1
-
 - Fix `getStopTimes` and `getTrips` returning all results instead of none when called with a date outside the feed's validity range
+- Allow `fare_attributes.transfers` to be empty (NULL), meaning unlimited transfers per GTFS spec
 
 ## 0.2.0
 
