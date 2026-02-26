@@ -4,13 +4,13 @@ on:
   release:
     types: [published]
 
+permissions:
+  id-token: write  # Required for OIDC
+  contents: read
+
 jobs:
   publish:
     runs-on: ubuntu-latest
-
-    permissions:
-      contents: read
-      id-token: write
 
     steps:
       - uses: actions/checkout@v4
@@ -47,3 +47,4 @@ jobs:
 
       - name: Publish to npm
         run: npm publish --provenance --access public
+

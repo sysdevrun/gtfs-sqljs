@@ -2,6 +2,15 @@
 
 ## Upcoming release
 
+- Upgrade vitest from v1 to v4
+- Upgrade ESLint from v8 to v9 with flat config migration
+- Upgrade @typescript-eslint from v6 to v8 (via typescript-eslint)
+- Upgrade TypeScript from v5.3 to v5.9
+- Upgrade protobufjs from v7 to v8
+- Upgrade @types/node from v20 to v25
+- Upgrade sql.js, tsup, @types/papaparse to latest within-range versions
+- Fix 10 npm audit vulnerabilities (minimatch ReDoS, esbuild dev server)
+
 ## 0.1.1
 
 - Publish as ESM-only package (`"type": "module"`)

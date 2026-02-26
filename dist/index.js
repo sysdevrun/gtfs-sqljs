@@ -1,10 +1,5 @@
-"use strict";
-var __create = Object.create;
 var __defProp = Object.defineProperty;
-var __getOwnPropDesc = Object.getOwnPropertyDescriptor;
 var __getOwnPropNames = Object.getOwnPropertyNames;
-var __getProtoOf = Object.getPrototypeOf;
-var __hasOwnProp = Object.prototype.hasOwnProperty;
 var __esm = (fn, res) => function __init() {
   return fn && (res = (0, fn[__getOwnPropNames(fn)[0]])(fn = 0)), res;
 };
@@ -12,23 +7,6 @@ var __export = (target, all) => {
   for (var name in all)
     __defProp(target, name, { get: all[name], enumerable: true });
 };
-var __copyProps = (to, from, except, desc) => {
-  if (from && typeof from === "object" || typeof from === "function") {
-    for (let key of __getOwnPropNames(from))
-      if (!__hasOwnProp.call(to, key) && key !== except)
-        __defProp(to, key, { get: () => from[key], enumerable: !(desc = __getOwnPropDesc(from, key)) || desc.enumerable });
-  }
-  return to;
-};
-var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__getProtoOf(mod)) : {}, __copyProps(
-  // If the importer is in node compatibility mode or this is not an ESM
-  // file that has been converted to a CommonJS file using a Babel-
-  // compatible transform (i.e. "__esModule" has not been set), then set
-  // "default" to the CommonJS "module.exports" for node compatibility.
-  isNodeMode || !mod || !mod.__esModule ? __defProp(target, "default", { value: mod, enumerable: true }) : target,
-  mod
-));
-var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
 // src/cache/utils.ts
 var utils_exports = {};
@@ -68,29 +46,8 @@ var init_utils = __esm({
   }
 });
 
-// src/index.ts
-var index_exports = {};
-__export(index_exports, {
-  AlertCause: () => AlertCause,
-  AlertEffect: () => AlertEffect,
-  CongestionLevel: () => CongestionLevel,
-  DEFAULT_CACHE_EXPIRATION_MS: () => DEFAULT_CACHE_EXPIRATION_MS,
-  GTFS_SCHEMA: () => GTFS_SCHEMA,
-  GtfsSqlJs: () => GtfsSqlJs,
-  OccupancyStatus: () => OccupancyStatus,
-  ScheduleRelationship: () => ScheduleRelationship,
-  VehicleStopStatus: () => VehicleStopStatus,
-  computeChecksum: () => computeChecksum,
-  computeZipChecksum: () => computeZipChecksum,
-  filterExpiredEntries: () => filterExpiredEntries,
-  generateCacheKey: () => generateCacheKey,
-  getCacheStats: () => getCacheStats,
-  isCacheExpired: () => isCacheExpired
-});
-module.exports = __toCommonJS(index_exports);
-
 // src/gtfs-sqljs.ts
-var import_sql = __toESM(require("sql.js"));
+import initSqlJs from "sql.js";
 
 // src/schema/schema.ts
 var GTFS_SCHEMA = [
@@ -382,7 +339,7 @@ function getAllCreateIndexStatements() {
 }
 
 // src/loaders/zip-loader.ts
-var import_jszip = __toESM(require("jszip"));
+import JSZip from "jszip";
 async function loadGTFSZip(source) {
   let zipData;
   if (typeof source === "string") {
@@ -390,7 +347,7 @@ async function loadGTFSZip(source) {
   } else {
     zipData = source;
   }
-  const zip = await import_jszip.default.loadAsync(zipData);
+  const zip = await JSZip.loadAsync(zipData);
   const files = {};
   const filePromises = [];
   zip.forEach((relativePath, file) => {
@@ -475,9 +432,9 @@ async function fetchZip(source, onProgress) {
 }
 
 // src/loaders/csv-parser.ts
-var import_papaparse = __toESM(require("papaparse"));
+import Papa from "papaparse";
 function parseCSV(text) {
-  const result = import_papaparse.default.parse(text, {
+  const result = Papa.parse(text, {
     header: true,
     skipEmptyLines: true,
     transformHeader: (header) => header.trim(),
@@ -718,7 +675,7 @@ function clearRealtimeData(db) {
 }
 
 // src/loaders/gtfs-rt-loader.ts
-var import_protobufjs = __toESM(require("protobufjs"));
+import protobuf from "protobufjs";
 var GTFS_RT_PROTO = `
 syntax = "proto2";
 option java_package = "com.google.transit.realtime";
@@ -934,7 +891,7 @@ async function fetchProtobuf(source) {
 var gtfsRtRoot = null;
 function loadGtfsRtProto() {
   if (!gtfsRtRoot) {
-    gtfsRtRoot = import_protobufjs.default.parse(GTFS_RT_PROTO).root;
+    gtfsRtRoot = protobuf.parse(GTFS_RT_PROTO).root;
   }
   return gtfsRtRoot;
 }
@@ -2410,7 +2367,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
       cacheExpirationMs = DEFAULT_CACHE_EXPIRATION_MS,
       skipFiles
     } = options;
-    this.SQL = options.SQL || await (0, import_sql.default)(options.locateFile ? { locateFile: options.locateFile } : {});
+    this.SQL = options.SQL || await initSqlJs(options.locateFile ? { locateFile: options.locateFile } : {});
     const cache = userCache === null ? null : userCache || null;
     if (cache) {
       onProgress?.({
@@ -2651,7 +2608,7 @@ var GtfsSqlJs = class _GtfsSqlJs {
    * Initialize from existing database
    */
   async initFromDatabase(database, options) {
-    this.SQL = options.SQL || await (0, import_sql.default)(options.locateFile ? { locateFile: options.locateFile } : {});
+    this.SQL = options.SQL || await initSqlJs(options.locateFile ? { locateFile: options.locateFile } : {});
     this.db = new this.SQL.Database(new Uint8Array(database));
     createRealtimeTables(this.db);
     if (options.realtimeFeedUrls) {
@@ -3172,6 +3129,23 @@ var AlertEffect = /* @__PURE__ */ ((AlertEffect2) => {
 
 // src/index.ts
 init_utils();
+export {
+  AlertCause,
+  AlertEffect,
+  CongestionLevel,
+  DEFAULT_CACHE_EXPIRATION_MS,
+  GTFS_SCHEMA,
+  GtfsSqlJs,
+  OccupancyStatus,
+  ScheduleRelationship,
+  VehicleStopStatus,
+  computeChecksum,
+  computeZipChecksum,
+  filterExpiredEntries,
+  generateCacheKey,
+  getCacheStats,
+  isCacheExpired
+};
 /**
  * gtfs-sqljs - Load GTFS data into sql.js SQLite database
  * @author Théophile Helleboid/SysDevRun
