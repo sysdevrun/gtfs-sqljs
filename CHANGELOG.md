@@ -2,6 +2,12 @@
 
 ## Upcoming release
 
+-
+
+## 0.2.0
+
+- Add `pickupType` and `dropOffType` filters to `getStopTimes`, with `COALESCE` handling so NULL (empty) is treated as 0 (regular) per GTFS spec
+- Add `PickupDropOffType` enum for GTFS static pickup/drop-off type values
 - Replace `getCalendarByServiceId(serviceId)` with `getCalendars(filters?)` for consistent filter-based API
 - Fix README: replace non-existent `getStopById` with `getStops({ stopId })`
 

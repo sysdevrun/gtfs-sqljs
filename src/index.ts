@@ -69,6 +69,9 @@ export {
   AlertEffect
 } from './types/gtfs-rt';
 
+// Export GTFS static enums
+export { PickupDropOffType } from './types/gtfs-enums';
+
 // Export schema definitions for advanced use
 export { GTFS_SCHEMA, type TableSchema, type ColumnDefinition, type IndexDefinition } from './schema/schema';
 

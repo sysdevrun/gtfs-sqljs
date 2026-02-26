@@ -5,6 +5,7 @@
 import type { Database } from 'sql.js';
 import type { StopTime, Stop } from '../types/gtfs';
 import type { StopTimeRealtime } from '../types/gtfs-rt';
+import type { PickupDropOffType } from '../types/gtfs-enums';
 import { getStops } from './stops';
 
 export interface StopTimeFilters {
@@ -14,6 +15,18 @@ export interface StopTimeFilters {
   serviceIds?: string | string[];
   directionId?: number | number[];
   agencyId?: string | string[];
+  /**
+   * Filter by pickup type.
+   * 0 = Regular, 1 = None, 2 = Phone agency, 3 = Coordinate with driver.
+   * @see {@link PickupDropOffType}
+   */
+  pickupType?: PickupDropOffType | PickupDropOffType[];
+  /**
+   * Filter by drop-off type.
+   * 0 = Regular, 1 = None, 2 = Phone agency, 3 = Coordinate with driver.
+   * @see {@link PickupDropOffType}
+   */
+  dropOffType?: PickupDropOffType | PickupDropOffType[];
   includeRealtime?: boolean;
   limit?: number;
 }
@@ -83,7 +96,7 @@ export function getStopTimes(
   filters: StopTimeFilters = {},
   stalenessThreshold: number = 120
 ): StopTime[] | StopTimeWithRealtime[] {
-  const { tripId, stopId, routeId, serviceIds, directionId, agencyId, includeRealtime, limit } = filters;
+  const { tripId, stopId, routeId, serviceIds, directionId, agencyId, pickupType, dropOffType, includeRealtime, limit } = filters;
 
   // Determine if we need to join with trips and/or routes table
   const needsTripsJoin = routeId || serviceIds || directionId !== undefined || agencyId !== undefined;
@@ -144,6 +157,27 @@ export function getStopTimes(
       const placeholders = agencyIds.map(() => '?').join(', ');
       conditions.push(`r.agency_id IN (${placeholders})`);
       params.push(...agencyIds);
+    }
+  }
+
+  if (pickupType !== undefined) {
+    const types = Array.isArray(pickupType) ? pickupType : [pickupType];
+    if (types.length > 0) {
+      const col = needsTripsJoin ? 'st.pickup_type' : 'pickup_type';
+      // COALESCE treats NULL as 0 (REGULAR) per GTFS spec: "empty" means regularly scheduled
+      const placeholders = types.map(() => '?').join(', ');
+      conditions.push(`COALESCE(${col}, 0) IN (${placeholders})`);
+      params.push(...types);
+    }
+  }
+
+  if (dropOffType !== undefined) {
+    const types = Array.isArray(dropOffType) ? dropOffType : [dropOffType];
+    if (types.length > 0) {
+      const col = needsTripsJoin ? 'st.drop_off_type' : 'drop_off_type';
+      const placeholders = types.map(() => '?').join(', ');
+      conditions.push(`COALESCE(${col}, 0) IN (${placeholders})`);
+      params.push(...types);
     }
   }
 

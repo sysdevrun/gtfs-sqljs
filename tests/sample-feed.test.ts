@@ -349,6 +349,84 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
       expect(stopTimes[0].trip_id).toBe('AB1');
       expect(stopTimes[0].arrival_time).toBe('8:00:00');
     });
+
+    it('should filter by pickupType', () => {
+      const db = gtfs.getDatabase();
+      // Set pickup_type=1 (no pickup) for AB1 at BEATTY_AIRPORT
+      db.run("UPDATE stop_times SET pickup_type = 1 WHERE trip_id = 'AB1' AND stop_id = 'BEATTY_AIRPORT'");
+      // Set pickup_type=0 (regular) for AB1 at BULLFROG
+      db.run("UPDATE stop_times SET pickup_type = 0 WHERE trip_id = 'AB1' AND stop_id = 'BULLFROG'");
+
+      const regularOnly = gtfs.getStopTimes({ tripId: 'AB1', pickupType: 0 });
+      expect(regularOnly.length).toBe(1);
+      expect(regularOnly[0].stop_id).toBe('BULLFROG');
+
+      const noPickup = gtfs.getStopTimes({ tripId: 'AB1', pickupType: 1 });
+      expect(noPickup.length).toBe(1);
+      expect(noPickup[0].stop_id).toBe('BEATTY_AIRPORT');
+
+      // Array filter: both types
+      const both = gtfs.getStopTimes({ tripId: 'AB1', pickupType: [0, 1] });
+      expect(both.length).toBe(2);
+
+      // Reset
+      db.run("UPDATE stop_times SET pickup_type = NULL WHERE trip_id = 'AB1'");
+    });
+
+    it('should treat NULL pickup_type as REGULAR (0) per GTFS spec', () => {
+      // Sample feed has NULL pickup_type for all rows — GTFS spec says empty = 0
+      const allAB1 = gtfs.getStopTimes({ tripId: 'AB1' });
+      expect(allAB1.length).toBe(2);
+
+      // Filtering for REGULAR should match NULL rows
+      const regular = gtfs.getStopTimes({ tripId: 'AB1', pickupType: 0 });
+      expect(regular.length).toBe(2);
+
+      // Filtering for NONE should exclude NULL rows
+      const none = gtfs.getStopTimes({ tripId: 'AB1', pickupType: 1 });
+      expect(none.length).toBe(0);
+    });
+
+    it('should treat NULL drop_off_type as REGULAR (0) per GTFS spec', () => {
+      const regular = gtfs.getStopTimes({ tripId: 'AB1', dropOffType: 0 });
+      expect(regular.length).toBe(2);
+
+      const none = gtfs.getStopTimes({ tripId: 'AB1', dropOffType: 1 });
+      expect(none.length).toBe(0);
+    });
+
+    it('should filter by dropOffType', () => {
+      const db = gtfs.getDatabase();
+      // Set drop_off_type=1 (no drop-off) for AB1 at BEATTY_AIRPORT
+      db.run("UPDATE stop_times SET drop_off_type = 1 WHERE trip_id = 'AB1' AND stop_id = 'BEATTY_AIRPORT'");
+      // Set drop_off_type=0 (regular) for AB1 at BULLFROG
+      db.run("UPDATE stop_times SET drop_off_type = 0 WHERE trip_id = 'AB1' AND stop_id = 'BULLFROG'");
+
+      const regularOnly = gtfs.getStopTimes({ tripId: 'AB1', dropOffType: 0 });
+      expect(regularOnly.length).toBe(1);
+      expect(regularOnly[0].stop_id).toBe('BULLFROG');
+
+      const noDropOff = gtfs.getStopTimes({ tripId: 'AB1', dropOffType: 1 });
+      expect(noDropOff.length).toBe(1);
+      expect(noDropOff[0].stop_id).toBe('BEATTY_AIRPORT');
+
+      // Reset
+      db.run("UPDATE stop_times SET drop_off_type = NULL WHERE trip_id = 'AB1'");
+    });
+
+    it('should filter by pickupType with trips join', () => {
+      const db = gtfs.getDatabase();
+      db.run("UPDATE stop_times SET pickup_type = 2 WHERE trip_id = 'AB1' AND stop_id = 'BULLFROG'");
+
+      // routeId forces a trips join
+      const results = gtfs.getStopTimes({ routeId: 'AB', pickupType: 2 });
+      expect(results.length).toBe(1);
+      expect(results[0].trip_id).toBe('AB1');
+      expect(results[0].stop_id).toBe('BULLFROG');
+
+      // Reset
+      db.run("UPDATE stop_times SET pickup_type = NULL WHERE trip_id = 'AB1' AND stop_id = 'BULLFROG'");
+    });
   });
 
   describe('Complete Journey Scenarios', () => {
