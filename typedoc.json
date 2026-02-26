@@ -1,0 +1,11 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": ["./src/index.ts"],
+  "out": "./typedoc-out",
+  "name": "gtfs-sqljs",
+  "projectDocuments": ["documents/guide.md"],
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "githubPages": false,
+  "hostedBaseUrl": "https://sysdevrun.github.io/gtfs-sqljs/docs/"
+}

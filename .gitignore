@@ -3,6 +3,7 @@ node_modules/
 
 # Build outputs
 dist/
+typedoc-out/
 *.tsbuildinfo
 
 # Test coverage

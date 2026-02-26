@@ -40,6 +40,12 @@ jobs:
         working-directory: ./website
         run: npm run build
 
+      - name: Build API docs with TypeDoc
+        run: npx typedoc
+
+      - name: Copy API docs to website
+        run: cp -r typedoc-out website/dist/docs
+
       - name: Setup Pages
         uses: actions/configure-pages@v4
 

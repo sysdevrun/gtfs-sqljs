@@ -1,0 +1,1004 @@
+---
+title: Usage Guide
+---
+
+# Usage Guide
+
+This guide covers all usage patterns for **gtfs-sqljs**, from basic setup to advanced features like GTFS Realtime and smart caching.
+
+## Loading the sql.js WASM File
+
+sql.js requires a WASM file to be loaded. There are several ways to handle this:
+
+### Node.js
+
+In Node.js, sql.js will automatically locate the WASM file from the installed package:
+
+```typescript
+import { GtfsSqlJs } from 'gtfs-sqljs';
+
+// The WASM file is loaded automatically
+const gtfs = await GtfsSqlJs.fromZip('path/to/gtfs.zip');
+```
+
+### Browser with CDN
+
+You can use a CDN to serve the WASM file:
+
+```typescript
+import initSqlJs from 'sql.js';
+import { GtfsSqlJs } from 'gtfs-sqljs';
+
+// Initialize sql.js with CDN WASM file
+const SQL = await initSqlJs({
+  locateFile: (filename) => `https://sql.js.org/dist/${filename}`
+});
+
+// Pass the SQL instance to GtfsSqlJs
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', { SQL });
+```
+
+### Browser with Bundler (Webpack, Vite, etc.)
+
+If you're using a bundler, you need to configure it to handle the WASM file:
+
+#### Vite
+
+```typescript
+import initSqlJs from 'sql.js';
+import { GtfsSqlJs } from 'gtfs-sqljs';
+import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
+
+const SQL = await initSqlJs({
+  locateFile: () => sqlWasmUrl
+});
+
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', { SQL });
+```
+
+#### Webpack
+
+```typescript
+import initSqlJs from 'sql.js';
+import { GtfsSqlJs } from 'gtfs-sqljs';
+
+const SQL = await initSqlJs({
+  locateFile: (filename) => `/path/to/public/${filename}`
+});
+
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', { SQL });
+```
+
+Make sure to copy `sql-wasm.wasm` from `node_modules/sql.js/dist/` to your public directory.
+
+## Creating an Instance
+
+### From a GTFS ZIP file
+
+```typescript
+import { GtfsSqlJs } from 'gtfs-sqljs';
+
+// From URL
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip');
+
+// From local file (Node.js)
+const gtfs = await GtfsSqlJs.fromZip('./path/to/gtfs.zip');
+
+// Skip importing specific files to reduce memory usage
+// Tables will be created but data won't be imported
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  skipFiles: ['shapes.txt', 'frequencies.txt']
+});
+```
+
+### From an existing SQLite database
+
+```typescript
+import { GtfsSqlJs } from 'gtfs-sqljs';
+
+// Load from ArrayBuffer
+const dbBuffer = await fetch('https://example.com/gtfs.db').then(r => r.arrayBuffer());
+const gtfs = await GtfsSqlJs.fromDatabase(dbBuffer);
+```
+
+## Progress Tracking
+
+Track loading progress with a callback function - perfect for displaying progress bars or updating UI:
+
+```typescript
+import { GtfsSqlJs, type ProgressInfo } from 'gtfs-sqljs';
+
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  onProgress: (progress: ProgressInfo) => {
+    console.log(`${progress.percentComplete}% - ${progress.message}`);
+
+    // Progress information available:
+    console.log('Phase:', progress.phase);              // Current phase
+    console.log('File:', progress.currentFile);         // Current file being processed
+    console.log('Files:', progress.filesCompleted, '/', progress.totalFiles);
+    console.log('Rows:', progress.rowsProcessed, '/', progress.totalRows);
+  }
+});
+```
+
+### Progress Phases
+
+The loading process goes through these phases:
+
+1. **`checking_cache`** - Checking if cached database exists (0%)
+2. **`loading_from_cache`** - Loading from cache (if found, jumps to 100%)
+3. **`downloading`** - Downloading GTFS ZIP file (1-30%)
+4. **`extracting`** - Extracting GTFS ZIP file (35%)
+5. **`creating_schema`** - Creating database tables (40%)
+6. **`inserting_data`** - Importing data from CSV files (40-75%)
+7. **`creating_indexes`** - Building database indexes (75-85%)
+8. **`analyzing`** - Optimizing query performance (85-90%)
+9. **`loading_realtime`** - Loading realtime data from feeds (90-95%) *(if configured)*
+10. **`saving_cache`** - Saving to cache (95-98%)
+11. **`complete`** - Load complete (100%)
+
+**Note:** When a cached database is found, phases 3-10 are skipped, and loading completes in <1 second.
+
+**Note:** The `loading_realtime` phase only occurs if `realtimeFeedUrls` are configured during initialization.
+
+### Web Worker Example
+
+The progress callback is especially useful for web workers:
+
+```typescript
+// In your web worker
+import { GtfsSqlJs } from 'gtfs-sqljs';
+
+self.onmessage = async (event) => {
+  if (event.data.type === 'load') {
+    const gtfs = await GtfsSqlJs.fromZip(event.data.url, {
+      onProgress: (progress) => {
+        // Send progress updates to main thread
+        self.postMessage({
+          type: 'progress',
+          data: progress
+        });
+      }
+    });
+
+    self.postMessage({ type: 'complete' });
+  }
+};
+```
+
+```typescript
+// In your main thread
+const worker = new Worker('gtfs-worker.js');
+
+worker.onmessage = (event) => {
+  if (event.data.type === 'progress') {
+    const progress = event.data.data;
+    updateProgressBar(progress.percentComplete);
+    updateStatusText(progress.message);
+  }
+};
+
+worker.postMessage({ type: 'load', url: 'https://example.com/gtfs.zip' });
+```
+
+### ProgressInfo Type
+
+```typescript
+interface ProgressInfo {
+  phase: 'checking_cache' | 'loading_from_cache' | 'downloading' | 'extracting' |
+         'creating_schema' | 'inserting_data' | 'creating_indexes' | 'analyzing' |
+         'loading_realtime' | 'saving_cache' | 'complete';
+  currentFile: string | null;        // e.g., "stop_times.txt"
+  filesCompleted: number;            // Files processed so far
+  totalFiles: number;                // Total number of files
+  rowsProcessed: number;             // CSV rows imported so far
+  totalRows: number;                 // Total CSV rows to import
+  bytesDownloaded?: number;          // Bytes downloaded (during 'downloading' phase)
+  totalBytes?: number;               // Total bytes to download (during 'downloading' phase)
+  percentComplete: number;           // 0-100
+  message: string;                   // Human-readable status message
+}
+```
+
+## Querying Data
+
+The library provides flexible filter-based methods for querying GTFS data. Pass an object with optional filters to combine multiple criteria:
+
+```typescript
+// Get stops - combine any filters
+const stops = gtfs.getStops({
+  name: 'Station',        // Search by name
+  limit: 10               // Limit results
+});
+
+// Get routes - with or without filters
+const allRoutes = gtfs.getRoutes();
+const agencyRoutes = gtfs.getRoutes({ agencyId: 'AGENCY_1' });
+
+// Get trips - combine multiple filters
+const trips = gtfs.getTrips({
+  routeId: 'ROUTE_1',     // Filter by route
+  date: '20240115',       // Filter by date (gets active services)
+  directionId: 0,         // Filter by direction
+  limit: 50               // Limit results
+});
+
+// Get stop times - flexible filtering
+const stopTimes = gtfs.getStopTimes({
+  stopId: 'STOP_123',     // At a specific stop
+  routeId: 'ROUTE_1',     // For a specific route
+  date: '20240115',       // On a specific date
+  directionId: 0          // In a specific direction
+});
+```
+
+### Available Filter Options
+
+- {@link GtfsSqlJs.getStops | getStops(filters?)}:
+  - `stopId`: string - Filter by stop ID
+  - `stopCode`: string - Filter by stop code
+  - `name`: string - Search by stop name (partial match)
+  - `tripId`: string - Get stops for a trip
+  - `limit`: number - Limit results
+
+- {@link GtfsSqlJs.getRoutes | getRoutes(filters?)}:
+  - `routeId`: string - Filter by route ID
+  - `agencyId`: string - Filter by agency
+  - `limit`: number - Limit results
+
+- {@link GtfsSqlJs.getTrips | getTrips(filters?)}:
+  - `tripId`: string - Filter by trip ID
+  - `routeId`: string - Filter by route
+  - `date`: string - Filter by date (YYYYMMDD format)
+  - `directionId`: number - Filter by direction
+  - `limit`: number - Limit results
+
+- {@link GtfsSqlJs.getStopTimes | getStopTimes(filters?)}:
+  - `tripId`: string - Filter by trip
+  - `stopId`: string - Filter by stop
+  - `routeId`: string - Filter by route
+  - `date`: string - Filter by date (YYYYMMDD format)
+  - `directionId`: number - Filter by direction
+  - `limit`: number - Limit results
+
+- {@link GtfsSqlJs.getShapes | getShapes(filters?)}:
+  - `shapeId`: string | string[] - Filter by shape ID
+  - `routeId`: string | string[] - Filter by route (via trips table)
+  - `tripId`: string | string[] - Filter by trip
+  - `limit`: number - Limit results
+
+- {@link GtfsSqlJs.getShapesToGeojson | getShapesToGeojson(filters?, precision?)}:
+  - Same filters as `getShapes`
+  - `precision`: number - Decimal places for coordinates (default: 6)
+
+### Get Stop Information
+
+```typescript
+// Get stop by ID
+const stops = gtfs.getStops({ stopId: 'STOP_123' });
+const stop = stops.length > 0 ? stops[0] : null;
+console.log(stop?.stop_name);
+
+// Get stop by code (using filters)
+const stops = gtfs.getStops({ stopCode: 'ABC' });
+const stop = stops[0];
+
+// Search stops by name (using filters)
+const stops = gtfs.getStops({ name: 'Main Street' });
+
+// Get all stops (using filters with no parameters)
+const allStops = gtfs.getStops();
+
+// Get stops with limit
+const stops = gtfs.getStops({ limit: 10 });
+
+// Get stops for a specific trip
+const stops = gtfs.getStops({ tripId: 'TRIP_123' });
+```
+
+### Get Route Information
+
+```typescript
+// Get route by ID
+const routes = gtfs.getRoutes({ routeId: 'ROUTE_1' });
+const route = routes.length > 0 ? routes[0] : null;
+
+// Get all routes (using filters with no parameters)
+const routes = gtfs.getRoutes();
+
+// Get routes by agency (using filters)
+const agencyRoutes = gtfs.getRoutes({ agencyId: 'AGENCY_1' });
+
+// Get routes with limit
+const routes = gtfs.getRoutes({ limit: 10 });
+```
+
+### Get Agency Information
+
+```typescript
+// Get agency by ID
+const agencies = gtfs.getAgencies({ agencyId: 'AGENCY_1' });
+const agency = agencies.length > 0 ? agencies[0] : null;
+
+// Get all agencies
+const allAgencies = gtfs.getAgencies();
+
+// Get agencies with limit
+const agencies = gtfs.getAgencies({ limit: 5 });
+```
+
+### Get Calendar Information
+
+```typescript
+// Get active services for a date (YYYYMMDD format)
+const serviceIds = gtfs.getActiveServiceIds('20240115');
+
+// Get calendar by service ID
+const calendars = gtfs.getCalendars({ serviceId: 'WEEKDAY' });
+
+// Get calendar date exceptions
+const exceptions = gtfs.getCalendarDates('WEEKDAY');
+```
+
+### Get Trip Information
+
+```typescript
+// Get trip by ID
+const trips = gtfs.getTrips({ tripId: 'TRIP_123' });
+const trip = trips.length > 0 ? trips[0] : null;
+
+// Get trips by route (using filters)
+const trips = gtfs.getTrips({ routeId: 'ROUTE_1' });
+
+// Get trips by route and date (using filters)
+const trips = gtfs.getTrips({ routeId: 'ROUTE_1', date: '20240115' });
+
+// Get trips by route, date, and direction (using filters)
+const trips = gtfs.getTrips({
+  routeId: 'ROUTE_1',
+  date: '20240115',
+  directionId: 0
+});
+
+// Get all trips for a date
+const trips = gtfs.getTrips({ date: '20240115' });
+
+// Get trips by agency
+const trips = gtfs.getTrips({ agencyId: 'AGENCY_1' });
+```
+
+### Get Stop Time Information
+
+```typescript
+// Get stop times for a trip (ordered by stop_sequence)
+const stopTimes = gtfs.getStopTimes({ tripId: 'TRIP_123' });
+
+// Get stop times for a stop (using filters)
+const stopTimes = gtfs.getStopTimes({ stopId: 'STOP_123' });
+
+// Get stop times for a stop and route (using filters)
+const stopTimes = gtfs.getStopTimes({
+  stopId: 'STOP_123',
+  routeId: 'ROUTE_1'
+});
+
+// Get stop times for a stop, route, and date (using filters)
+const stopTimes = gtfs.getStopTimes({
+  stopId: 'STOP_123',
+  routeId: 'ROUTE_1',
+  date: '20240115'
+});
+
+// Get stop times with direction filter (using filters)
+const stopTimes = gtfs.getStopTimes({
+  stopId: 'STOP_123',
+  routeId: 'ROUTE_1',
+  date: '20240115',
+  directionId: 0
+});
+
+// Get stop times by agency
+const stopTimes = gtfs.getStopTimes({
+  agencyId: 'AGENCY_1',
+  date: '20240115'
+});
+```
+
+### Building Ordered Stop Lists for Multiple Trips
+
+When displaying timetables for routes where different trips may stop at different stops (e.g., express vs local service, or trips with varying start/end points), use {@link GtfsSqlJs.buildOrderedStopList | buildOrderedStopList()} to build an optimal ordered list of all unique stops:
+
+```typescript
+// Get all trips for a route in one direction
+const trips = gtfs.getTrips({
+  routeId: 'ROUTE_1',
+  directionId: 0,
+  date: '20240115'
+});
+
+// Build ordered list of all stops served by these trips
+const tripIds = trips.map(t => t.trip_id);
+const orderedStops = gtfs.buildOrderedStopList(tripIds);
+
+// Now display a timetable with all possible stops
+console.log('Route stops:');
+orderedStops.forEach(stop => {
+  console.log(`- ${stop.stop_name}`);
+});
+
+// For each trip, you can now show which stops it serves
+for (const trip of trips) {
+  const tripStopTimes = gtfs.getStopTimes({ tripId: trip.trip_id });
+  console.log(`\nTrip ${trip.trip_headsign}:`);
+
+  // Show all stops, marking which ones this trip serves
+  orderedStops.forEach(stop => {
+    const stopTime = tripStopTimes.find(st => st.stop_id === stop.stop_id);
+    if (stopTime) {
+      console.log(`  ${stopTime.arrival_time} - ${stop.stop_name}`);
+    } else {
+      console.log(`  --- (not served) - ${stop.stop_name}`);
+    }
+  });
+}
+```
+
+**Use Cases:**
+- **Express vs Local Service** - Some trips skip stops that others serve
+- **Different Start/End Points** - Short-turn trips or extended service trips
+- **Peak vs Off-Peak Service** - Different stop coverage based on time of day
+- **Route Variations** - Multiple branches or patterns on the same route
+
+**How it works:**
+The method intelligently merges stop sequences from all provided trips:
+1. Fetches stop times for all trips
+2. Processes each trip's stops in sequence order
+3. When encountering a new stop, finds the best insertion position by analyzing stops before and after it
+4. Returns full Stop objects in the determined order
+
+**Example - Real-world scenario:**
+```typescript
+// You have a bus route with:
+// - Local trips: A -> B -> C -> D -> E -> F
+// - Express trips: A -> C -> E -> F (skips B and D)
+// - Short trips: B -> C -> D (doesn't go to end of line)
+
+const allTrips = gtfs.getTrips({ routeId: 'BUS_42', directionId: 0 });
+const tripIds = allTrips.map(t => t.trip_id);
+const stops = gtfs.buildOrderedStopList(tripIds);
+
+// Result: [A, B, C, D, E, F] - all stops in correct order
+// Now you can create a timetable showing all stops with departure times
+```
+
+### Get Shape Information
+
+Shapes define the path a vehicle takes along a route. Use {@link GtfsSqlJs.getShapes | getShapes()} to get raw shape point data and {@link GtfsSqlJs.getShapesToGeojson | getShapesToGeojson()} to get shapes as GeoJSON for mapping.
+
+```typescript
+// Get all shape points for a specific shape
+const shapePoints = gtfs.getShapes({ shapeId: 'SHAPE_1' });
+console.log(`Shape has ${shapePoints.length} points`);
+
+// Get shapes for a specific route
+const routeShapes = gtfs.getShapes({ routeId: 'ROUTE_1' });
+
+// Get shapes for multiple trips
+const tripShapes = gtfs.getShapes({ tripId: ['TRIP_1', 'TRIP_2'] });
+
+// Each shape point contains:
+// - shape_id: string
+// - shape_pt_lat: number
+// - shape_pt_lon: number
+// - shape_pt_sequence: number
+// - shape_dist_traveled?: number (optional)
+```
+
+### Get Shapes as GeoJSON
+
+Convert shapes to GeoJSON format for use with mapping libraries (Leaflet, Mapbox, etc.):
+
+```typescript
+// Get all shapes as GeoJSON FeatureCollection
+const geojson = gtfs.getShapesToGeojson();
+
+// Get shapes for a specific route
+const routeGeojson = gtfs.getShapesToGeojson({ routeId: 'ROUTE_1' });
+
+// Customize coordinate precision (default: 6 decimals = ~10cm)
+const lowPrecision = gtfs.getShapesToGeojson({ routeId: 'ROUTE_1' }, 4); // ~11m precision
+
+// GeoJSON structure:
+// {
+//   type: 'FeatureCollection',
+//   features: [{
+//     type: 'Feature',
+//     properties: {
+//       shape_id: 'SHAPE_1',
+//       route_id: 'ROUTE_1',
+//       route_short_name: '1',
+//       route_long_name: 'Main Street',
+//       route_type: 3,
+//       route_color: 'FF0000',
+//       route_text_color: 'FFFFFF',
+//       agency_id: 'AGENCY_1'
+//     },
+//     geometry: {
+//       type: 'LineString',
+//       coordinates: [[-122.123456, 37.123456], [-122.234567, 37.234567], ...]
+//     }
+//   }]
+// }
+
+// Use with Leaflet
+const geoJsonLayer = L.geoJSON(geojson, {
+  style: (feature) => ({
+    color: `#${feature.properties.route_color || '000000'}`,
+    weight: 3
+  })
+}).addTo(map);
+```
+
+**Precision values:**
+- `6` decimals: ~10cm precision (default)
+- `5` decimals: ~1m precision
+- `4` decimals: ~11m precision
+- `3` decimals: ~111m precision
+
+## GTFS Realtime Support
+
+This library supports [GTFS Realtime](https://gtfs.org/documentation/realtime/reference/) data (alerts, trip updates, and vehicle positions) with automatic merging into static schedule data.
+
+### Loading Realtime Data
+
+```typescript
+// Configure RT feed URLs - data will be fetched automatically after GTFS load
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  realtimeFeedUrls: [
+    'https://example.com/gtfs-rt/alerts',
+    'https://example.com/gtfs-rt/trip-updates',
+    'https://example.com/gtfs-rt/vehicle-positions'
+  ],
+  stalenessThreshold: 120 // seconds (default: 120)
+});
+// RT data is already loaded and ready to use!
+
+// Or manually fetch RT data later (uses configured URLs or pass custom URLs)
+await gtfs.fetchRealtimeData();
+
+// Or fetch from specific URLs
+await gtfs.fetchRealtimeData([
+  'https://example.com/gtfs-rt/combined-feed'
+]);
+
+// Support local files in Node.js
+await gtfs.fetchRealtimeData(['./path/to/feed.pb']);
+
+// Update configuration
+gtfs.setRealtimeFeedUrls(['https://example.com/new-feed']);
+gtfs.setStalenessThreshold(60); // 60 seconds
+
+// Check when realtime data was last fetched
+const lastFetch = gtfs.getLastRealtimeFetchTimestamp();
+if (lastFetch) {
+  const ageSeconds = Math.floor(Date.now() / 1000) - lastFetch;
+  console.log(`RT data is ${ageSeconds} seconds old`);
+} else {
+  console.log('No RT data has been fetched yet');
+}
+```
+
+### Querying Alerts
+
+```typescript
+// Get all active alerts
+const activeAlerts = gtfs.getAlerts({ activeOnly: true });
+
+// Filter alerts by route
+const routeAlerts = gtfs.getAlerts({
+  routeId: 'ROUTE_1',
+  activeOnly: true
+});
+
+// Filter alerts by stop
+const stopAlerts = gtfs.getAlerts({
+  stopId: 'STOP_123',
+  activeOnly: true
+});
+
+// Filter alerts by trip
+const tripAlerts = gtfs.getAlerts({
+  tripId: 'TRIP_456'
+});
+
+// Get alert by ID
+const alerts = gtfs.getAlerts({ alertId: 'alert:12345' });
+const alert = alerts.length > 0 ? alerts[0] : null;
+
+// Alert structure
+console.log(alert.header_text);      // TranslatedString
+console.log(alert.description_text); // TranslatedString
+console.log(alert.cause);            // AlertCause enum
+console.log(alert.effect);           // AlertEffect enum
+console.log(alert.active_period);    // TimeRange[]
+console.log(alert.informed_entity);  // EntitySelector[]
+```
+
+### Querying Vehicle Positions
+
+```typescript
+// Get all vehicle positions
+const vehicles = gtfs.getVehiclePositions();
+
+// Filter by route
+const routeVehicles = gtfs.getVehiclePositions({
+  routeId: 'ROUTE_1'
+});
+
+// Filter by trip
+const tripVehicles = gtfs.getVehiclePositions({
+  tripId: 'TRIP_123'
+});
+const vehicle = tripVehicles.length > 0 ? tripVehicles[0] : null;
+
+// Vehicle structure
+console.log(vehicle.position);           // { latitude, longitude, bearing, speed }
+console.log(vehicle.current_stop_sequence);
+console.log(vehicle.current_status);     // VehicleStopStatus enum
+console.log(vehicle.timestamp);
+```
+
+### Merging Realtime with Static Data
+
+The library automatically merges realtime data with static schedules when requested:
+
+```typescript
+// Get trips with realtime data
+const tripsWithRT = gtfs.getTrips({
+  routeId: 'ROUTE_1',
+  date: '20240115',
+  includeRealtime: true  // Include RT data
+});
+
+for (const trip of tripsWithRT) {
+  if (trip.realtime?.vehicle_position) {
+    console.log('Vehicle location:', trip.realtime.vehicle_position.position);
+  }
+  if (trip.realtime?.trip_update) {
+    console.log('Trip delay:', trip.realtime.trip_update.delay, 'seconds');
+  }
+}
+
+// Get stop times with realtime delays
+const stopTimesWithRT = gtfs.getStopTimes({
+  tripId: 'TRIP_123',
+  includeRealtime: true  // Include RT data
+});
+
+for (const st of stopTimesWithRT) {
+  console.log(`Stop: ${st.stop_id}`);
+  console.log(`Scheduled: ${st.arrival_time}`);
+  if (st.realtime?.arrival_delay) {
+    console.log(`Delay: ${st.realtime.arrival_delay} seconds`);
+  }
+}
+```
+
+### Clearing Realtime Data
+
+```typescript
+// Clear all realtime data
+gtfs.clearRealtimeData();
+
+// Then fetch fresh data
+await gtfs.fetchRealtimeData();
+```
+
+### GTFS-RT Enums
+
+The library exports all GTFS-RT enums for type checking:
+
+```typescript
+import {
+  AlertCause,
+  AlertEffect,
+  ScheduleRelationship,
+  VehicleStopStatus,
+  CongestionLevel,
+  OccupancyStatus
+} from 'gtfs-sqljs';
+
+// Use enums for filtering or comparison
+if (alert.cause === AlertCause.ACCIDENT) {
+  console.log('Alert is due to an accident');
+}
+```
+
+## Smart Caching
+
+The library supports optional caching of processed GTFS databases to dramatically speed up subsequent loads. The first load processes the GTFS zip file (~5-10 seconds), but subsequent loads use the cached database (<1 second).
+
+### Setting Up Caching
+
+Cache store implementations are available in `examples/cache/`. Copy the appropriate implementation to your project:
+
+**Browser - IndexedDB:**
+```typescript
+// Copy examples/cache/IndexedDBCacheStore.ts to your project
+import { GtfsSqlJs } from 'gtfs-sqljs';
+import { IndexedDBCacheStore } from './IndexedDBCacheStore';
+
+const cache = new IndexedDBCacheStore();
+
+// First load: processes GTFS zip file and caches the result
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', { cache });
+
+// Second load: uses cached database (much faster!)
+const gtfs2 = await GtfsSqlJs.fromZip('gtfs.zip', { cache });
+```
+
+**Node.js - FileSystem:**
+```typescript
+// Copy examples/cache/FileSystemCacheStore.ts to your project
+import { GtfsSqlJs } from 'gtfs-sqljs';
+import { FileSystemCacheStore } from './FileSystemCacheStore';
+
+const cache = new FileSystemCacheStore({ dir: './.cache/gtfs' });
+
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', { cache });
+```
+
+**Note:** `FileSystemCacheStore` uses Node.js built-in modules (`fs`, `path`, `os`) and is **NOT compatible** with browser or React Native environments.
+
+### Cache Invalidation
+
+The cache is automatically invalidated when any of these change:
+- **File checksum** (SHA-256) - Different GTFS data
+- **File size** - Quick check before computing checksum
+- **Library version** - Schema or processing logic updated
+- **Data version** - User-specified version (see below)
+- **Skipped files** - Different `skipFiles` options
+
+### Data Versioning
+
+Use `cacheVersion` to control cache invalidation:
+
+```typescript
+// Load with version 1.0
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', {
+  cacheVersion: '1.0'
+});
+
+// Load with version 2.0 - will reprocess and create new cache
+const gtfs2 = await GtfsSqlJs.fromZip('gtfs.zip', {
+  cacheVersion: '2.0'
+});
+```
+
+**When to increment version:**
+- GTFS data is updated but filename stays the same
+- You want to force cache refresh
+- Testing different processing configurations
+
+### Cache Store Options
+
+**IndexedDBCacheStore options:**
+```typescript
+import { IndexedDBCacheStore } from './IndexedDBCacheStore';
+
+const cache = new IndexedDBCacheStore({
+  dbName: 'my-app-gtfs-cache'  // Custom database name
+});
+```
+
+**FileSystemCacheStore options:**
+```typescript
+import { FileSystemCacheStore } from './FileSystemCacheStore';
+
+const cache = new FileSystemCacheStore({
+  dir: './my-cache-dir'  // Custom cache directory
+});
+```
+
+### Cache Management
+
+Cache management methods require passing the cache store instance:
+
+**Get cache statistics:**
+```typescript
+import { IndexedDBCacheStore } from './IndexedDBCacheStore';
+
+const cache = new IndexedDBCacheStore();
+const stats = await GtfsSqlJs.getCacheStats(cache);
+
+console.log(`Total entries: ${stats.totalEntries}`);
+console.log(`Active entries: ${stats.activeEntries}`);
+console.log(`Expired entries: ${stats.expiredEntries}`);
+console.log(`Total size: ${stats.totalSizeMB} MB`);
+```
+
+**List cache entries:**
+```typescript
+const entries = await GtfsSqlJs.listCache(cache);
+
+entries.forEach(entry => {
+  console.log(`Key: ${entry.key}`);
+  console.log(`Source: ${entry.metadata.source}`);
+  console.log(`Size: ${(entry.metadata.size / 1024 / 1024).toFixed(2)} MB`);
+  console.log(`Age: ${((Date.now() - entry.metadata.timestamp) / 1000 / 60 / 60).toFixed(1)} hours`);
+});
+```
+
+**Clean expired entries:**
+```typescript
+// Remove entries older than 7 days (default)
+const deletedCount = await GtfsSqlJs.cleanExpiredCache(cache);
+console.log(`Deleted ${deletedCount} expired entries`);
+
+// Custom expiration time (3 days)
+const threeDays = 3 * 24 * 60 * 60 * 1000;
+await GtfsSqlJs.cleanExpiredCache(cache, threeDays);
+```
+
+**Clear all cache:**
+```typescript
+await GtfsSqlJs.clearCache(cache);
+```
+
+### Without Caching
+
+By default, caching is disabled. Simply omit the `cache` option:
+
+```typescript
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip');
+// No caching - GTFS is processed fresh each time
+```
+
+### Custom Cache Expiration
+
+Change the default expiration time (default: 7 days):
+
+```typescript
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', {
+  cacheExpirationMs: 3 * 24 * 60 * 60 * 1000  // 3 days
+});
+```
+
+### Custom Cache Store Implementation
+
+Implement your own cache store (e.g., Redis, S3):
+
+```typescript
+import type { CacheStore, CacheMetadata } from 'gtfs-sqljs';
+
+class RedisCacheStore implements CacheStore {
+  async get(key: string): Promise<ArrayBuffer | null> {
+    // Implement Redis get
+  }
+
+  async set(key: string, data: ArrayBuffer, metadata: CacheMetadata): Promise<void> {
+    // Implement Redis set
+  }
+
+  async has(key: string): Promise<boolean> {
+    // Implement Redis exists check
+  }
+
+  async delete(key: string): Promise<void> {
+    // Implement Redis delete
+  }
+
+  async clear(): Promise<void> {
+    // Implement Redis clear
+  }
+
+  async list(): Promise<CacheEntry[]> {
+    // Optional: Implement list
+  }
+}
+
+const cache = new RedisCacheStore();
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', { cache });
+```
+
+## Export Database
+
+```typescript
+// Export to ArrayBuffer for storage (includes RT data)
+const buffer = gtfs.export();
+
+// Save to file (Node.js)
+import fs from 'fs';
+fs.writeFileSync('gtfs.db', Buffer.from(buffer));
+
+// Store in IndexedDB (Browser)
+// ... use IndexedDB API to store the ArrayBuffer
+```
+
+## Advanced Usage
+
+### Direct Database Access
+
+For advanced queries not covered by the API:
+
+```typescript
+const db = gtfs.getDatabase();
+
+const stmt = db.prepare('SELECT * FROM stops WHERE stop_lat > ? AND stop_lon < ?');
+stmt.bind([40.7, -74.0]);
+
+while (stmt.step()) {
+  const row = stmt.getAsObject();
+  console.log(row);
+}
+
+stmt.free();
+```
+
+### Close Database
+
+```typescript
+// Close the database when done
+gtfs.close();
+```
+
+## Complete Example
+
+```typescript
+import { GtfsSqlJs } from 'gtfs-sqljs';
+
+async function example() {
+  // Load GTFS data (skip shapes.txt to reduce memory usage)
+  const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+    skipFiles: ['shapes.txt']
+  });
+
+  // Find a stop using flexible filters
+  const stops = gtfs.getStops({ name: 'Central Station' });
+  const stop = stops[0];
+  console.log(`Found stop: ${stop.stop_name}`);
+
+  // Find routes serving this stop (via stop_times and trips)
+  const allStopTimes = gtfs.getStopTimes({ stopId: stop.stop_id });
+  const routeIds = new Set(
+    allStopTimes.map(st => {
+      const trips = gtfs.getTrips({ tripId: st.trip_id });
+      return trips.length > 0 ? trips[0].route_id : null;
+    })
+  );
+
+  // Get route details
+  for (const routeId of routeIds) {
+    if (!routeId) continue;
+    const routes = gtfs.getRoutes({ routeId });
+    const route = routes.length > 0 ? routes[0] : null;
+    console.log(`Route: ${route?.route_short_name} - ${route?.route_long_name}`);
+  }
+
+  // Get trips for a specific route on a date using flexible filters
+  const today = '20240115'; // YYYYMMDD format
+  const trips = gtfs.getTrips({
+    routeId: Array.from(routeIds)[0]!,
+    date: today
+  });
+  console.log(`Found ${trips.length} trips for today`);
+
+  // Get stop times for a specific trip
+  const stopTimes = gtfs.getStopTimes({ tripId: trips[0].trip_id });
+  console.log('Trip schedule:');
+  for (const st of stopTimes) {
+    const stops = gtfs.getStops({ stopId: st.stop_id });
+    const stop = stops.length > 0 ? stops[0] : null;
+    console.log(`  ${st.arrival_time} - ${stop?.stop_name}`);
+  }
+
+  // Export database for later use
+  const buffer = gtfs.export();
+  // ... save buffer to file or storage
+
+  // Clean up
+  gtfs.close();
+}
+
+example();
+```
