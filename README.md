@@ -1,7 +1,10 @@
 <div align="center">
   <img src="logo.svg" alt="gtfs-sqljs logo" width="200" height="200">
   <h1>gtfs-sqljs</h1>
-  <p>A TypeScript library for loading GTFS (General Transit Feed Specification) data into a sql.js SQLite database for querying in both browser and Node.js environments.</p>
+
+  [![npm version](https://img.shields.io/npm/v/gtfs-sqljs)](https://www.npmjs.com/package/gtfs-sqljs)
+
+  <p>A TypeScript library for loading <a href="https://gtfs.org/documentation/schedule/reference/">GTFS</a> (General Transit Feed Specification) data into a <a href="https://sql.js.org/">sql.js</a> SQLite database for querying in both browser and Node.js environments.</p>
 </div>
 
 ## Author
@@ -10,6 +13,8 @@
 
 - Email: contact@sys-dev-run.fr
 - Website: https://www.sys-dev-run.fr/
+
+This project is greatly inspired by [node-gtfs](https://github.com/BlinkTagInc/node-gtfs), also MIT licensed. The main difference is that gtfs-sqljs aims to run on both browser and Node.js environments.
 
 ## Documentation & Demo
 
@@ -35,7 +40,7 @@ Try the live demo to explore GTFS data, view routes with colors, and see trip sc
 - ✅ Active service detection based on calendar/calendar_dates
 - ✅ Optimized bulk loading with transactions and batch inserts
 
-### GTFS Realtime Support
+### [GTFS Realtime](https://gtfs.org/documentation/realtime/reference/) Support
 - ✅ Load GTFS-RT data from protobuf feeds (URLs or local files)
 - ✅ Support for Alerts, Trip Updates, and Vehicle Positions
 - ✅ Automatic staleness filtering (configurable threshold)
