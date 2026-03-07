@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="logo.svg" alt="gtfs-sqljs logo" width="200" height="200">
+  <img src="illustrations/logo.svg" alt="gtfs-sqljs logo" width="200" height="200">
   <h1>gtfs-sqljs</h1>
 
   [![npm version](https://img.shields.io/npm/v/gtfs-sqljs)](https://www.npmjs.com/package/gtfs-sqljs)
