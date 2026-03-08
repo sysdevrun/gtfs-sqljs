@@ -4,19 +4,16 @@
 
 import JSZip from 'jszip';
 import type { ProgressCallback } from '../gtfs-sqljs';
-import { isString, isNodeEnvironment } from '../utils/env';
+import { isNodeEnvironment } from '../utils/env';
 
 export interface GTFSFiles {
   [filename: string]: string;
 }
 
 /**
- * Fetch and extract GTFS ZIP file
- * Works in both browser and Node.js environments
+ * Extract GTFS files from pre-loaded ZIP data
  */
-export async function loadGTFSZip(source: string | ArrayBuffer | Uint8Array): Promise<GTFSFiles> {
-  const zipData = isString(source) ? await fetchZip(source) : source;
-
+export async function loadGTFSZip(zipData: ArrayBuffer | Uint8Array): Promise<GTFSFiles> {
   // Load ZIP file
   const zip = await JSZip.loadAsync(zipData);
 
