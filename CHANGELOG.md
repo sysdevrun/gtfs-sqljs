@@ -2,7 +2,7 @@
 
 ## Upcoming release
 
--
+- Make `route_short_name` and `route_long_name` optional, matching GTFS spec (conditionally required: at least one must be present)
 
 ## 0.3.0
 

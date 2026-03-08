@@ -151,8 +151,6 @@ describe('Schema', () => {
 
       // Required fields
       expect(requiredColumns).toContain('route_id');
-      expect(requiredColumns).toContain('route_short_name');
-      expect(requiredColumns).toContain('route_long_name');
       expect(requiredColumns).toContain('route_type');
     });
   });

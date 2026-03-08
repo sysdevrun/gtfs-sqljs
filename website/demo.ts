@@ -207,9 +207,9 @@ function renderRoutes() {
       <div class="route-card"
            data-route-id="${route.route_id}"
            style="background-color: ${bgColor}; color: ${textColor};"
-           onclick="showTrips('${route.route_id}', '${escapeHtml(route.route_short_name)} - ${escapeHtml(route.route_long_name)}')">
-        <div class="route-number">${escapeHtml(route.route_short_name)}</div>
-        <div class="route-name">${escapeHtml(route.route_long_name)}</div>
+           onclick="showTrips('${route.route_id}', '${escapeHtml(route.route_short_name ?? '')} - ${escapeHtml(route.route_long_name ?? '')}')">
+        <div class="route-number">${escapeHtml(route.route_short_name ?? '')}</div>
+        <div class="route-name">${escapeHtml(route.route_long_name ?? '')}</div>
       </div>
     `;
   }).join('');
@@ -516,7 +516,7 @@ function renderAlerts() {
         const bgColor = route.route_color ? `#${route.route_color}` : '#64748b';
         const textColor = route.route_text_color ? `#${route.route_text_color}` : getContrastColor(bgColor);
 
-        return `<span class="route-badge" style="background-color: ${bgColor}; color: ${textColor};">${escapeHtml(route.route_short_name)}</span>`;
+        return `<span class="route-badge" style="background-color: ${bgColor}; color: ${textColor};">${escapeHtml(route.route_short_name ?? '')}</span>`;
       }).join('');
 
       const moreRoutes = alert.informed_entity.filter(e => e.route_id).length > 10

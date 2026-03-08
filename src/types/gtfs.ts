@@ -49,8 +49,8 @@ export interface Stop {
 export interface Route {
   // Required fields
   route_id: string;
-  route_short_name: string;
-  route_long_name: string;
+  route_short_name?: string;
+  route_long_name?: string;
   route_type: number;
 
   // Optional fields

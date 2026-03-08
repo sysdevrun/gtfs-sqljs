@@ -72,8 +72,8 @@ export function getRoutes(db: Database, filters: RouteFilters = {}): Route[] {
 function rowToRoute(row: ParamsObject): Route {
   return {
     route_id: String(row.route_id),
-    route_short_name: String(row.route_short_name),
-    route_long_name: String(row.route_long_name),
+    route_short_name: row.route_short_name ? String(row.route_short_name) : undefined,
+    route_long_name: row.route_long_name ? String(row.route_long_name) : undefined,
     route_type: Number(row.route_type),
     agency_id: row.agency_id ? String(row.agency_id) : undefined,
     route_desc: row.route_desc ? String(row.route_desc) : undefined,

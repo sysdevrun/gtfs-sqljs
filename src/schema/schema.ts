@@ -64,8 +64,8 @@ export const GTFS_SCHEMA: TableSchema[] = [
     name: 'routes',
     columns: [
       { name: 'route_id', type: 'TEXT', required: true, primaryKey: true },
-      { name: 'route_short_name', type: 'TEXT', required: true },
-      { name: 'route_long_name', type: 'TEXT', required: true },
+      { name: 'route_short_name', type: 'TEXT', required: false },
+      { name: 'route_long_name', type: 'TEXT', required: false },
       { name: 'route_type', type: 'INTEGER', required: true },
       { name: 'agency_id', type: 'TEXT', required: false },
       { name: 'route_desc', type: 'TEXT', required: false },
