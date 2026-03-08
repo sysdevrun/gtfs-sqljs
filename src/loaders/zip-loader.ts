@@ -12,25 +12,37 @@ export interface GTFSFiles {
 
 /**
  * Extract GTFS files from pre-loaded ZIP data
+ * Only extracts files defined in GTFS_FILE_MAPPING, skipping unknown files.
+ * @param zipData - ZIP data as ArrayBuffer or Uint8Array
+ * @param skipFiles - Optional array of GTFS filenames to skip extracting (e.g., ['shapes.txt'])
  */
-export async function loadGTFSZip(zipData: ArrayBuffer | Uint8Array): Promise<GTFSFiles> {
+export async function loadGTFSZip(zipData: ArrayBuffer | Uint8Array, skipFiles?: string[]): Promise<GTFSFiles> {
   // Load ZIP file
   const zip = await JSZip.loadAsync(zipData);
 
-  // Extract all .txt files (GTFS files)
+  // Build set of files to skip for fast lookup
+  const skipSet = skipFiles ? new Set(skipFiles) : null;
+
+  // Extract only known GTFS files, skipping any in skipFiles
   const files: GTFSFiles = {};
   const filePromises: Promise<void>[] = [];
 
   zip.forEach((relativePath, file) => {
-    // Only process .txt files
-    if (!file.dir && relativePath.endsWith('.txt')) {
-      const fileName = relativePath.split('/').pop() || relativePath;
-      filePromises.push(
-        file.async('string').then((content) => {
-          files[fileName] = content;
-        })
-      );
-    }
+    if (file.dir) return;
+
+    const fileName = relativePath.split('/').pop() || relativePath;
+
+    // Only extract files that are in GTFS_FILE_MAPPING
+    if (!(fileName in GTFS_FILE_MAPPING)) return;
+
+    // Skip files the caller wants excluded
+    if (skipSet?.has(fileName)) return;
+
+    filePromises.push(
+      file.async('string').then((content) => {
+        files[fileName] = content;
+      })
+    );
   });
 
   await Promise.all(filePromises);

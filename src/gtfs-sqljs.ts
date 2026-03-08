@@ -401,7 +401,7 @@ export class GtfsSqlJs {
       message: 'Extracting GTFS ZIP file',
     });
 
-    const files = await loadGTFSZip(zipData);
+    const files = await loadGTFSZip(zipData, options.skipFiles);
 
     // Load GTFS data
     onProgress?.({

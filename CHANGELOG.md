@@ -12,6 +12,8 @@
 - Replace `as Record<string, unknown>` widening casts on `stmt.getAsObject()` across all query files with proper `ParamsObject` type from sql.js
 - Replace non-null assertions (`!`) with optional chaining (`?.`) for `Map.get()` calls in rt-trip-updates and stop-times
 - Replace `this.SQL!.Database()` non-null assertion with explicit guard in gtfs-sqljs
+- Extract only known GTFS files from ZIP, skipping unrecognized files for faster extraction
+- `skipFiles` option now prevents files from being extracted from the ZIP entirely, not just from being loaded into the database
 
 ## 0.2.2
 
