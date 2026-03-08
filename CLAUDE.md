@@ -11,6 +11,10 @@ npm run lint       # Lint with eslint
 npm run typecheck  # Type-check with tsc
 ```
 
+## Changelog
+
+Every user-facing change must be documented in `CHANGELOG.md` under the "Upcoming release" section before committing.
+
 ## Publishing a new version
 
 1. Update `CHANGELOG.md`: move items from "Upcoming release" into a new version section (e.g., `## 0.2.0`). Keep the "Upcoming release" section with an empty list.
