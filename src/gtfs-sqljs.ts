@@ -355,8 +355,12 @@ export class GtfsSqlJs {
     options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'>,
     onProgress?: ProgressCallback
   ): Promise<void> {
+    if (!this.SQL) {
+      throw new Error('SQL.js not initialized');
+    }
+
     // Create new database
-    this.db = new this.SQL!.Database();
+    this.db = new this.SQL.Database();
 
     // Apply performance PRAGMAs for bulk loading
     this.db.run('PRAGMA synchronous = OFF');        // Skip fsync for performance

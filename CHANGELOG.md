@@ -4,6 +4,15 @@
 
 - Add `GtfsSqlJs.fromZipData(zipData, options?)` static method for loading from pre-loaded ZIP data (`ArrayBuffer` or `Uint8Array`)
 - Keep `GtfsSqlJs.fromZip(zipPath, options?)` strictly typed as `string` for paths/URLs
+- Remove `as unknown as Crypto` double cast in checksum module; call `webcrypto.subtle.digest()` directly
+- Remove `as BufferSource` cast in checksum module; pass `ArrayBuffer` directly to `sha256Digest()`
+- Extract shared `isNodeEnvironment()` helper into `utils/env.ts`, replacing inline `typeof process` checks in zip-loader and gtfs-rt-loader
+- Narrow `loadGTFSZip()` parameter from `string | ArrayBuffer | Uint8Array` to `ArrayBuffer | Uint8Array` (string path was dead code)
+- Replace `unknown[]` with proper `ProtobufTimeRange[]` and `ProtobufEntitySelector[]` types in gtfs-rt-loader
+- Refactor `convertKeysToSnakeCase` to use `Object.entries()`, removing `for..in` loop with `as Record<string, unknown>` cast
+- Replace `as Record<string, unknown>` widening casts on `stmt.getAsObject()` across all query files with proper `ParamsObject` type from sql.js
+- Replace non-null assertions (`!`) with optional chaining (`?.`) for `Map.get()` calls in rt-trip-updates and stop-times
+- Replace `this.SQL!.Database()` non-null assertion with explicit guard in gtfs-sqljs
 
 ## 0.2.2
 

@@ -1,4 +1,4 @@
-import type { Database } from 'sql.js';
+import type { Database, ParamsObject } from 'sql.js';
 import type { TripUpdate, StopTimeUpdate } from '../types/gtfs-rt';
 import { getStopTimeUpdates } from './rt-stop-time-updates';
 
@@ -12,7 +12,7 @@ export interface TripUpdateFilters {
 /**
  * Parse trip update from database row
  */
-export function parseTripUpdate(row: Record<string, unknown>): TripUpdate {
+export function parseTripUpdate(row: ParamsObject): TripUpdate {
   const tu: TripUpdate = {
     trip_id: String(row.trip_id),
     route_id: row.route_id ? String(row.route_id) : undefined,
@@ -92,7 +92,7 @@ export function getTripUpdates(
 
   const tripUpdates: TripUpdate[] = [];
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     tripUpdates.push(parseTripUpdate(row));
   }
 
@@ -112,7 +112,7 @@ export function getTripUpdates(
       if (!stopTimesByTripId.has(stu.trip_id)) {
         stopTimesByTripId.set(stu.trip_id, []);
       }
-      stopTimesByTripId.get(stu.trip_id)!.push(stu);
+      stopTimesByTripId.get(stu.trip_id)?.push(stu);
     }
 
     // Populate each trip update's stop_time_update array
@@ -145,7 +145,7 @@ export function getAllTripUpdates(db: Database): TripUpdate[] {
 
   const tripUpdates: TripUpdate[] = [];
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     tripUpdates.push(parseTripUpdate(row));
   }
 
@@ -165,7 +165,7 @@ export function getAllTripUpdates(db: Database): TripUpdate[] {
       if (!stopTimesByTripId.has(stu.trip_id)) {
         stopTimesByTripId.set(stu.trip_id, []);
       }
-      stopTimesByTripId.get(stu.trip_id)!.push(stu);
+      stopTimesByTripId.get(stu.trip_id)?.push(stu);
     }
 
     // Populate each trip update's stop_time_update array

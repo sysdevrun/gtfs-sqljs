@@ -2,7 +2,7 @@
  * Route Query Methods
  */
 
-import type { Database } from 'sql.js';
+import type { Database, ParamsObject } from 'sql.js';
 import type { Route } from '../types/gtfs';
 
 export interface RouteFilters {
@@ -58,7 +58,7 @@ export function getRoutes(db: Database, filters: RouteFilters = {}): Route[] {
 
   const routes: Route[] = [];
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     routes.push(rowToRoute(row));
   }
 
@@ -69,7 +69,7 @@ export function getRoutes(db: Database, filters: RouteFilters = {}): Route[] {
 /**
  * Convert database row to Route object
  */
-function rowToRoute(row: Record<string, unknown>): Route {
+function rowToRoute(row: ParamsObject): Route {
   return {
     route_id: String(row.route_id),
     route_short_name: String(row.route_short_name),

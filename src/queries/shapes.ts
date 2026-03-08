@@ -2,7 +2,7 @@
  * Shape Query Methods
  */
 
-import type { Database } from 'sql.js';
+import type { Database, ParamsObject } from 'sql.js';
 import type { Shape, Route } from '../types/gtfs';
 
 export interface ShapeFilters {
@@ -115,7 +115,7 @@ export function getShapes(
 
   const shapes: Shape[] = [];
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     shapes.push(rowToShape(row));
   }
 
@@ -224,7 +224,7 @@ function getRoutesByShapeIds(
 
   const result = new Map<string, Route>();
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     const shapeId = String(row.shape_id);
     result.set(shapeId, rowToRoute(row));
   }
@@ -237,7 +237,7 @@ function getRoutesByShapeIds(
 /**
  * Convert database row to Shape object
  */
-function rowToShape(row: Record<string, unknown>): Shape {
+function rowToShape(row: ParamsObject): Shape {
   return {
     shape_id: String(row.shape_id),
     shape_pt_lat: Number(row.shape_pt_lat),
@@ -250,7 +250,7 @@ function rowToShape(row: Record<string, unknown>): Shape {
 /**
  * Convert database row to Route object
  */
-function rowToRoute(row: Record<string, unknown>): Route {
+function rowToRoute(row: ParamsObject): Route {
   return {
     route_id: String(row.route_id),
     route_short_name: row.route_short_name ? String(row.route_short_name) : '',

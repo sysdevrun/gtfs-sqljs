@@ -2,7 +2,7 @@
  * Stop Time Query Methods
  */
 
-import type { Database } from 'sql.js';
+import type { Database, ParamsObject } from 'sql.js';
 import type { StopTime, Stop } from '../types/gtfs';
 import type { StopTimeRealtime } from '../types/gtfs-rt';
 import type { PickupDropOffType } from '../types/gtfs-enums';
@@ -63,7 +63,7 @@ function mergeRealtimeData(
   // Build map of trip_id+stop_sequence -> RT data
   const rtMap = new Map<string, StopTimeRealtime>();
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     const key = `${row.trip_id}_${row.stop_sequence}`;
     rtMap.set(key, {
       arrival_delay: row.arrival_delay !== null ? Number(row.arrival_delay) : undefined,
@@ -209,7 +209,7 @@ export function getStopTimes(
 
   const stopTimes: StopTime[] = [];
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     stopTimes.push(rowToStopTime(row));
   }
 
@@ -262,7 +262,7 @@ export function buildOrderedStopList(db: Database, tripIds: string[]): Stop[] {
   const tripStopSequences = new Map<string, Array<{ stop_id: string; stop_sequence: number }>>();
 
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     const tripId = String(row.trip_id);
     const stopId = String(row.stop_id);
     const stopSequence = Number(row.stop_sequence);
@@ -270,7 +270,7 @@ export function buildOrderedStopList(db: Database, tripIds: string[]): Stop[] {
     if (!tripStopSequences.has(tripId)) {
       tripStopSequences.set(tripId, []);
     }
-    tripStopSequences.get(tripId)!.push({ stop_id: stopId, stop_sequence: stopSequence });
+    tripStopSequences.get(tripId)?.push({ stop_id: stopId, stop_sequence: stopSequence });
   }
   stmt.free();
 
@@ -377,7 +377,7 @@ function findInsertionPosition(
 /**
  * Convert database row to StopTime object
  */
-function rowToStopTime(row: Record<string, unknown>): StopTime {
+function rowToStopTime(row: ParamsObject): StopTime {
   return {
     trip_id: String(row.trip_id),
     arrival_time: String(row.arrival_time),

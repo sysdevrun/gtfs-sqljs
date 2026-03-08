@@ -2,7 +2,7 @@
  * Stop Query Methods
  */
 
-import type { Database } from 'sql.js';
+import type { Database, ParamsObject } from 'sql.js';
 import type { Stop } from '../types/gtfs';
 
 export interface StopFilters {
@@ -38,7 +38,7 @@ export function getStops(db: Database, filters: StopFilters = {}): Stop[] {
 
     const stops: Stop[] = [];
     while (stmt.step()) {
-      const row = stmt.getAsObject() as Record<string, unknown>;
+      const row = stmt.getAsObject();
       stops.push(rowToStop(row));
     }
 
@@ -91,7 +91,7 @@ export function getStops(db: Database, filters: StopFilters = {}): Stop[] {
 
   const stops: Stop[] = [];
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     stops.push(rowToStop(row));
   }
 
@@ -110,7 +110,7 @@ export function searchStopsByName(db: Database, name: string, limit = 50): Stop[
 /**
  * Convert database row to Stop object
  */
-function rowToStop(row: Record<string, unknown>): Stop {
+function rowToStop(row: ParamsObject): Stop {
   return {
     stop_id: String(row.stop_id),
     stop_name: String(row.stop_name),
