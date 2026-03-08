@@ -4,8 +4,7 @@
 
 - Add `GtfsSqlJs.fromZipData(zipData, options?)` static method for loading from pre-loaded ZIP data (`ArrayBuffer` or `Uint8Array`)
 - Keep `GtfsSqlJs.fromZip(zipPath, options?)` strictly typed as `string` for paths/URLs
-- Remove `as unknown as Crypto` double cast in checksum module; call `webcrypto.subtle.digest()` directly
-- Remove `as BufferSource` cast in checksum module; pass `ArrayBuffer` directly to `sha256Digest()`
+- Simplify checksum module to use global `crypto.subtle` directly (available in both browsers and Node.js 18+, which is the minimum engine version); remove multi-branch environment detection, dynamic `import('crypto')` fallback, and empty `catch` block
 - Extract shared `isNodeEnvironment()` helper into `utils/env.ts`, replacing inline `typeof process` checks in zip-loader and gtfs-rt-loader
 - Narrow `loadGTFSZip()` parameter from `string | ArrayBuffer | Uint8Array` to `ArrayBuffer | Uint8Array` (string path was dead code)
 - Replace `unknown[]` with proper `ProtobufTimeRange[]` and `ProtobufEntitySelector[]` types in gtfs-rt-loader
