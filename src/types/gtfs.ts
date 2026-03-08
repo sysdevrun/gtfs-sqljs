@@ -27,10 +27,10 @@ export interface Stop {
   // Required fields
   stop_id: string;
   stop_name: string;
-  stop_lat: number;
-  stop_lon: number;
 
   // Optional fields
+  stop_lat?: number;
+  stop_lon?: number;
   stop_code?: string;
   stop_desc?: string;
   zone_id?: string;

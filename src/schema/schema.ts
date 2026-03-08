@@ -41,8 +41,8 @@ export const GTFS_SCHEMA: TableSchema[] = [
     columns: [
       { name: 'stop_id', type: 'TEXT', required: true, primaryKey: true },
       { name: 'stop_name', type: 'TEXT', required: true },
-      { name: 'stop_lat', type: 'REAL', required: true },
-      { name: 'stop_lon', type: 'REAL', required: true },
+      { name: 'stop_lat', type: 'REAL', required: false },
+      { name: 'stop_lon', type: 'REAL', required: false },
       { name: 'stop_code', type: 'TEXT', required: false },
       { name: 'stop_desc', type: 'TEXT', required: false },
       { name: 'zone_id', type: 'TEXT', required: false },

@@ -114,8 +114,8 @@ function rowToStop(row: ParamsObject): Stop {
   return {
     stop_id: String(row.stop_id),
     stop_name: String(row.stop_name),
-    stop_lat: Number(row.stop_lat),
-    stop_lon: Number(row.stop_lon),
+    stop_lat: row.stop_lat !== null ? Number(row.stop_lat) : undefined,
+    stop_lon: row.stop_lon !== null ? Number(row.stop_lon) : undefined,
     stop_code: row.stop_code ? String(row.stop_code) : undefined,
     stop_desc: row.stop_desc ? String(row.stop_desc) : undefined,
     zone_id: row.zone_id ? String(row.zone_id) : undefined,

@@ -134,8 +134,6 @@ describe('Schema', () => {
       // Required fields
       expect(requiredColumns).toContain('stop_id');
       expect(requiredColumns).toContain('stop_name');
-      expect(requiredColumns).toContain('stop_lat');
-      expect(requiredColumns).toContain('stop_lon');
 
       // Optional fields
       expect(optionalColumns).toContain('stop_code');
