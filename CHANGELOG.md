@@ -2,8 +2,22 @@
 
 ## Upcoming release
 
-- Add `GtfsSqlJs.fromZipData(zipData, options?)` static method for loading from pre-loaded ZIP data (`ArrayBuffer` or `Uint8Array`)
-- Keep `GtfsSqlJs.fromZip(zipPath, options?)` strictly typed as `string` for paths/URLs
+-
+
+## 0.3.0
+
+### Breaking changes
+
+- **`fromZip()` now only accepts `string`** (path or URL). If you were passing `ArrayBuffer` or `Uint8Array`, use the new `fromZipData()` method instead
+- **`skipFiles` behavior change**: files listed in `skipFiles` are now skipped during ZIP extraction entirely (not just excluded from DB loading), improving performance for large feeds
+
+### New features
+
+- Add `GtfsSqlJs.fromZipData(zipData, options?, source?)` static method for loading from pre-loaded ZIP data (`ArrayBuffer` or `Uint8Array`)
+- Extract only known GTFS files from ZIP, skipping unrecognized files for faster extraction
+
+### Internal improvements
+
 - Simplify checksum module to use global `crypto.subtle` directly (available in both browsers and Node.js 18+, which is the minimum engine version); remove multi-branch environment detection, dynamic `import('crypto')` fallback, and empty `catch` block
 - Extract shared `isNodeEnvironment()` helper into `utils/env.ts`, replacing inline `typeof process` checks in zip-loader and gtfs-rt-loader
 - Narrow `loadGTFSZip()` parameter from `string | ArrayBuffer | Uint8Array` to `ArrayBuffer | Uint8Array` (string path was dead code)
@@ -12,8 +26,6 @@
 - Replace `as Record<string, unknown>` widening casts on `stmt.getAsObject()` across all query files with proper `ParamsObject` type from sql.js
 - Replace non-null assertions (`!`) with optional chaining (`?.`) for `Map.get()` calls in rt-trip-updates and stop-times
 - Replace `this.SQL!.Database()` non-null assertion with explicit guard in gtfs-sqljs
-- Extract only known GTFS files from ZIP, skipping unrecognized files for faster extraction
-- `skipFiles` option now prevents files from being extracted from the ZIP entirely, not just from being loaded into the database
 
 ## 0.2.2
 
