@@ -2,7 +2,8 @@
 
 ## Upcoming release
 
--
+- Add `GtfsSqlJs.fromZipData(zipData, options?)` static method for loading from pre-loaded ZIP data (`ArrayBuffer` or `Uint8Array`)
+- Keep `GtfsSqlJs.fromZip(zipPath, options?)` strictly typed as `string` for paths/URLs
 
 ## 0.2.2
 

@@ -147,14 +147,27 @@ export class GtfsSqlJs {
   private constructor() {}
 
   /**
-   * Create GtfsSqlJs instance from GTFS ZIP file
+   * Create GtfsSqlJs instance from GTFS ZIP file path or URL
    */
   static async fromZip(
     zipPath: string,
     options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'> = {}
   ): Promise<GtfsSqlJs> {
+    const zipData = await fetchZip(zipPath, options.onProgress);
+    return GtfsSqlJs.fromZipData(zipData, options, zipPath);
+  }
+
+  /**
+   * Create GtfsSqlJs instance from pre-loaded GTFS ZIP data
+   * @param source - Optional original path/URL, used for cache key generation and metadata
+   */
+  static async fromZipData(
+    zipData: ArrayBuffer | Uint8Array,
+    options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'> = {},
+    source?: string
+  ): Promise<GtfsSqlJs> {
     const instance = new GtfsSqlJs();
-    await instance.initFromZip(zipPath, options);
+    await instance.initFromZipData(zipData, options, source);
     return instance;
   }
 
@@ -171,9 +184,10 @@ export class GtfsSqlJs {
   }
 
   /**
-   * Initialize from ZIP file
+   * Initialize from pre-loaded ZIP data
+   * @param source - Optional original path/URL, used for cache key generation and metadata
    */
-  private async initFromZip(zipPath: string, options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'>): Promise<void> {
+  private async initFromZipData(zipData: ArrayBuffer | Uint8Array, options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'>, source?: string): Promise<void> {
     const onProgress = options.onProgress;
     const {
       cache: userCache,
@@ -203,15 +217,6 @@ export class GtfsSqlJs {
         message: 'Checking cache...',
       });
 
-      // Fetch raw zip data for checksum (only if zipPath is a string)
-      let zipData: ArrayBuffer;
-      if (typeof zipPath === 'string') {
-        zipData = await fetchZip(zipPath, onProgress);
-      } else {
-        // zipPath is already ArrayBuffer or Uint8Array
-        zipData = zipPath as ArrayBuffer;
-      }
-
       // Calculate filesize
       const filesize = zipData.byteLength;
 
@@ -224,7 +229,7 @@ export class GtfsSqlJs {
         LIB_VERSION,
         cacheVersion,
         filesize,
-        typeof zipPath === 'string' ? zipPath : undefined,
+        source,
         skipFiles
       );
 
@@ -307,7 +312,7 @@ export class GtfsSqlJs {
         checksum,
         version: cacheVersion,
         timestamp: Date.now(),
-        source: typeof zipPath === 'string' ? zipPath : undefined,
+        source,
         size: dbBuffer.byteLength,
         skipFiles,
       });
@@ -326,16 +331,7 @@ export class GtfsSqlJs {
       return;
     }
 
-    // No cache - use normal loading flow
-    // Fetch zip data
-    let zipData: ArrayBuffer;
-    if (typeof zipPath === 'string') {
-      zipData = await fetchZip(zipPath, onProgress);
-    } else {
-      zipData = zipPath as ArrayBuffer;
-    }
-
-    // Load from zip data
+    // No cache - load directly from zip data
     await this.loadFromZipData(zipData, options, onProgress);
 
     onProgress?.({
@@ -351,11 +347,11 @@ export class GtfsSqlJs {
   }
 
   /**
-   * Helper method to load GTFS data from zip data (ArrayBuffer)
+   * Helper method to load GTFS data from zip data
    * Used by both cache-enabled and cache-disabled paths
    */
   private async loadFromZipData(
-    zipData: ArrayBuffer,
+    zipData: ArrayBuffer | Uint8Array,
     options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'>,
     onProgress?: ProgressCallback
   ): Promise<void> {
