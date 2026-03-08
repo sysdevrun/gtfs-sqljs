@@ -2,6 +2,10 @@
 
 ## Upcoming release
 
+-
+
+## 0.3.1
+
 - Make `route_short_name` and `route_long_name` optional, matching GTFS spec (conditionally required: at least one must be present)
 - Allow `transfers.transfer_type` to be empty (defaults to 0 per GTFS spec)
 - Make `stop_times.arrival_time` and `stop_times.departure_time` optional for intermediate stops per GTFS spec
