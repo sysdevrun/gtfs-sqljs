@@ -24,6 +24,7 @@
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "docs:build": "typedoc",
+    "test:mobility-db": "tsx tests/test-mobility-database-feeds.ts",
     "prepublishOnly": "npm run build"
   },
   "keywords": [
