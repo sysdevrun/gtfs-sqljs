@@ -380,8 +380,8 @@ function findInsertionPosition(
 function rowToStopTime(row: ParamsObject): StopTime {
   return {
     trip_id: String(row.trip_id),
-    arrival_time: String(row.arrival_time),
-    departure_time: String(row.departure_time),
+    arrival_time: row.arrival_time ? String(row.arrival_time) : undefined,
+    departure_time: row.departure_time ? String(row.departure_time) : undefined,
     stop_id: String(row.stop_id),
     stop_sequence: Number(row.stop_sequence),
     stop_headsign: row.stop_headsign ? String(row.stop_headsign) : undefined,

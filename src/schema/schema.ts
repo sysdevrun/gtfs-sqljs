@@ -104,8 +104,8 @@ export const GTFS_SCHEMA: TableSchema[] = [
     name: 'stop_times',
     columns: [
       { name: 'trip_id', type: 'TEXT', required: true },
-      { name: 'arrival_time', type: 'TEXT', required: true },
-      { name: 'departure_time', type: 'TEXT', required: true },
+      { name: 'arrival_time', type: 'TEXT', required: false },
+      { name: 'departure_time', type: 'TEXT', required: false },
       { name: 'stop_id', type: 'TEXT', required: true },
       { name: 'stop_sequence', type: 'INTEGER', required: true },
       { name: 'stop_headsign', type: 'TEXT', required: false },

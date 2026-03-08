@@ -370,7 +370,7 @@ function renderRoutes() {
     // Calculate realtime arrival if delay exists
     let rtArrivalTime = '';
     if (arrivalDelay !== undefined && arrivalDelay !== null) {
-      const scheduledSeconds = timeToSeconds(st.arrival_time);
+      const scheduledSeconds = timeToSeconds(st.arrival_time ?? '');
       const rtSeconds = scheduledSeconds + arrivalDelay;
       rtArrivalTime = secondsToTime(rtSeconds);
     }
@@ -385,9 +385,9 @@ function renderRoutes() {
         <div class="time">
           ${hasRealtime && rtArrivalTime ? `
             <div class="rt-time ${delayClass}">${rtArrivalTime}</div>
-            <div class="scheduled-time">${st.arrival_time}</div>
+            <div class="scheduled-time">${st.arrival_time ?? ''}</div>
           ` : `
-            <div>${st.arrival_time}</div>
+            <div>${st.arrival_time ?? ''}</div>
           `}
         </div>
         <div class="stop-name">${escapeHtml(stopName)}</div>
