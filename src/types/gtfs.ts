@@ -197,9 +197,9 @@ export interface Transfer {
   // Required fields
   from_stop_id: string;
   to_stop_id: string;
-  transfer_type: number;
 
-  // Optional fields
+  // Optional fields (transfer_type defaults to 0 per GTFS spec when empty)
+  transfer_type?: number;
   min_transfer_time?: number;
 }
 

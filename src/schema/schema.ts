@@ -208,7 +208,7 @@ export const GTFS_SCHEMA: TableSchema[] = [
     columns: [
       { name: 'from_stop_id', type: 'TEXT', required: true },
       { name: 'to_stop_id', type: 'TEXT', required: true },
-      { name: 'transfer_type', type: 'INTEGER', required: true },
+      { name: 'transfer_type', type: 'INTEGER', required: false },
       { name: 'min_transfer_time', type: 'INTEGER', required: false },
     ],
     indexes: [
