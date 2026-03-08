@@ -97,7 +97,8 @@ Full API documentation: [API Reference](https://sysdevrun.github.io/gtfs-sqljs/d
 
 ### Static Methods
 
-- `GtfsSqlJs.fromZip(zipPath, options?)` - Create instance from GTFS ZIP file
+- `GtfsSqlJs.fromZip(zipPath, options?)` - Create instance from GTFS ZIP file path or URL
+- `GtfsSqlJs.fromZipData(zipData, options?)` - Create instance from pre-loaded GTFS ZIP data (`ArrayBuffer` or `Uint8Array`)
 - `GtfsSqlJs.fromDatabase(database, options?)` - Create instance from existing database
 
 ### Instance Methods
