@@ -1,5 +1,6 @@
 import type { Database } from 'sql.js';
 import protobuf from 'protobufjs';
+import { isNodeEnvironment } from '../utils/env';
 
 // Types for protobuf decoded objects
 interface ProtobufTranslation {
@@ -11,10 +12,23 @@ interface ProtobufTranslatedString {
   translation: ProtobufTranslation[];
 }
 
+interface ProtobufTimeRange {
+  start?: number;
+  end?: number;
+}
+
+interface ProtobufEntitySelector {
+  agencyId?: string;
+  routeId?: string;
+  routeType?: number;
+  trip?: ProtobufTripDescriptor;
+  stopId?: string;
+}
+
 interface ProtobufAlert {
   id: string;
-  activePeriod?: unknown[];
-  informedEntity?: unknown[];
+  activePeriod?: ProtobufTimeRange[];
+  informedEntity?: ProtobufEntitySelector[];
   cause?: number;
   effect?: number;
   url?: ProtobufTranslatedString;
@@ -278,11 +292,7 @@ async function fetchProtobuf(source: string): Promise<Uint8Array> {
   }
 
   // Read from local file (Node.js only)
-  const isNode = typeof process !== 'undefined' &&
-                 process.versions != null &&
-                 process.versions.node != null;
-
-  if (isNode) {
+  if (isNodeEnvironment()) {
     try {
       const fs = await import('fs');
       const buffer = await fs.promises.readFile(source);
@@ -322,24 +332,16 @@ function camelToSnake(str: string): string {
   return str.replace(/[A-Z]/g, letter => `_${letter.toLowerCase()}`);
 }
 
-function convertKeysToSnakeCase(obj: unknown): unknown {
-  if (obj === null || obj === undefined) {
-    return obj;
+/** Convert all keys of a plain object from camelCase to snake_case recursively */
+function convertObjectKeysToSnakeCase(obj: object): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    const snakeKey = camelToSnake(key);
+    result[snakeKey] = (value !== null && typeof value === 'object' && !Array.isArray(value))
+      ? convertObjectKeysToSnakeCase(value as object)
+      : value;
   }
-  if (Array.isArray(obj)) {
-    return obj.map(convertKeysToSnakeCase);
-  }
-  if (typeof obj === 'object') {
-    const result: Record<string, unknown> = {};
-    for (const key in obj as Record<string, unknown>) {
-      if (Object.prototype.hasOwnProperty.call(obj, key)) {
-        const snakeKey = camelToSnake(key);
-        result[snakeKey] = convertKeysToSnakeCase((obj as Record<string, unknown>)[key]);
-      }
-    }
-    return result;
-  }
-  return obj;
+  return result;
 }
 
 // Parse TranslatedString to JSON
@@ -366,8 +368,8 @@ function insertAlerts(db: Database, alerts: ProtobufAlert[], timestamp: number):
 
   for (const alert of alerts) {
     // Convert nested objects to snake_case for database storage
-    const activePeriodSnake = convertKeysToSnakeCase(alert.activePeriod || []);
-    const informedEntitySnake = convertKeysToSnakeCase(alert.informedEntity || []);
+    const activePeriodSnake = (alert.activePeriod ?? []).map(convertObjectKeysToSnakeCase);
+    const informedEntitySnake = (alert.informedEntity ?? []).map(convertObjectKeysToSnakeCase);
 
     stmt.run([
       alert.id,

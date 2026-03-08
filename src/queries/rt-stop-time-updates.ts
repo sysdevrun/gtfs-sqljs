@@ -1,4 +1,4 @@
-import type { Database } from 'sql.js';
+import type { Database, ParamsObject } from 'sql.js';
 import type { StopTimeUpdate } from '../types/gtfs-rt';
 
 export interface StopTimeUpdateFilters {
@@ -11,7 +11,7 @@ export interface StopTimeUpdateFilters {
 /**
  * Parse stop time update from database row (includes trip_id and rt_last_updated)
  */
-function parseStopTimeUpdate(row: Record<string, unknown>): StopTimeUpdate {
+function parseStopTimeUpdate(row: ParamsObject): StopTimeUpdate {
   const stu: StopTimeUpdate = {
     stop_sequence: row.stop_sequence !== null ? Number(row.stop_sequence) : undefined,
     stop_id: row.stop_id ? String(row.stop_id) : undefined,
@@ -112,7 +112,7 @@ export function getStopTimeUpdates(
 
   const stopTimeUpdates: StopTimeUpdate[] = [];
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     stopTimeUpdates.push(parseStopTimeUpdate(row));
   }
 

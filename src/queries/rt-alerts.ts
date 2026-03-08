@@ -1,4 +1,4 @@
-import type { Database } from 'sql.js';
+import type { Database, ParamsObject } from 'sql.js';
 import type { Alert, EntitySelector, TimeRange, TranslatedString } from '../types/gtfs-rt';
 import type { AlertFilters } from '../types/gtfs-rt';
 
@@ -7,7 +7,7 @@ export type { AlertFilters };
 /**
  * Parse JSON fields from database
  */
-function parseAlert(row: Record<string, unknown>): Alert {
+function parseAlert(row: ParamsObject): Alert {
   return {
     id: String(row.id),
     active_period: row.active_period ? JSON.parse(String(row.active_period)) as TimeRange[] : [],
@@ -133,7 +133,7 @@ export function getAlerts(db: Database, filters: AlertFilters = {}, stalenessThr
 
   const alerts: Alert[] = [];
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     const alert = parseAlert(row);
 
     // Apply activeOnly filter in application code
@@ -172,7 +172,7 @@ export function getAllAlerts(db: Database): Alert[] {
 
   const alerts: Alert[] = [];
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     alerts.push(parseAlert(row));
   }
 

@@ -2,7 +2,7 @@
  * Trip Query Methods
  */
 
-import type { Database } from 'sql.js';
+import type { Database, ParamsObject } from 'sql.js';
 import type { Trip } from '../types/gtfs';
 import type { TripRealtime, VehiclePosition } from '../types/gtfs-rt';
 import { parseVehiclePosition } from './rt-vehicle-positions';
@@ -47,7 +47,7 @@ function mergeRealtimeData(
 
   const vpMap = new Map<string, VehiclePosition>();
   while (vpStmt.step()) {
-    const row = vpStmt.getAsObject() as Record<string, unknown>;
+    const row = vpStmt.getAsObject();
     const vp = parseVehiclePosition(row);
     vpMap.set(vp.trip_id, vp);
   }
@@ -63,7 +63,7 @@ function mergeRealtimeData(
 
   const tuMap = new Map<string, { delay?: number; schedule_relationship?: number }>();
   while (tuStmt.step()) {
-    const row = tuStmt.getAsObject() as Record<string, unknown>;
+    const row = tuStmt.getAsObject();
     const tripId = String(row.trip_id);
     tuMap.set(tripId, {
       delay: row.delay !== null ? Number(row.delay) : undefined,
@@ -173,7 +173,7 @@ export function getTrips(
 
   const trips: Trip[] = [];
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     trips.push(rowToTrip(row));
   }
 
@@ -190,7 +190,7 @@ export function getTrips(
 /**
  * Convert database row to Trip object
  */
-function rowToTrip(row: Record<string, unknown>): Trip {
+function rowToTrip(row: ParamsObject): Trip {
   return {
     trip_id: String(row.trip_id),
     route_id: String(row.route_id),

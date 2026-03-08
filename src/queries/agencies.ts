@@ -2,7 +2,7 @@
  * Agency Query Methods
  */
 
-import type { Database } from 'sql.js';
+import type { Database, ParamsObject } from 'sql.js';
 import type { Agency } from '../types/gtfs';
 
 export interface AgencyFilters {
@@ -48,7 +48,7 @@ export function getAgencies(db: Database, filters: AgencyFilters = {}): Agency[]
 
   const agencies: Agency[] = [];
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     agencies.push(rowToAgency(row));
   }
 
@@ -59,7 +59,7 @@ export function getAgencies(db: Database, filters: AgencyFilters = {}): Agency[]
 /**
  * Convert database row to Agency object
  */
-function rowToAgency(row: Record<string, unknown>): Agency {
+function rowToAgency(row: ParamsObject): Agency {
   return {
     agency_id: String(row.agency_id),
     agency_name: String(row.agency_name),

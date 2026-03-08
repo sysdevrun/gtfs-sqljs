@@ -2,7 +2,7 @@
  * Calendar Query Methods
  */
 
-import type { Database } from 'sql.js';
+import type { Database, ParamsObject } from 'sql.js';
 import type { Calendar, CalendarDate } from '../types/gtfs';
 
 /**
@@ -64,7 +64,7 @@ export function getCalendarByServiceId(db: Database, serviceId: string): Calenda
   stmt.bind([serviceId]);
 
   if (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     stmt.free();
     return rowToCalendar(row);
   }
@@ -82,7 +82,7 @@ export function getCalendarDates(db: Database, serviceId: string): CalendarDate[
 
   const dates: CalendarDate[] = [];
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     dates.push(rowToCalendarDate(row));
   }
 
@@ -99,7 +99,7 @@ export function getCalendarDatesForDate(db: Database, date: string): CalendarDat
 
   const dates: CalendarDate[] = [];
   while (stmt.step()) {
-    const row = stmt.getAsObject() as Record<string, unknown>;
+    const row = stmt.getAsObject();
     dates.push(rowToCalendarDate(row));
   }
 
@@ -110,7 +110,7 @@ export function getCalendarDatesForDate(db: Database, date: string): CalendarDat
 /**
  * Convert database row to Calendar object
  */
-function rowToCalendar(row: Record<string, unknown>): Calendar {
+function rowToCalendar(row: ParamsObject): Calendar {
   return {
     service_id: String(row.service_id),
     monday: Number(row.monday),
@@ -128,7 +128,7 @@ function rowToCalendar(row: Record<string, unknown>): Calendar {
 /**
  * Convert database row to CalendarDate object
  */
-function rowToCalendarDate(row: Record<string, unknown>): CalendarDate {
+function rowToCalendarDate(row: ParamsObject): CalendarDate {
   return {
     service_id: String(row.service_id),
     date: String(row.date),

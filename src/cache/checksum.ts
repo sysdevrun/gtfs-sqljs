@@ -1,24 +1,26 @@
 /**
- * Get crypto object (browser or Node.js)
+ * Compute a SHA-256 digest using the Web Crypto API (browser or Node.js 18+).
+ * Returns the raw hash as an ArrayBuffer.
  */
-async function getCrypto(): Promise<Crypto> {
+async function sha256Digest(data: ArrayBuffer): Promise<ArrayBuffer> {
   // Browser environment
   if (typeof crypto !== 'undefined' && crypto.subtle) {
-    return crypto;
+    return crypto.subtle.digest('SHA-256', data);
   }
 
-  // Node.js environment - import webcrypto
+  // Node.js environment
   if (typeof globalThis !== 'undefined') {
     try {
       const { webcrypto } = await import('crypto');
-      return webcrypto as unknown as Crypto;
+      if (webcrypto?.subtle) {
+        return webcrypto.subtle.digest('SHA-256', data);
+      }
     } catch {
       // Fallback for older Node.js versions
-      throw new Error('Web Crypto API not available');
     }
   }
 
-  throw new Error('Crypto not available in this environment');
+  throw new Error('Web Crypto API not available in this environment');
 }
 
 /**
@@ -26,13 +28,16 @@ async function getCrypto(): Promise<Crypto> {
  * Uses Web Crypto API (available in both browser and Node.js 18+)
  */
 export async function computeChecksum(data: ArrayBuffer | Uint8Array): Promise<string> {
-  // Get crypto instance
-  const cryptoInstance = await getCrypto();
-
-  // Ensure we have a BufferSource for crypto.subtle.digest
-  // Use type assertion to handle ArrayBufferLike compatibility
-  const bufferSource = (data instanceof Uint8Array ? data : new Uint8Array(data)) as BufferSource;
-  const hashBuffer = await cryptoInstance.subtle.digest('SHA-256', bufferSource);
+  let buffer: ArrayBuffer;
+  if (data instanceof ArrayBuffer) {
+    buffer = data;
+  } else {
+    // Copy Uint8Array into a fresh ArrayBuffer to avoid SharedArrayBuffer ambiguity
+    const copy = new ArrayBuffer(data.byteLength);
+    new Uint8Array(copy).set(data);
+    buffer = copy;
+  }
+  const hashBuffer = await sha256Digest(buffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   return hashHex;

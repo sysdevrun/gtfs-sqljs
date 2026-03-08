@@ -4,6 +4,7 @@
 
 import JSZip from 'jszip';
 import type { ProgressCallback } from '../gtfs-sqljs';
+import { isString, isNodeEnvironment } from '../utils/env';
 
 export interface GTFSFiles {
   [filename: string]: string;
@@ -14,14 +15,7 @@ export interface GTFSFiles {
  * Works in both browser and Node.js environments
  */
 export async function loadGTFSZip(source: string | ArrayBuffer | Uint8Array): Promise<GTFSFiles> {
-  let zipData: ArrayBuffer | Uint8Array;
-
-  // If source is a string, treat it as URL or file path
-  if (typeof source === 'string') {
-    zipData = await fetchZip(source);
-  } else {
-    zipData = source;
-  }
+  const zipData = isString(source) ? await fetchZip(source) : source;
 
   // Load ZIP file
   const zip = await JSZip.loadAsync(zipData);
@@ -122,12 +116,7 @@ export async function fetchZip(source: string, onProgress?: ProgressCallback): P
   }
 
   // For non-URLs, try Node.js fs first, fall back to fetch for browser
-  // Check if we're in Node.js environment
-  const isNode = typeof process !== 'undefined' &&
-                 process.versions != null &&
-                 process.versions.node != null;
-
-  if (isNode) {
+  if (isNodeEnvironment()) {
     // In Node.js, treat as file path
     try {
       const fs = await import('fs');
