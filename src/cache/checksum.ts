@@ -1,31 +1,6 @@
 /**
- * Compute a SHA-256 digest using the Web Crypto API (browser or Node.js 18+).
- * Returns the raw hash as an ArrayBuffer.
- */
-async function sha256Digest(data: ArrayBuffer): Promise<ArrayBuffer> {
-  // Browser environment
-  if (typeof crypto !== 'undefined' && crypto.subtle) {
-    return crypto.subtle.digest('SHA-256', data);
-  }
-
-  // Node.js environment
-  if (typeof globalThis !== 'undefined') {
-    try {
-      const { webcrypto } = await import('crypto');
-      if (webcrypto?.subtle) {
-        return webcrypto.subtle.digest('SHA-256', data);
-      }
-    } catch {
-      // Fallback for older Node.js versions
-    }
-  }
-
-  throw new Error('Web Crypto API not available in this environment');
-}
-
-/**
- * Compute SHA-256 checksum of data
- * Uses Web Crypto API (available in both browser and Node.js 18+)
+ * Compute SHA-256 checksum of data.
+ * Uses the global Web Crypto API (available in browsers and Node.js 18+).
  */
 export async function computeChecksum(data: ArrayBuffer | Uint8Array): Promise<string> {
   let buffer: ArrayBuffer;
@@ -37,7 +12,7 @@ export async function computeChecksum(data: ArrayBuffer | Uint8Array): Promise<s
     new Uint8Array(copy).set(data);
     buffer = copy;
   }
-  const hashBuffer = await sha256Digest(buffer);
+  const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
   return hashHex;
