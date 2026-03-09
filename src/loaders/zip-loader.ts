@@ -4,7 +4,6 @@
 
 import JSZip from 'jszip';
 import type { ProgressCallback } from '../gtfs-sqljs';
-import { isNodeEnvironment } from '../utils/env';
 
 export interface GTFSFiles {
   [filename: string]: string;
@@ -124,19 +123,7 @@ export async function fetchZip(source: string, onProgress?: ProgressCallback): P
     throw new Error('fetch is not available to load URL');
   }
 
-  // For non-URLs, try Node.js fs first, fall back to fetch for browser
-  if (isNodeEnvironment()) {
-    // In Node.js, treat as file path
-    try {
-      const fs = await import('fs');
-      const buffer = await fs.promises.readFile(source);
-      return buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength);
-    } catch (error) {
-      throw new Error(`Failed to read GTFS ZIP file: ${error}`);
-    }
-  }
-
-  // In browser, treat as relative URL and use fetch
+  // For non-URLs, use fetch (works for relative paths in browser and Node.js 18+)
   if (typeof fetch !== 'undefined') {
     const response = await fetch(source);
     if (!response.ok) {

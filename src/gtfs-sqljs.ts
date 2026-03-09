@@ -7,7 +7,7 @@ import { getAllCreateTableStatements, getAllCreateIndexStatements } from './sche
 import { loadGTFSZip, fetchZip } from './loaders/zip-loader';
 import { loadGTFSData } from './loaders/data-loader';
 import { createRealtimeTables, clearRealtimeData as clearRTData } from './schema/gtfs-rt-schema';
-import { loadRealtimeData } from './loaders/gtfs-rt-loader';
+import { loadRealtimeData, loadRealtimeDataFromBuffers } from './loaders/gtfs-rt-loader';
 import type { CacheStore } from './cache/types';
 import { computeZipChecksum, generateCacheKey } from './cache/checksum';
 import { DEFAULT_CACHE_EXPIRATION_MS, isCacheExpired } from './cache/utils';
@@ -871,6 +871,17 @@ export class GtfsSqlJs {
     }
 
     await loadRealtimeData(this.db, feedUrls);
+    this.lastRealtimeFetchTimestamp = Math.floor(Date.now() / 1000);
+  }
+
+  /**
+   * Load GTFS Realtime data from pre-loaded protobuf buffers
+   * @param buffers - Array of Uint8Array protobuf-encoded GTFS-RT feed messages
+   */
+  async loadRealtimeDataFromBuffers(buffers: Uint8Array[]): Promise<void> {
+    if (!this.db) throw new Error('Database not initialized');
+
+    await loadRealtimeDataFromBuffers(this.db, buffers);
     this.lastRealtimeFetchTimestamp = Math.floor(Date.now() / 1000);
   }
 

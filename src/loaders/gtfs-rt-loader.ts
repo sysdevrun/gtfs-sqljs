@@ -1,6 +1,6 @@
 import type { Database } from 'sql.js';
 import protobuf from 'protobufjs';
-import { isNodeEnvironment } from '../utils/env';
+
 
 // Types for protobuf decoded objects
 interface ProtobufTranslation {
@@ -291,18 +291,7 @@ async function fetchProtobuf(source: string): Promise<Uint8Array> {
     return new Uint8Array(arrayBuffer);
   }
 
-  // Read from local file (Node.js only)
-  if (isNodeEnvironment()) {
-    try {
-      const fs = await import('fs');
-      const buffer = await fs.promises.readFile(source);
-      return new Uint8Array(buffer.buffer.slice(buffer.byteOffset, buffer.byteOffset + buffer.byteLength));
-    } catch (error) {
-      throw new Error(`Failed to read GTFS-RT file from ${source}: ${error instanceof Error ? error.message : String(error)}`);
-    }
-  }
-
-  // In browser, try fetch for relative paths
+  // For non-URLs, use fetch (works for relative paths in browser and Node.js 18+)
   const response = await fetch(source, {
     headers: {
       'Accept': 'application/x-protobuf, application/octet-stream'
@@ -318,13 +307,14 @@ async function fetchProtobuf(source: string): Promise<Uint8Array> {
 }
 
 // Load and parse GTFS-RT protobuf schema
-let gtfsRtRoot: protobuf.Root | null = null;
+let feedMessageType: protobuf.Type | null = null;
 
-function loadGtfsRtProto(): protobuf.Root {
-  if (!gtfsRtRoot) {
-    gtfsRtRoot = protobuf.parse(GTFS_RT_PROTO).root;
+function getFeedMessageType(): protobuf.Type {
+  if (!feedMessageType) {
+    const root = protobuf.parse(GTFS_RT_PROTO).root;
+    feedMessageType = root.lookupType('transit_realtime.FeedMessage');
   }
-  return gtfsRtRoot;
+  return feedMessageType;
 }
 
 // Convert camelCase object keys to snake_case
@@ -485,36 +475,24 @@ function insertTripUpdates(db: Database, updates: ProtobufTripUpdate[], timestam
   stopTimeStmt.free();
 }
 
-/**
- * Fetch and load GTFS Realtime data from multiple feed URLs
- * All feeds are fetched in parallel. If any feed fails, an error is thrown.
- */
-export async function loadRealtimeData(db: Database, feedUrls: string[]): Promise<void> {
-  const root = loadGtfsRtProto();
-  const FeedMessage = root.lookupType('transit_realtime.FeedMessage');
-
-  // Fetch all feeds in parallel
-  const fetchPromises = feedUrls.map(async (url) => {
-    try {
-      const data = await fetchProtobuf(url);
-      const message = FeedMessage.decode(data);
-      return FeedMessage.toObject(message, {
-        longs: Number,
-        enums: Number,
-        bytes: String,
-        defaults: false,
-        arrays: true,
-        objects: true,
-        oneofs: true
-      });
-    } catch (error) {
-      throw new Error(`Failed to fetch or parse GTFS-RT feed from ${url}: ${error instanceof Error ? error.message : String(error)}`);
-    }
+// Decode protobuf data into feed objects
+function decodeFeedMessage(data: Uint8Array): object {
+  const FeedMessage = getFeedMessageType();
+  const message = FeedMessage.decode(data);
+  return FeedMessage.toObject(message, {
+    longs: Number,
+    enums: Number,
+    bytes: String,
+    defaults: false,
+    arrays: true,
+    objects: true,
+    oneofs: true
   });
+}
 
-  // Wait for all feeds - if any fails, this will throw
-  const feeds = await Promise.all(fetchPromises);
-
+// Process decoded feed objects: collect entities and insert into database
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function processRealtimeFeeds(db: Database, feeds: any[]): void {
   // Current timestamp for staleness tracking
   const now = Math.floor(Date.now() / 1000);
 
@@ -564,4 +542,30 @@ export async function loadRealtimeData(db: Database, feedUrls: string[]): Promis
     db.run('ROLLBACK');
     throw error;
   }
+}
+
+/**
+ * Fetch and load GTFS Realtime data from multiple feed URLs
+ * All feeds are fetched in parallel. If any feed fails, an error is thrown.
+ */
+export async function loadRealtimeData(db: Database, feedUrls: string[]): Promise<void> {
+  // Fetch all feeds in parallel
+  const buffers = await Promise.all(feedUrls.map(async (url) => {
+    try {
+      return await fetchProtobuf(url);
+    } catch (error) {
+      throw new Error(`Failed to fetch GTFS-RT feed from ${url}: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  }));
+
+  await loadRealtimeDataFromBuffers(db, buffers);
+}
+
+/**
+ * Load GTFS Realtime data from pre-loaded protobuf buffers
+ * Decodes and inserts data from Uint8Array buffers — same as loadRealtimeData but skips fetching.
+ */
+export async function loadRealtimeDataFromBuffers(db: Database, buffers: Uint8Array[]): Promise<void> {
+  const feeds = buffers.map((buffer) => decodeFeedMessage(buffer));
+  processRealtimeFeeds(db, feeds);
 }

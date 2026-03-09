@@ -10,6 +10,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { GtfsSqlJs } from '../src/gtfs-sqljs';
 import path from 'path';
+import fs from 'fs/promises';
 
 describe('Sample GTFS Feed Tests - Actual Data', () => {
   let gtfs: GtfsSqlJs;
@@ -17,7 +18,8 @@ describe('Sample GTFS Feed Tests - Actual Data', () => {
   beforeAll(async () => {
     // Load the sample GTFS feed
     const feedPath = path.join(__dirname, 'fixtures', 'sample-feed.zip');
-    gtfs = await GtfsSqlJs.fromZip(feedPath);
+    const zipData = await fs.readFile(feedPath);
+    gtfs = await GtfsSqlJs.fromZipData(zipData);
   });
 
   afterAll(() => {

@@ -8,6 +8,7 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { GtfsSqlJs } from '../src/gtfs-sqljs';
 import path from 'path';
+import fs from 'fs/promises';
 import initSqlJs from 'sql.js';
 
 describe('buildOrderedStopList', () => {
@@ -16,7 +17,8 @@ describe('buildOrderedStopList', () => {
   beforeAll(async () => {
     // Load the sample GTFS feed
     const feedPath = path.join(__dirname, 'fixtures', 'sample-feed.zip');
-    gtfs = await GtfsSqlJs.fromZip(feedPath);
+    const zipData = await fs.readFile(feedPath);
+    gtfs = await GtfsSqlJs.fromZipData(zipData);
   });
 
   afterAll(() => {

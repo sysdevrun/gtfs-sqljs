@@ -2,7 +2,19 @@
 
 ## Upcoming release
 
--
+### Breaking changes
+
+- **`fromZip()` no longer reads local file paths** in Node.js. Read the file yourself and use `fromZipData()` instead
+- `fetchRealtimeData()` / `loadRealtimeData()` no longer read local file paths in Node.js. Use the new `loadRealtimeDataFromBuffers()` method with pre-read data instead
+
+### New features
+
+- Add `loadRealtimeDataFromBuffers(buffers)` method to `GtfsSqlJs` for loading GTFS-RT data from pre-loaded protobuf `Uint8Array` buffers without fetching
+
+### Internal improvements
+
+- Remove all Node.js `fs` imports and `isNodeEnvironment()` checks, making the published module fully platform-neutral
+- Delete `src/utils/env.ts` (no remaining callers)
 
 ## 0.3.1
 
