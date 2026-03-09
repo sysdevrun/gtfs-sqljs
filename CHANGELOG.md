@@ -2,6 +2,10 @@
 
 ## Upcoming release
 
+-
+
+## 0.4.0
+
 ### Breaking changes
 
 - **`fromZip()` no longer reads local file paths** in Node.js. Read the file yourself and use `fromZipData()` instead
