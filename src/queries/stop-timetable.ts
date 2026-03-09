@@ -27,12 +27,13 @@ export function getStopTimetable(
   filters: StopTimetableFilters,
   stalenessThreshold: number = 120
 ): StopTimetable {
-  const { stopId, date, routeId, directionId, includeRealtime } = filters;
+  const { stopId: rawStopId, date, routeId, directionId, pickupType, includeRealtime } = filters;
+  const stopIds = Array.isArray(rawStopId) ? rawStopId : [rawStopId];
 
   // 1. Get stop
-  const stops = getStops(db, { stopId });
+  const stops = getStops(db, { stopId: stopIds });
   if (stops.length === 0) {
-    throw new Error(`Stop not found: ${stopId}`);
+    throw new Error(`Stop not found: ${stopIds.join(', ')}`);
   }
   const stop = stops[0];
 
@@ -44,10 +45,11 @@ export function getStopTimetable(
 
   // 3. Get stop_times at queried stop
   const stopTimesAtStop = getStopTimes(db, {
-    stopId,
+    stopId: stopIds,
     serviceIds,
     routeId,
     directionId: directionId !== undefined ? directionId : undefined,
+    pickupType,
   }, stalenessThreshold) as StopTime[];
 
   if (stopTimesAtStop.length === 0) {
@@ -96,7 +98,8 @@ export function getStopTimetable(
     const orderedStops = buildOrderedStopList(db, groupTripIds);
 
     // 8b. Find queried stop index
-    const queriedStopIndex = orderedStops.findIndex(s => s.stop_id === stopId);
+    const stopIdSet = new Set(stopIds);
+    const queriedStopIndex = orderedStops.findIndex(s => stopIdSet.has(s.stop_id));
 
     // 8c. Batch-fetch all stop_times for group's trips
     const allStopTimes = getStopTimes(db, {

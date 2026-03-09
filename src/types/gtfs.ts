@@ -278,10 +278,11 @@ export interface Attribution {
  * Filters for getStopTimetable query
  */
 export interface StopTimetableFilters {
-  stopId: string;
+  stopId: string | string[];
   date: string;
   routeId?: string | string[];
   directionId?: number;
+  pickupType?: number;
   includeRealtime?: boolean;
 }
 
