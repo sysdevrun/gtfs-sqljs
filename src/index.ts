@@ -17,6 +17,7 @@ export {
   type VehiclePositionFilters,
   type TripUpdateFilters,
   type StopTimeUpdateFilters,
+  type StopTimetableFilters,
   type Alert,
   type VehiclePosition,
   type TripUpdate,
@@ -43,6 +44,9 @@ export type {
   Level,
   FeedInfo,
   Attribution,
+  StopTimetable,
+  RouteGroup,
+  TripWithStopTimes,
 } from './types/gtfs';
 
 // Export GTFS-RT types

@@ -27,6 +27,7 @@ import {
 } from './queries/calendar';
 import { getTrips, type TripFilters, type TripWithRealtime } from './queries/trips';
 import { getStopTimes, buildOrderedStopList, type StopTimeFilters, type StopTimeWithRealtime } from './queries/stop-times';
+import { getStopTimetable as getStopTimetableQuery } from './queries/stop-timetable';
 import { getShapes, getShapesToGeojson, type ShapeFilters, type GeoJsonFeatureCollection } from './queries/shapes';
 import { getAlerts as getAlertsQuery, getAllAlerts, type AlertFilters } from './queries/rt-alerts';
 import { getVehiclePositions as getVehiclePositionsQuery, getAllVehiclePositions, type VehiclePositionFilters } from './queries/rt-vehicle-positions';
@@ -34,11 +35,11 @@ import { getTripUpdates, getAllTripUpdates, type TripUpdateFilters } from './que
 import { getStopTimeUpdates, getAllStopTimeUpdates, type StopTimeUpdateFilters } from './queries/rt-stop-time-updates';
 
 // Types
-import type { Agency, Stop, Route, Trip, StopTime, Calendar, CalendarDate, Shape } from './types/gtfs';
+import type { Agency, Stop, Route, Trip, StopTime, Calendar, CalendarDate, Shape, StopTimetableFilters, StopTimetable } from './types/gtfs';
 import type { Alert, VehiclePosition, TripUpdate, StopTimeUpdate } from './types/gtfs-rt';
 
 // Export filter types for users
-export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, ShapeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters };
+export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, ShapeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters, StopTimetableFilters };
 // Export RT types
 export type { Alert, VehiclePosition, TripUpdate, TripWithRealtime, StopTimeWithRealtime };
 // Export GeoJSON types
@@ -818,6 +819,31 @@ export class GtfsSqlJs {
   buildOrderedStopList(tripIds: string[]): Stop[] {
     if (!this.db) throw new Error('Database not initialized');
     return buildOrderedStopList(this.db, tripIds);
+  }
+
+  /**
+   * Get a complete stop timetable for a given stop and date
+   *
+   * Returns all departures from a stop grouped by route and direction,
+   * with trips aligned to a merged ordered stop list. Useful for building
+   * departure board / stop timetable UIs.
+   *
+   * @param filters - Required: stopId and date. Optional: routeId, directionId, includeRealtime
+   * @returns StopTimetable with stop info, date, and route groups
+   *
+   * @example
+   * const timetable = gtfs.getStopTimetable({ stopId: 'STOP1', date: '20240115' });
+   * for (const group of timetable.routeGroups) {
+   *   console.log(`${group.route.route_short_name} → ${group.headsign}`);
+   *   for (const trip of group.trips) {
+   *     const depTime = trip.stopTimes[group.queriedStopIndex]?.departure_time;
+   *     console.log(`  ${depTime}`);
+   *   }
+   * }
+   */
+  getStopTimetable(filters: StopTimetableFilters): StopTimetable {
+    if (!this.db) throw new Error('Database not initialized');
+    return getStopTimetableQuery(this.db, filters, this.stalenessThreshold);
   }
 
   // ==================== Realtime Methods ====================

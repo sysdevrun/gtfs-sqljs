@@ -273,3 +273,43 @@ export interface Attribution {
   attribution_email?: string;
   attribution_phone?: string;
 }
+
+/**
+ * Filters for getStopTimetable query
+ */
+export interface StopTimetableFilters {
+  stopId: string;
+  date: string;
+  routeId?: string | string[];
+  directionId?: number;
+  includeRealtime?: boolean;
+}
+
+/**
+ * Complete timetable for a stop on a given date
+ */
+export interface StopTimetable {
+  stop: Stop;
+  date: string;
+  routeGroups: RouteGroup[];
+}
+
+/**
+ * A group of trips for a specific route and direction
+ */
+export interface RouteGroup {
+  route: Route;
+  directionId: number;
+  headsign?: string;
+  orderedStops: Stop[];
+  queriedStopIndex: number;
+  trips: TripWithStopTimes[];
+}
+
+/**
+ * A trip with its stop times aligned to the route group's ordered stop list
+ */
+export interface TripWithStopTimes {
+  trip: Trip;
+  stopTimes: (StopTime | null)[];
+}

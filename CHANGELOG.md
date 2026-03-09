@@ -2,7 +2,7 @@
 
 ## Upcoming release
 
--
+- Add `getStopTimetable({ stopId, date, routeId?, directionId?, includeRealtime? })` method that returns all departures from a stop on a given date, grouped by route and direction, with trips aligned to a merged ordered stop list
 
 ## 0.4.0
 
