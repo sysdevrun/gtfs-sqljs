@@ -2,7 +2,7 @@
 
 ## Upcoming release
 
-- Add `llms.txt` skill file for LLM code agents with API reference, usage examples, and WASM setup instructions for browser environments
+- Add `llms.txt` skill file for LLM code agents with API reference, usage examples, WASM setup instructions, and Web Worker guidance (with comlink example) for browser environments
 
 ## 0.4.0
 

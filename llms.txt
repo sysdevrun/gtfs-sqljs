@@ -55,6 +55,58 @@ const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', { SQL });
 
 Copy `sql-wasm.wasm` from `node_modules/sql.js/dist/` to the same directory as your page or a known path, then use `locateFile` to point to it.
 
+## Web Worker Recommendation (Browser)
+
+In the browser, gtfs-sqljs should run inside a Web Worker to avoid blocking the main thread during GTFS loading and querying. Use a library like `comlink` to expose the worker API seamlessly.
+
+```bash
+npm install comlink
+```
+
+```typescript
+// gtfs-worker.ts — runs in a Web Worker
+import * as Comlink from 'comlink';
+import initSqlJs from 'sql.js';
+import { GtfsSqlJs } from 'gtfs-sqljs';
+
+let gtfs: GtfsSqlJs;
+
+const api = {
+  async load(zipUrl: string, wasmUrl: string) {
+    const SQL = await initSqlJs({ locateFile: () => wasmUrl });
+    gtfs = await GtfsSqlJs.fromZip(zipUrl, { SQL });
+  },
+  getRoutes(filters?: Parameters<GtfsSqlJs['getRoutes']>[0]) {
+    return gtfs.getRoutes(filters);
+  },
+  getStops(filters?: Parameters<GtfsSqlJs['getStops']>[0]) {
+    return gtfs.getStops(filters);
+  },
+  getTrips(filters?: Parameters<GtfsSqlJs['getTrips']>[0]) {
+    return gtfs.getTrips(filters);
+  },
+  getStopTimes(filters?: Parameters<GtfsSqlJs['getStopTimes']>[0]) {
+    return gtfs.getStopTimes(filters);
+  },
+  close() {
+    gtfs.close();
+  }
+};
+
+Comlink.expose(api);
+```
+
+```typescript
+// main.ts — runs on the main thread
+import * as Comlink from 'comlink';
+
+const worker = new Worker(new URL('./gtfs-worker.ts', import.meta.url), { type: 'module' });
+const gtfs = Comlink.wrap<typeof import('./gtfs-worker').api>(worker);
+
+await gtfs.load('https://example.com/gtfs.zip', '/assets/sql-wasm.wasm');
+const routes = await gtfs.getRoutes();
+```
+
 ## Node.js Usage
 
 No WASM setup needed — sql.js locates the WASM file automatically.
