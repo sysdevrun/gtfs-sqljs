@@ -23,6 +23,7 @@ This project is greatly inspired by [node-gtfs](https://github.com/BlinkTagInc/n
 - [Documentation and Interactive Demo](https://sysdevrun.github.io/gtfs-sqljs/)
 - [Usage Guide](https://sysdevrun.github.io/gtfs-sqljs/docs/documents/Usage_Guide.html) — detailed examples for all features
 - [API Reference](https://sysdevrun.github.io/gtfs-sqljs/docs/) — full TypeDoc-generated API docs
+- [LLM Skill File](.claude/skills/gtfs-sqljs/SKILL.md) — Claude Code skill for LLM code agents
 
 ## Features
 

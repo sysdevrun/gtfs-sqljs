@@ -1,3 +1,11 @@
+---
+name: gtfs-sqljs
+description: Reference for building apps with gtfs-sqljs — a TypeScript library for loading GTFS transit data into sql.js SQLite databases (browser + Node.js). Covers installation, Web Worker + Comlink usage, query methods, GTFS-RT feeds, and caching.
+  TRIGGER when: code imports `gtfs-sqljs`, or user asks to use gtfs-sqljs, or user works on a project that depends on gtfs-sqljs, or user needs to manipulate/query/load a GTFS file.
+  DO NOT TRIGGER when: general programming, unrelated libraries.
+user-invocable: false
+---
+
 # gtfs-sqljs
 
 TypeScript library for loading GTFS (General Transit Feed Specification) transit data into an in-memory sql.js SQLite database. Works in both browser and Node.js (18+). ESM-only.

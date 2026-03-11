@@ -2,7 +2,11 @@
 
 ## Upcoming release
 
-- Add `llms.txt` skill file for LLM code agents with API reference, usage examples, WASM setup instructions, and Web Worker guidance (with comlink example) for browser environments
+-
+
+## 0.4.1
+
+- Add Claude Code skill file with API reference, usage examples, WASM setup instructions, and Web Worker guidance for LLM code agents
 
 ## 0.4.0
 
