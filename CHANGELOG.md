@@ -2,7 +2,10 @@
 
 ## Upcoming release
 
--
+- Add `exportToGtfsZip()` method to export ingested GTFS data back to a standard GTFS ZIP file
+- Add `GtfsSqlJs.getExportableTables()` static method to get list of exportable table names
+- Add `ExportToGtfsZipOptions` type for export configuration
+- Add new progress phases: `exporting_data` and `creating_zip`
 
 ## 0.4.1
 

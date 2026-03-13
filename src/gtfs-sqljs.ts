@@ -8,6 +8,8 @@ import { loadGTFSZip, fetchZip } from './loaders/zip-loader';
 import { loadGTFSData } from './loaders/data-loader';
 import { createRealtimeTables, clearRealtimeData as clearRTData } from './schema/gtfs-rt-schema';
 import { loadRealtimeData, loadRealtimeDataFromBuffers } from './loaders/gtfs-rt-loader';
+import { exportGtfsData, getExportableTables } from './exporters/gtfs-exporter';
+import { createGtfsZip } from './exporters/zip-writer';
 import type { CacheStore } from './cache/types';
 import { computeZipChecksum, generateCacheKey } from './cache/checksum';
 import { DEFAULT_CACHE_EXPIRATION_MS, isCacheExpired } from './cache/utils';
@@ -48,7 +50,7 @@ export type { GeoJsonFeatureCollection };
  * Progress information for GTFS data loading
  */
 export interface ProgressInfo {
-  phase: 'checking_cache' | 'loading_from_cache' | 'downloading' | 'extracting' | 'creating_schema' | 'inserting_data' | 'creating_indexes' | 'analyzing' | 'loading_realtime' | 'saving_cache' | 'complete';
+  phase: 'checking_cache' | 'loading_from_cache' | 'downloading' | 'extracting' | 'creating_schema' | 'inserting_data' | 'creating_indexes' | 'analyzing' | 'loading_realtime' | 'saving_cache' | 'exporting_data' | 'creating_zip' | 'complete';
   currentFile: string | null;
   filesCompleted: number;
   totalFiles: number;
@@ -64,6 +66,24 @@ export interface ProgressInfo {
  * Progress callback function type
  */
 export type ProgressCallback = (progress: ProgressInfo) => void;
+
+/**
+ * Options for exporting GTFS data to ZIP
+ */
+export interface ExportToGtfsZipOptions {
+  /**
+   * Specific tables to export (if not specified, exports all non-empty tables)
+   * Available tables: agency, stops, routes, trips, stop_times, calendar,
+   * calendar_dates, fare_attributes, fare_rules, shapes, frequencies,
+   * transfers, pathways, levels, feed_info, attributions
+   */
+  tables?: string[];
+
+  /**
+   * Optional: Progress callback for tracking export progress
+   */
+  onProgress?: ProgressCallback;
+}
 
 export interface GtfsSqlJsOptions {
   /**
@@ -1046,5 +1066,120 @@ export class GtfsSqlJs {
     }
 
     return filterExpiredEntries(entries);
+  }
+
+  // ==================== GTFS Export Methods ====================
+
+  /**
+   * Export GTFS data to a ZIP file
+   *
+   * Exports all non-empty GTFS static tables to a standard GTFS ZIP file.
+   * GTFS-RT tables are not included (they're not part of standard GTFS ZIP format).
+   *
+   * @param options - Export options
+   * @param options.tables - Specific tables to export (optional, defaults to all non-empty tables)
+   * @param options.onProgress - Progress callback (optional)
+   * @returns ArrayBuffer containing the GTFS ZIP file
+   *
+   * @example
+   * // Export all data
+   * const zipData = await gtfs.exportToGtfsZip();
+   *
+   * @example
+   * // Export specific tables only
+   * const zipData = await gtfs.exportToGtfsZip({
+   *   tables: ['agency', 'stops', 'routes']
+   * });
+   *
+   * @example
+   * // With progress tracking
+   * const zipData = await gtfs.exportToGtfsZip({
+   *   onProgress: (progress) => console.log(`${progress.percentComplete}%`)
+   * });
+   */
+  async exportToGtfsZip(options?: ExportToGtfsZipOptions): Promise<ArrayBuffer> {
+    if (!this.db) {
+      throw new Error('Database not initialized');
+    }
+
+    const onProgress = options?.onProgress;
+
+    // Export data phase
+    onProgress?.({
+      phase: 'exporting_data',
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: 0,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 0,
+      message: 'Exporting GTFS data...',
+    });
+
+    const exportResult = exportGtfsData(this.db, {
+      tables: options?.tables,
+      onProgress: (info) => {
+        const percent = Math.floor((info.tablesCompleted / info.totalTables) * 50);
+        onProgress?.({
+          phase: 'exporting_data',
+          currentFile: info.table,
+          filesCompleted: info.tablesCompleted,
+          totalFiles: info.totalTables,
+          rowsProcessed: 0,
+          totalRows: 0,
+          percentComplete: percent,
+          message: `Exporting ${info.table}...`,
+        });
+      },
+    });
+
+    // Create ZIP phase
+    onProgress?.({
+      phase: 'creating_zip',
+      currentFile: null,
+      filesCompleted: 0,
+      totalFiles: exportResult.files.size,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 50,
+      message: 'Creating ZIP file...',
+    });
+
+    const zipData = await createGtfsZip(exportResult, {
+      onProgress: (info) => {
+        const percent = 50 + Math.floor((info.filesAdded / info.totalFiles) * 50);
+        onProgress?.({
+          phase: 'creating_zip',
+          currentFile: null,
+          filesCompleted: info.filesAdded,
+          totalFiles: info.totalFiles,
+          rowsProcessed: 0,
+          totalRows: 0,
+          percentComplete: percent,
+          message: `Adding files to ZIP (${info.filesAdded}/${info.totalFiles})...`,
+        });
+      },
+    });
+
+    onProgress?.({
+      phase: 'complete',
+      currentFile: null,
+      filesCompleted: exportResult.files.size,
+      totalFiles: exportResult.files.size,
+      rowsProcessed: 0,
+      totalRows: 0,
+      percentComplete: 100,
+      message: `GTFS ZIP created (${exportResult.exportedTables.length} files)`,
+    });
+
+    return zipData;
+  }
+
+  /**
+   * Get list of table names available for export
+   * @returns Array of table names that can be exported
+   */
+  static getExportableTables(): string[] {
+    return getExportableTables();
   }
 }

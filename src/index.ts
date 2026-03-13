@@ -7,6 +7,7 @@
 export {
   GtfsSqlJs,
   type GtfsSqlJsOptions,
+  type ExportToGtfsZipOptions,
   type AgencyFilters,
   type StopFilters,
   type RouteFilters,
