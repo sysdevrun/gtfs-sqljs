@@ -106,8 +106,14 @@ export async function loadGTFSData(
       message: `Loading ${fileName} (${fileRows.toLocaleString()} rows)`,
     });
 
+    let lastReportedPercent = 40 + Math.floor((rowsProcessed / totalRows) * 35);
     await loadTableData(db, schema, content, (processedInFile) => {
       const currentProgress = rowsProcessed + processedInFile;
+      const percentComplete = 40 + Math.floor((currentProgress / totalRows) * 35);
+      // Only fire callback when percentage actually changes to avoid
+      // flooding message channels (e.g. Web Worker postMessage)
+      if (percentComplete <= lastReportedPercent) return;
+      lastReportedPercent = percentComplete;
       onProgress?.({
         phase: 'inserting_data',
         currentFile: fileName,
@@ -115,7 +121,7 @@ export async function loadGTFSData(
         totalFiles: sortedFiles.length,
         rowsProcessed: currentProgress,
         totalRows,
-        percentComplete: 40 + Math.floor((currentProgress / totalRows) * 35),
+        percentComplete,
         message: `Loading ${fileName} (${processedInFile.toLocaleString()}/${fileRows.toLocaleString()} rows)`,
       });
     });

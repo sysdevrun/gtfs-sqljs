@@ -2,7 +2,7 @@
 
 ## Upcoming release
 
--
+- Throttle progress callbacks during data insertion to only fire when percentage changes, reducing overhead in Web Worker setups
 
 ## 0.4.1
 
