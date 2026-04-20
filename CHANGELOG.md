@@ -2,6 +2,8 @@
 
 ## Upcoming release
 
+## 0.6.0
+
 ### Breaking changes — pluggable database adapter
 
 The library now talks to a small async `GtfsDatabase` interface. sql.js becomes one adapter among others (better-sqlite3 ships in the box; op-sqlite / expo-sqlite / … pluggable by the user). Three things change at every call site: (1) query methods return `Promise<T>`, (2) an `adapter` is required, (3) `sql.js` is an optional peer dependency — you install it yourself.

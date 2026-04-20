@@ -1,6 +1,6 @@
 {
   "name": "gtfs-sqljs",
-  "version": "0.4.1",
+  "version": "0.6.0",
   "description": "Load GTFS data into a SQLite database (sql.js / better-sqlite3 / op-sqlite / expo-sqlite) via a pluggable adapter",
   "type": "module",
   "main": "./dist/index.js",
