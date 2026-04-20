@@ -4,16 +4,101 @@
 
 ### Breaking changes — pluggable database adapter
 
-- **All query methods are now `async`** and return `Promise<T>`. Call sites must `await` (`const routes = await gtfs.getRoutes()`). This includes `gtfs.close()` and `gtfs.export()`. See `documents/pluggable-db-adapter.md`.
-- **`options.adapter` is now required** on `GtfsSqlJs.fromZip()`, `fromZipData()`, and `fromDatabase()`. Consumers using sql.js migrate as:
-  ```ts
-  import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
-  const gtfs = await GtfsSqlJs.fromZip(url, { adapter: await createSqlJsAdapter({ locateFile }) });
-  ```
-- **New `GtfsSqlJs.attach(db, options?)` entry point** for callers who already hold a live database handle (typical for file-backed drivers: better-sqlite3, op-sqlite, expo-sqlite). `attach()` does not own the handle by default; pass `ownsDatabase: true` to have `close()` release it.
-- **sql.js moves to an optional `peerDependency`.** Projects using another adapter never install or bundle sql.js. Projects using the sql.js adapter keep `sql.js` in their own dependencies.
-- `SQL` and `locateFile` options are removed from `GtfsSqlJsOptions`; equivalent options live on `createSqlJsAdapter()` now.
-- sql.js type re-exports (`SqlJsStatic`, sql.js `Database`) are dropped from the public surface. Migrate to `GtfsDatabase` or import from `sql.js` directly.
+The library now talks to a small async `GtfsDatabase` interface. sql.js becomes one adapter among others (better-sqlite3 ships in the box; op-sqlite / expo-sqlite / … pluggable by the user). Three things change at every call site: (1) query methods return `Promise<T>`, (2) an `adapter` is required, (3) `sql.js` is an optional peer dependency — you install it yourself.
+
+See the full migration write-up in [README](README.md) and the [Usage Guide](documents/guide.md#creating-an-instance).
+
+#### What's unchanged
+
+- All filter shapes (`{ routeId, date, directionId, … }`) and returned GTFS / GTFS-RT object shapes are identical. No SQL query changes, no schema changes.
+- The high-level entry points (`fromZip`, `fromZipData`, `fromDatabase`) keep their names and argument order; only `options` gains `adapter`.
+
+#### Step 1 — install the adapter peer dependency
+
+The core package no longer depends on sql.js. Install whichever adapter(s) you use:
+
+```bash
+# Previously (v0.5 and earlier): already transitive — nothing to do.
+# Now:
+npm install sql.js                # browser / Node WASM
+npm install better-sqlite3        # Node native, file-backed
+```
+
+#### Step 2 — pass an adapter and `await` your queries
+
+Typical sql.js migration:
+
+```diff
+- import { GtfsSqlJs } from 'gtfs-sqljs';
++ import { GtfsSqlJs } from 'gtfs-sqljs';
++ import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
+
+- const gtfs = await GtfsSqlJs.fromZip(url, { locateFile });
++ const gtfs = await GtfsSqlJs.fromZip(url, {
++   adapter: await createSqlJsAdapter({ locateFile }),
++ });
+
+- const routes = gtfs.getRoutes();
+- const stops  = gtfs.getStops({ name: 'Station' });
++ const routes = await gtfs.getRoutes();
++ const stops  = await gtfs.getStops({ name: 'Station' });
+
+- const buffer = gtfs.export();
+- gtfs.close();
++ const buffer = await gtfs.export();
++ await gtfs.close();
+```
+
+TypeScript flags the missing `await`s for you; plain JS does not — grep for `gtfs.get` and `gtfs.close(`/`gtfs.export(` before shipping.
+
+#### Step 3 — only if you called `getDatabase()` for raw access
+
+`getDatabase()` now returns a `GtfsDatabase` (the adapter surface), not a raw sql.js `Database`. **All its methods are async.** This is the most likely silent failure during migration:
+
+```diff
+  const db = gtfs.getDatabase();
+- const stmt = db.prepare('SELECT * FROM stops WHERE stop_lat > ?');
+- stmt.bind([40.7]);
+- while (stmt.step()) {
+-   const row = stmt.getAsObject();
++ const stmt = await db.prepare('SELECT * FROM stops WHERE stop_lat > ?');
++ await stmt.bind([40.7]);
++ while (await stmt.step()) {
++   const row = await stmt.getAsObject();
+    console.log(row);
+  }
+- stmt.free();
++ await stmt.free();
+```
+
+If you need the genuine sql.js `Database` (for features gtfs-sqljs does not wrap), keep a reference to it at the point where you built the adapter — the library no longer re-exposes it.
+
+#### Option A — new `attach()` entry point
+
+If you already open a database handle yourself (typical for file-backed drivers), skip the factory and attach the handle directly:
+
+```ts
+import BetterSqlite3 from 'better-sqlite3';
+import { GtfsSqlJs } from 'gtfs-sqljs';
+import { wrapBetterSqlite3 } from 'gtfs-sqljs/adapters/better-sqlite3';
+
+const raw = new BetterSqlite3('./gtfs.db', { readonly: true });
+const gtfs = await GtfsSqlJs.attach(wrapBetterSqlite3(raw), {
+  skipSchema: true, // file already has the GTFS schema
+});
+```
+
+`attach()` does not take an `adapter`. By default it does **not** close the raw handle when `gtfs.close()` runs — pass `ownsDatabase: true` if you want the library to own it.
+
+#### Option B — removed / renamed options
+
+| v0.5 | v0.6 |
+| --- | --- |
+| `GtfsSqlJsOptions.SQL` | `createSqlJsAdapter({ SQL })` |
+| `GtfsSqlJsOptions.locateFile` | `createSqlJsAdapter({ locateFile })` |
+| re-exported `SqlJsStatic`, sql.js `Database` type | import from `sql.js` directly, or use `GtfsDatabase` |
+
+Calling `fromZip` / `fromZipData` / `fromDatabase` without `options.adapter` now throws a runtime `Error` pointing at `createSqlJsAdapter` — useful when you miss a call site.
 
 ### New features
 
