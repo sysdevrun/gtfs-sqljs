@@ -14,6 +14,7 @@
     "typescript": "^5.3.3"
   },
   "dependencies": {
-    "gtfs-sqljs": "file:.."
+    "gtfs-sqljs": "file:..",
+    "sql.js": "1.13.0"
   }
 }

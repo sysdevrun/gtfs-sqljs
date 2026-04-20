@@ -1,6 +1,7 @@
 import initSqlJs from 'sql.js';
 import type { SqlJsStatic } from 'sql.js';
 import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
 import type { Route, Trip, StopTime, Agency, Alert, VehiclePosition, TripWithRealtime, StopTimeWithRealtime } from 'gtfs-sqljs';
 
 let gtfs: GtfsSqlJs;
@@ -38,7 +39,7 @@ async function loadGTFS(url: string) {
     // Load GTFS data
     // Skip shapes.txt to reduce memory usage and improve load time
     gtfs = await GtfsSqlJs.fromZip(source, {
-      SQL,
+      adapter: await createSqlJsAdapter({ SQL }),
       skipFiles: ['shapes.txt']
     });
 
@@ -60,13 +61,13 @@ async function loadGTFS(url: string) {
     setupRTButtons();
 
     // Render initial data
-    renderAgencies();
-    renderActiveCalendars();
-    renderRoutes();
+    await renderAgencies();
+    await renderActiveCalendars();
+    await renderRoutes();
 
     // Clear RT displays
-    renderAlerts();
-    renderVehicleCount();
+    await renderAlerts();
+    await renderVehicleCount();
   } catch (error) {
     console.error('Error loading GTFS data:', error);
     loadingEl.style.display = 'none';
@@ -121,11 +122,11 @@ function initDatePicker() {
   selectedDate = `${year}${month}${day}`; // YYYYMMDD format for GTFS
 
   // Listen for date changes
-  dateInput.addEventListener('change', (e) => {
+  dateInput.addEventListener('change', async (e) => {
     const target = e.target as HTMLInputElement;
     const [y, m, d] = target.value.split('-');
     selectedDate = `${y}${m}${d}`;
-    renderActiveCalendars();
+    await renderActiveCalendars();
 
     // Reset trips section
     document.getElementById('trips-section')!.style.display = 'none';
@@ -134,11 +135,11 @@ function initDatePicker() {
 }
 
 // Render agencies
-function renderAgencies() {
+async function renderAgencies() {
   const agenciesListEl = document.getElementById('agencies-list')!;
 
   try {
-    const agencies = gtfs.getAgencies();
+    const agencies = await gtfs.getAgencies();
 
     if (agencies.length === 0) {
       agenciesListEl.innerHTML = '<p>No agency information available</p>';
@@ -166,11 +167,11 @@ function renderAgencies() {
 }
 
 // Render active calendars for selected date
-function renderActiveCalendars() {
+async function renderActiveCalendars() {
   const activeCalendarsEl = document.getElementById('active-calendars')!;
 
   try {
-    const serviceIds = gtfs.getActiveServiceIds(selectedDate);
+    const serviceIds = await gtfs.getActiveServiceIds(selectedDate);
 
     if (serviceIds.length === 0) {
       activeCalendarsEl.innerHTML = '<p class="info-text">No active service calendars for this date</p>';
@@ -190,9 +191,9 @@ function renderActiveCalendars() {
 }
 
 // Render routes list
-function renderRoutes() {
+async function renderRoutes() {
   const routesListEl = document.getElementById('routes-list')!;
-  const routes = gtfs.getRoutes();
+  const routes = await gtfs.getRoutes();
 
   if (routes.length === 0) {
     routesListEl.innerHTML = '<p>No routes found</p>';
@@ -218,7 +219,7 @@ function renderRoutes() {
 }
 
 // Show trips for a route
-(window as any).showTrips = function(routeId: string, routeName: string) {
+(window as any).showTrips = async function(routeId: string, routeName: string) {
   const tripsSectionEl = document.getElementById('trips-section')!;
   const tripsListEl = document.getElementById('trips-list')!;
   const selectedRouteNameEl = document.getElementById('selected-route-name')!;
@@ -228,11 +229,11 @@ function renderRoutes() {
   stopTimesSectionEl.style.display = 'none';
 
   // Get trips for this route on the selected date (with realtime data)
-  const trips = gtfs.getTrips({
+  const trips = (await gtfs.getTrips({
     routeId: routeId,
     date: selectedDate,
     includeRealtime: true
-  }) as TripWithRealtime[];
+  })) as TripWithRealtime[];
 
   if (trips.length === 0) {
     tripsListEl.innerHTML = '<p>No trips found for this route on the selected date</p>';
@@ -339,16 +340,16 @@ function renderRoutes() {
 };
 
 // Show stop times for a trip
-(window as any).showStopTimes = function(tripId: string, tripName: string) {
+(window as any).showStopTimes = async function(tripId: string, tripName: string) {
   const stopTimesSectionEl = document.getElementById('stop-times-section')!;
   const stopTimesListEl = document.getElementById('stop-times-list')!;
   const selectedTripNameEl = document.getElementById('selected-trip-name')!;
 
   // Get stop times for this trip (with realtime data)
-  const stopTimes = gtfs.getStopTimes({
+  const stopTimes = (await gtfs.getStopTimes({
     tripId: tripId,
     includeRealtime: true
-  }) as StopTimeWithRealtime[];
+  })) as StopTimeWithRealtime[];
 
   if (stopTimes.length === 0) {
     stopTimesListEl.innerHTML = '<p>No stop times found for this trip</p>';
@@ -358,8 +359,8 @@ function renderRoutes() {
   }
 
   // Render stop times with stop names and realtime data
-  const html = stopTimes.map(st => {
-    const stops = gtfs.getStops({ stopId: st.stop_id });
+  const html = (await Promise.all(stopTimes.map(async st => {
+    const stops = await gtfs.getStops({ stopId: st.stop_id });
     const stop = stops.length > 0 ? stops[0] : null;
     const stopName = stop ? stop.stop_name : st.stop_id;
 
@@ -393,7 +394,7 @@ function renderRoutes() {
         <div class="stop-name">${escapeHtml(stopName)}</div>
       </div>
     `;
-  }).join('');
+  }))).join('');
 
   stopTimesListEl.innerHTML = html;
   stopTimesSectionEl.style.display = 'block';
@@ -417,8 +418,8 @@ async function fetchRealtimeData() {
     await gtfs.fetchRealtimeData([proxyUrl]);
 
     // Update displays
-    renderAlerts();
-    renderVehicleCount();
+    await renderAlerts();
+    await renderVehicleCount();
   } catch (error) {
     console.error('Error fetching realtime data:', error);
     alert(`Failed to fetch realtime data: ${error instanceof Error ? error.message : String(error)}`);
@@ -466,18 +467,18 @@ function setupRTButtons() {
 }
 
 // Render alerts
-function renderAlerts() {
+async function renderAlerts() {
   const alertsListEl = document.getElementById('alerts-list')!;
 
   try {
-    const alerts = gtfs.getAlerts({ activeOnly: true });
+    const alerts = await gtfs.getAlerts({ activeOnly: true });
 
     if (alerts.length === 0) {
       alertsListEl.innerHTML = '<p class="no-data">No active alerts</p>';
       return;
     }
 
-    const html = alerts.map(alert => {
+    const html = (await Promise.all(alerts.map(async alert => {
       let headerText = 'Alert';
       if (alert.header_text) {
         try {
@@ -508,8 +509,8 @@ function renderAlerts() {
         .map(e => e.route_id)
         .slice(0, 10); // Show max 10 routes
 
-      const routesBadges = affectedRoutes.map(routeId => {
-        const routes = gtfs.getRoutes({ routeId: routeId! });
+      const routesBadges = (await Promise.all(affectedRoutes.map(async routeId => {
+        const routes = await gtfs.getRoutes({ routeId: routeId! });
         const route = routes.length > 0 ? routes[0] : null;
         if (!route) return '';
 
@@ -517,7 +518,7 @@ function renderAlerts() {
         const textColor = route.route_text_color ? `#${route.route_text_color}` : getContrastColor(bgColor);
 
         return `<span class="route-badge" style="background-color: ${bgColor}; color: ${textColor};">${escapeHtml(route.route_short_name ?? '')}</span>`;
-      }).join('');
+      }))).join('');
 
       const moreRoutes = alert.informed_entity.filter(e => e.route_id).length > 10
         ? `<span class="route-badge-more">+${alert.informed_entity.filter(e => e.route_id).length - 10} more</span>`
@@ -530,7 +531,7 @@ function renderAlerts() {
           ${routesBadges || moreRoutes ? `<div class="alert-routes">Affected routes: ${routesBadges}${moreRoutes}</div>` : ''}
         </div>
       `;
-    }).join('');
+    }))).join('');
 
     alertsListEl.innerHTML = html;
   } catch (error) {
@@ -540,11 +541,11 @@ function renderAlerts() {
 }
 
 // Render vehicle count
-function renderVehicleCount() {
+async function renderVehicleCount() {
   const vehiclesCountEl = document.getElementById('vehicles-count')!;
 
   try {
-    const vehicles = gtfs.getVehiclePositions();
+    const vehicles = await gtfs.getVehiclePositions();
 
     if (vehicles.length === 0) {
       vehiclesCountEl.innerHTML = '<p class="no-data">No tracked vehicles</p>';
@@ -568,10 +569,10 @@ function setupDownloadButton() {
   const downloadBtn = document.getElementById('download-db-btn') as HTMLButtonElement;
   if (!downloadBtn) return;
 
-  downloadBtn.addEventListener('click', () => {
+  downloadBtn.addEventListener('click', async () => {
     try {
       // Export database to ArrayBuffer
-      const dbData = gtfs.export();
+      const dbData = await gtfs.export();
 
       // Create blob and download
       const blob = new Blob([dbData], { type: 'application/x-sqlite3' });

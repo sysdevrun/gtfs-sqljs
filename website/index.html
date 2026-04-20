@@ -74,23 +74,25 @@
     <section class="quick-start">
       <h2>Quick Start</h2>
       <pre><code>import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
 
 // Load from ZIP file (skip shapes.txt to reduce memory)
 const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  adapter: await createSqlJsAdapter(),
   skipFiles: ['shapes.txt']
 });
 
 // Get all routes (using flexible API)
-const routes = gtfs.getRoutes();
+const routes = await gtfs.getRoutes();
 
 // Get stops for a trip
-const stops = gtfs.getStops({ tripId: 'trip_id' });
+const stops = await gtfs.getStops({ tripId: 'trip_id' });
 
 // Get active trips for a date
-const trips = gtfs.getTrips({ date: '20240115' });
+const trips = await gtfs.getTrips({ date: '20240115' });
 
 // Clean up
-gtfs.close();</code></pre>
+await gtfs.close();</code></pre>
     </section>
 
     <section class="api">
@@ -105,19 +107,11 @@ gtfs.close();</code></pre>
         <li><code>getStopTimes(filters?)</code> - Filter by: tripId, stopId, routeId, date, directionId, limit</li>
       </ul>
       <pre><code>// Example: Get trips for a route on a specific date going one direction
-const trips = gtfs.getTrips({
+const trips = await gtfs.getTrips({
   routeId: 'ROUTE_1',
   date: '20240115',
   directionId: 0
 });</code></pre>
-
-      <h3>Direct Lookup Methods</h3>
-      <ul>
-        <li><code>getStopById(stopId)</code> - Get stop by ID</li>
-        <li><code>getRouteById(routeId)</code> - Get route by ID</li>
-        <li><code>getTripById(tripId)</code> - Get trip by ID</li>
-        <li><code>getAgencyById(agencyId)</code> - Get agency by ID</li>
-      </ul>
 
       <h3>Calendar Methods</h3>
       <ul>
@@ -127,17 +121,33 @@ const trips = gtfs.getTrips({
         <li><code>getCalendarDatesForDate(date)</code> - Get exceptions for a specific date</li>
       </ul>
 
-      <h3>Special Methods</h3>
+      <h3>Shape Methods</h3>
       <ul>
-        <li><code>getStopTimesByTrip(tripId)</code> - Get stop times for a trip (ordered by stop_sequence)</li>
+        <li><code>getShapes(filters?)</code> - Get shape points, optionally filtered by shapeId</li>
+        <li><code>getShapesToGeojson(filters?, precision?)</code> - Get shapes as a GeoJSON FeatureCollection</li>
+        <li><code>buildOrderedStopList(tripIds)</code> - Build the ordered stop list for a set of trips</li>
+      </ul>
+
+      <h3>GTFS-Realtime Methods</h3>
+      <ul>
+        <li><code>setRealtimeFeedUrls(urls)</code> - Configure RT feed URLs</li>
+        <li><code>fetchRealtimeData(urls?)</code> - Fetch and load RT data</li>
+        <li><code>loadRealtimeDataFromBuffers(buffers)</code> - Load pre-fetched protobuf buffers</li>
+        <li><code>clearRealtimeData()</code> - Clear loaded RT data</li>
+        <li><code>getAlerts(filters?)</code> - Get service alerts</li>
+        <li><code>getVehiclePositions(filters?)</code> - Get vehicle positions</li>
+        <li><code>getTripUpdates(filters?)</code> - Get trip updates</li>
+        <li><code>getStopTimeUpdates(filters?)</code> - Get stop-time updates</li>
       </ul>
 
       <h3>Database Methods</h3>
       <ul>
-        <li><code>export()</code> - Export database to ArrayBuffer</li>
-        <li><code>getDatabase()</code> - Get direct access to sql.js database</li>
-        <li><code>close()</code> - Close database connection</li>
+        <li><code>export()</code> - Export database to <code>ArrayBuffer</code> (async; throws <code>ExportNotSupportedError</code> on file-backed adapters)</li>
+        <li><code>getDatabase()</code> - Get the underlying <code>GtfsDatabase</code> adapter handle (async <code>prepare</code>/<code>run</code>/<code>export</code>/<code>close</code>)</li>
+        <li><code>close()</code> - Close database connection (async)</li>
       </ul>
+
+      <p class="api-note">All query methods return <code>Promise&lt;T&gt;</code>. Direct lookups like <code>getStopById</code> / <code>getRouteById</code> / <code>getTripById</code> / <code>getAgencyById</code> have been replaced by the filter-based methods above (e.g. <code>getStops({ stopId })</code>).</p>
     </section>
 
     <section class="author">
