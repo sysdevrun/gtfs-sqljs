@@ -1,4 +1,4 @@
-import type { Database, ParamsObject } from 'sql.js';
+import type { GtfsDatabase, Row } from '../adapters/types';
 import type { StopTimeUpdate } from '../types/gtfs-rt';
 
 export interface StopTimeUpdateFilters {
@@ -11,7 +11,7 @@ export interface StopTimeUpdateFilters {
 /**
  * Parse stop time update from database row (includes trip_id and rt_last_updated)
  */
-function parseStopTimeUpdate(row: ParamsObject): StopTimeUpdate {
+function parseStopTimeUpdate(row: Row): StopTimeUpdate {
   const stu: StopTimeUpdate = {
     stop_sequence: row.stop_sequence !== null ? Number(row.stop_sequence) : undefined,
     stop_id: row.stop_id ? String(row.stop_id) : undefined,
@@ -46,11 +46,11 @@ function parseStopTimeUpdate(row: ParamsObject): StopTimeUpdate {
  * - Filters support both single values and arrays
  * - Returns stop time updates with trip_id and rt_last_updated populated
  */
-export function getStopTimeUpdates(
-  db: Database,
+export async function getStopTimeUpdates(
+  db: GtfsDatabase,
   filters: StopTimeUpdateFilters = {},
   stalenessThreshold: number = 120
-): StopTimeUpdate[] {
+): Promise<StopTimeUpdate[]> {
   const { tripId, stopId, stopSequence, limit } = filters;
 
   const conditions: string[] = [];
@@ -105,18 +105,18 @@ export function getStopTimeUpdates(
   }
 
   // Execute query
-  const stmt = db.prepare(sql);
+  const stmt = await db.prepare(sql);
   if (params.length > 0) {
-    stmt.bind(params);
+    await stmt.bind(params);
   }
 
   const stopTimeUpdates: StopTimeUpdate[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     stopTimeUpdates.push(parseStopTimeUpdate(row));
   }
 
-  stmt.free();
+  await stmt.free();
   return stopTimeUpdates;
 }
 
@@ -124,6 +124,6 @@ export function getStopTimeUpdates(
  * Get all stop time updates without staleness filtering (for debugging)
  * Convenience wrapper for getStopTimeUpdates() with no staleness threshold
  */
-export function getAllStopTimeUpdates(db: Database): StopTimeUpdate[] {
+export async function getAllStopTimeUpdates(db: GtfsDatabase): Promise<StopTimeUpdate[]> {
   return getStopTimeUpdates(db, {}, Number.MAX_SAFE_INTEGER);
 }

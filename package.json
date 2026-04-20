@@ -1,7 +1,7 @@
 {
   "name": "gtfs-sqljs",
   "version": "0.4.1",
-  "description": "Load GTFS data into sql.js SQLite database for querying in browser and Node.js",
+  "description": "Load GTFS data into a SQLite database (sql.js / better-sqlite3 / op-sqlite / expo-sqlite) via a pluggable adapter",
   "type": "module",
   "main": "./dist/index.js",
   "types": "./dist/index.d.ts",
@@ -9,6 +9,14 @@
     ".": {
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./adapters/sql-js": {
+      "types": "./dist/adapters/sql-js/index.d.ts",
+      "default": "./dist/adapters/sql-js/index.js"
+    },
+    "./adapters/better-sqlite3": {
+      "types": "./dist/adapters/better-sqlite3/index.d.ts",
+      "default": "./dist/adapters/better-sqlite3/index.js"
     }
   },
   "files": [
@@ -32,8 +40,12 @@
     "transit",
     "sqlite",
     "sql.js",
+    "better-sqlite3",
+    "op-sqlite",
+    "expo-sqlite",
     "browser",
-    "nodejs"
+    "nodejs",
+    "react-native"
   ],
   "author": "Théophile Helleboid/SysDevRun",
   "license": "MIT",
@@ -44,15 +56,29 @@
   "dependencies": {
     "jszip": "^3.10.1",
     "papaparse": "^5.5.3",
-    "protobufjs": "^8.0.0",
-    "sql.js": "1.13.0"
+    "protobufjs": "^8.0.0"
+  },
+  "peerDependencies": {
+    "better-sqlite3": ">=10",
+    "sql.js": "1.x"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    },
+    "sql.js": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@eslint/js": "^9.39.3",
+    "@types/better-sqlite3": "^7.6.11",
     "@types/node": "^25.3.1",
     "@types/papaparse": "^5.5.0",
     "@types/sql.js": "^1.4.9",
+    "better-sqlite3": "^11.3.0",
     "eslint": "^9.39.3",
+    "sql.js": "1.13.0",
     "tsup": "^8.0.1",
     "typedoc": "^0.28.17",
     "typescript": "^5.9.3",

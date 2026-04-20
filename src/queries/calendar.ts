@@ -2,13 +2,13 @@
  * Calendar Query Methods
  */
 
-import type { Database, ParamsObject } from 'sql.js';
+import type { GtfsDatabase, Row } from '../adapters/types';
 import type { Calendar, CalendarDate } from '../types/gtfs';
 
 /**
  * Get active service IDs for a given date
  */
-export function getActiveServiceIds(db: Database, date: string): string[] {
+export async function getActiveServiceIds(db: GtfsDatabase, date: string): Promise<string[]> {
   const serviceIds = new Set<string>();
 
   // Parse date (format: YYYYMMDD)
@@ -23,26 +23,26 @@ export function getActiveServiceIds(db: Database, date: string): string[] {
   const dayField = dayFields[dayOfWeek];
 
   // Check calendar.txt for regular service
-  const calendarStmt = db.prepare(
+  const calendarStmt = await db.prepare(
     `SELECT service_id FROM calendar
      WHERE ${dayField} = 1
      AND start_date <= ?
      AND end_date >= ?`
   );
-  calendarStmt.bind([date, date]);
+  await calendarStmt.bind([date, date]);
 
-  while (calendarStmt.step()) {
-    const row = calendarStmt.getAsObject() as { service_id: string };
+  while (await calendarStmt.step()) {
+    const row = await calendarStmt.getAsObject() as { service_id: string };
     serviceIds.add(row.service_id);
   }
-  calendarStmt.free();
+  await calendarStmt.free();
 
   // Check calendar_dates.txt for exceptions
-  const exceptionsStmt = db.prepare('SELECT service_id, exception_type FROM calendar_dates WHERE date = ?');
-  exceptionsStmt.bind([date]);
+  const exceptionsStmt = await db.prepare('SELECT service_id, exception_type FROM calendar_dates WHERE date = ?');
+  await exceptionsStmt.bind([date]);
 
-  while (exceptionsStmt.step()) {
-    const row = exceptionsStmt.getAsObject() as { service_id: string; exception_type: number };
+  while (await exceptionsStmt.step()) {
+    const row = await exceptionsStmt.getAsObject() as { service_id: string; exception_type: number };
     if (row.exception_type === 1) {
       // Service added
       serviceIds.add(row.service_id);
@@ -51,7 +51,7 @@ export function getActiveServiceIds(db: Database, date: string): string[] {
       serviceIds.delete(row.service_id);
     }
   }
-  exceptionsStmt.free();
+  await exceptionsStmt.free();
 
   return Array.from(serviceIds);
 }
@@ -59,58 +59,58 @@ export function getActiveServiceIds(db: Database, date: string): string[] {
 /**
  * Get calendar entry by service_id
  */
-export function getCalendarByServiceId(db: Database, serviceId: string): Calendar | null {
-  const stmt = db.prepare('SELECT * FROM calendar WHERE service_id = ?');
-  stmt.bind([serviceId]);
+export async function getCalendarByServiceId(db: GtfsDatabase, serviceId: string): Promise<Calendar | null> {
+  const stmt = await db.prepare('SELECT * FROM calendar WHERE service_id = ?');
+  await stmt.bind([serviceId]);
 
-  if (stmt.step()) {
-    const row = stmt.getAsObject();
-    stmt.free();
+  if (await stmt.step()) {
+    const row = await stmt.getAsObject();
+    await stmt.free();
     return rowToCalendar(row);
   }
 
-  stmt.free();
+  await stmt.free();
   return null;
 }
 
 /**
  * Get calendar date exceptions for a service
  */
-export function getCalendarDates(db: Database, serviceId: string): CalendarDate[] {
-  const stmt = db.prepare('SELECT * FROM calendar_dates WHERE service_id = ? ORDER BY date');
-  stmt.bind([serviceId]);
+export async function getCalendarDates(db: GtfsDatabase, serviceId: string): Promise<CalendarDate[]> {
+  const stmt = await db.prepare('SELECT * FROM calendar_dates WHERE service_id = ? ORDER BY date');
+  await stmt.bind([serviceId]);
 
   const dates: CalendarDate[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     dates.push(rowToCalendarDate(row));
   }
 
-  stmt.free();
+  await stmt.free();
   return dates;
 }
 
 /**
  * Get calendar date exceptions for a specific date
  */
-export function getCalendarDatesForDate(db: Database, date: string): CalendarDate[] {
-  const stmt = db.prepare('SELECT * FROM calendar_dates WHERE date = ?');
-  stmt.bind([date]);
+export async function getCalendarDatesForDate(db: GtfsDatabase, date: string): Promise<CalendarDate[]> {
+  const stmt = await db.prepare('SELECT * FROM calendar_dates WHERE date = ?');
+  await stmt.bind([date]);
 
   const dates: CalendarDate[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     dates.push(rowToCalendarDate(row));
   }
 
-  stmt.free();
+  await stmt.free();
   return dates;
 }
 
 /**
  * Convert database row to Calendar object
  */
-function rowToCalendar(row: ParamsObject): Calendar {
+function rowToCalendar(row: Row): Calendar {
   return {
     service_id: String(row.service_id),
     monday: Number(row.monday),
@@ -128,7 +128,7 @@ function rowToCalendar(row: ParamsObject): Calendar {
 /**
  * Convert database row to CalendarDate object
  */
-function rowToCalendarDate(row: ParamsObject): CalendarDate {
+function rowToCalendarDate(row: Row): CalendarDate {
   return {
     service_id: String(row.service_id),
     date: String(row.date),

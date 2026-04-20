@@ -2,7 +2,7 @@
  * Helper to create a test database with sample GTFS data
  */
 
-import type { Database, SqlJsStatic } from 'sql.js';
+import type { SqlJsStatic } from 'sql.js';
 import { getAllCreateStatements } from '../../src/schema/schema';
 
 export async function createTestDatabase(SQL: SqlJsStatic): Promise<ArrayBuffer> {

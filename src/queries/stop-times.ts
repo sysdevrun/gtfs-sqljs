@@ -2,7 +2,7 @@
  * Stop Time Query Methods
  */
 
-import type { Database, ParamsObject } from 'sql.js';
+import type { GtfsDatabase, Row } from '../adapters/types';
 import type { StopTime, Stop } from '../types/gtfs';
 import type { StopTimeRealtime } from '../types/gtfs-rt';
 import type { PickupDropOffType } from '../types/gtfs-enums';
@@ -38,11 +38,11 @@ export interface StopTimeWithRealtime extends StopTime {
 /**
  * Merge realtime data with stop times
  */
-function mergeRealtimeData(
+async function mergeRealtimeData(
   stopTimes: StopTime[],
-  db: Database,
+  db: GtfsDatabase,
   stalenessThreshold: number
-): StopTimeWithRealtime[] {
+): Promise<StopTimeWithRealtime[]> {
   const now = Math.floor(Date.now() / 1000);
   const staleThreshold = now - stalenessThreshold;
 
@@ -51,19 +51,19 @@ function mergeRealtimeData(
   if (tripIds.length === 0) return stopTimes;
 
   const placeholders = tripIds.map(() => '?').join(', ');
-  const stmt = db.prepare(`
+  const stmt = await db.prepare(`
     SELECT trip_id, stop_sequence, stop_id,
            arrival_delay, arrival_time, departure_delay, departure_time, schedule_relationship
     FROM rt_stop_time_updates
     WHERE trip_id IN (${placeholders})
       AND rt_last_updated >= ?
   `);
-  stmt.bind([...tripIds, staleThreshold]);
+  await stmt.bind([...tripIds, staleThreshold]);
 
   // Build map of trip_id+stop_sequence -> RT data
   const rtMap = new Map<string, StopTimeRealtime>();
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     const key = `${row.trip_id}_${row.stop_sequence}`;
     rtMap.set(key, {
       arrival_delay: row.arrival_delay !== null ? Number(row.arrival_delay) : undefined,
@@ -73,7 +73,7 @@ function mergeRealtimeData(
       schedule_relationship: row.schedule_relationship !== null ? Number(row.schedule_relationship) : undefined
     });
   }
-  stmt.free();
+  await stmt.free();
 
   // Merge RT data with stop times
   return stopTimes.map((st): StopTimeWithRealtime => {
@@ -91,11 +91,11 @@ function mergeRealtimeData(
  * Get stop times with optional filters
  * - Filters support both single values and arrays
  */
-export function getStopTimes(
-  db: Database,
+export async function getStopTimes(
+  db: GtfsDatabase,
   filters: StopTimeFilters = {},
   stalenessThreshold: number = 120
-): StopTime[] | StopTimeWithRealtime[] {
+): Promise<StopTime[] | StopTimeWithRealtime[]> {
   const { tripId, stopId, routeId, serviceIds, directionId, agencyId, pickupType, dropOffType, includeRealtime, limit } = filters;
 
   // Determine if we need to join with trips and/or routes table
@@ -202,18 +202,18 @@ export function getStopTimes(
     params.push(limit);
   }
 
-  const stmt = db.prepare(sql);
+  const stmt = await db.prepare(sql);
   if (params.length > 0) {
-    stmt.bind(params);
+    await stmt.bind(params);
   }
 
   const stopTimes: StopTime[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     stopTimes.push(rowToStopTime(row));
   }
 
-  stmt.free();
+  await stmt.free();
 
   // Merge realtime data if requested
   if (includeRealtime) {
@@ -243,26 +243,26 @@ export function getStopTimes(
  * @param tripIds - Array of trip IDs to analyze
  * @returns Ordered array of Stop objects representing all unique stops
  */
-export function buildOrderedStopList(db: Database, tripIds: string[]): Stop[] {
+export async function buildOrderedStopList(db: GtfsDatabase, tripIds: string[]): Promise<Stop[]> {
   if (tripIds.length === 0) {
     return [];
   }
 
   // Fetch all stop times for the given trips, ordered by trip and sequence
   const placeholders = tripIds.map(() => '?').join(', ');
-  const stmt = db.prepare(`
+  const stmt = await db.prepare(`
     SELECT trip_id, stop_id, stop_sequence
     FROM stop_times
     WHERE trip_id IN (${placeholders})
     ORDER BY trip_id, stop_sequence
   `);
-  stmt.bind(tripIds);
+  await stmt.bind(tripIds);
 
   // Group stop times by trip
   const tripStopSequences = new Map<string, Array<{ stop_id: string; stop_sequence: number }>>();
 
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     const tripId = String(row.trip_id);
     const stopId = String(row.stop_id);
     const stopSequence = Number(row.stop_sequence);
@@ -272,7 +272,7 @@ export function buildOrderedStopList(db: Database, tripIds: string[]): Stop[] {
     }
     tripStopSequences.get(tripId)?.push({ stop_id: stopId, stop_sequence: stopSequence });
   }
-  stmt.free();
+  await stmt.free();
 
   // Build the ordered list of stop IDs
   const orderedStopIds: string[] = [];
@@ -308,7 +308,7 @@ export function buildOrderedStopList(db: Database, tripIds: string[]): Stop[] {
   }
 
   // Get all stops in a single query
-  const stops = getStops(db, { stopId: orderedStopIds });
+  const stops = await getStops(db, { stopId: orderedStopIds });
 
   // Create a map for quick lookup
   const stopMap = new Map<string, Stop>();
@@ -377,7 +377,7 @@ function findInsertionPosition(
 /**
  * Convert database row to StopTime object
  */
-function rowToStopTime(row: ParamsObject): StopTime {
+function rowToStopTime(row: Row): StopTime {
   return {
     trip_id: String(row.trip_id),
     arrival_time: row.arrival_time ? String(row.arrival_time) : undefined,

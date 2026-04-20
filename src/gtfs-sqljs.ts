@@ -2,7 +2,6 @@
  * Main GtfsSqlJs Class
  */
 
-import initSqlJs, { type Database, type SqlJsStatic } from 'sql.js';
 import { getAllCreateTableStatements, getAllCreateIndexStatements } from './schema/schema';
 import { loadGTFSZip, fetchZip } from './loaders/zip-loader';
 import { loadGTFSData } from './loaders/data-loader';
@@ -11,6 +10,8 @@ import { loadRealtimeData, loadRealtimeDataFromBuffers } from './loaders/gtfs-rt
 import type { CacheStore } from './cache/types';
 import { computeZipChecksum, generateCacheKey } from './cache/checksum';
 import { DEFAULT_CACHE_EXPIRATION_MS, isCacheExpired } from './cache/utils';
+import type { GtfsDatabase, GtfsDatabaseAdapter } from './adapters/types';
+import { ExportNotSupportedError } from './adapters/types';
 
 // Library version from package.json
 const LIB_VERSION = '0.1.0';
@@ -85,14 +86,11 @@ export interface GtfsSqlJsOptions {
   database?: ArrayBuffer;
 
   /**
-   * Optional: Custom SQL.js instance
+   * Required: database adapter factory. Use `createSqlJsAdapter()` from
+   * `gtfs-sqljs/adapters/sql-js` for the browser/Node sql.js path, or plug
+   * in a custom adapter (op-sqlite, expo-sqlite, better-sqlite3, …).
    */
-  SQL?: SqlJsStatic;
-
-  /**
-   * Optional: Path to SQL.js WASM file (for custom loading)
-   */
-  locateFile?: (filename: string) => string;
+  adapter: GtfsDatabaseAdapter;
 
   /**
    * Optional: Array of GTFS filenames to skip importing (e.g., ['shapes.txt'])
@@ -142,9 +140,37 @@ export interface GtfsSqlJsOptions {
   cacheExpirationMs?: number;
 }
 
+/**
+ * Options for `GtfsSqlJs.attach()` — when the caller already has a live DB handle.
+ */
+export interface GtfsSqlJsAttachOptions {
+  /**
+   * When `true`, assume the GTFS schema already exists in the attached DB
+   * and skip the `CREATE TABLE IF NOT EXISTS` DDL. Defaults to `false`:
+   * the library runs the idempotent schema DDL so that attaching to a fresh
+   * empty DB still works.
+   */
+  skipSchema?: boolean;
+
+  /**
+   * When `true`, `GtfsSqlJs.close()` will also close the underlying adapter
+   * handle. Defaults to `false` — callers retain ownership of handles they
+   * passed in via `attach()`.
+   */
+  ownsDatabase?: boolean;
+
+  /** Optional: Array of GTFS-RT feed URLs for realtime data */
+  realtimeFeedUrls?: string[];
+
+  /** Optional: Staleness threshold in seconds (default: 120) */
+  stalenessThreshold?: number;
+}
+
+type FactoryOptions = Omit<GtfsSqlJsOptions, 'zipPath' | 'database'>;
+
 export class GtfsSqlJs {
-  private db: Database | null = null;
-  private SQL: SqlJsStatic | null = null;
+  private db: GtfsDatabase | null = null;
+  private ownsDatabase: boolean = true;
   private realtimeFeedUrls: string[] = [];
   private stalenessThreshold: number = 120;
   private lastRealtimeFetchTimestamp: number | null = null;
@@ -159,8 +185,9 @@ export class GtfsSqlJs {
    */
   static async fromZip(
     zipPath: string,
-    options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'> = {}
+    options: FactoryOptions
   ): Promise<GtfsSqlJs> {
+    assertAdapter(options, 'fromZip');
     const zipData = await fetchZip(zipPath, options.onProgress);
     return GtfsSqlJs.fromZipData(zipData, options, zipPath);
   }
@@ -171,9 +198,10 @@ export class GtfsSqlJs {
    */
   static async fromZipData(
     zipData: ArrayBuffer | Uint8Array,
-    options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'> = {},
+    options: FactoryOptions,
     source?: string
   ): Promise<GtfsSqlJs> {
+    assertAdapter(options, 'fromZipData');
     const instance = new GtfsSqlJs();
     await instance.initFromZipData(zipData, options, source);
     return instance;
@@ -184,10 +212,45 @@ export class GtfsSqlJs {
    */
   static async fromDatabase(
     database: ArrayBuffer,
-    options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'> = {}
+    options: FactoryOptions
   ): Promise<GtfsSqlJs> {
+    assertAdapter(options, 'fromDatabase');
     const instance = new GtfsSqlJs();
     await instance.initFromDatabase(database, options);
+    return instance;
+  }
+
+  /**
+   * Attach to a pre-opened database handle.
+   *
+   * Use this path when the caller already owns a live `GtfsDatabase`
+   * (typical for file-backed native drivers: op-sqlite, expo-sqlite,
+   * better-sqlite3). No adapter factory is needed — the handle *is* the
+   * adapter output.
+   */
+  static async attach(
+    db: GtfsDatabase,
+    options: GtfsSqlJsAttachOptions = {}
+  ): Promise<GtfsSqlJs> {
+    const instance = new GtfsSqlJs();
+    instance.db = db;
+    instance.ownsDatabase = options.ownsDatabase === true;
+
+    if (!options.skipSchema) {
+      const createTableStatements = getAllCreateTableStatements();
+      for (const statement of createTableStatements) {
+        await db.run(statement);
+      }
+      await createRealtimeTables(db);
+    }
+
+    if (options.realtimeFeedUrls) {
+      instance.realtimeFeedUrls = options.realtimeFeedUrls;
+    }
+    if (options.stalenessThreshold !== undefined) {
+      instance.stalenessThreshold = options.stalenessThreshold;
+    }
+
     return instance;
   }
 
@@ -195,17 +258,19 @@ export class GtfsSqlJs {
    * Initialize from pre-loaded ZIP data
    * @param source - Optional original path/URL, used for cache key generation and metadata
    */
-  private async initFromZipData(zipData: ArrayBuffer | Uint8Array, options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'>, source?: string): Promise<void> {
+  private async initFromZipData(
+    zipData: ArrayBuffer | Uint8Array,
+    options: FactoryOptions,
+    source?: string
+  ): Promise<void> {
     const onProgress = options.onProgress;
     const {
       cache: userCache,
       cacheVersion = '1.0',
       cacheExpirationMs = DEFAULT_CACHE_EXPIRATION_MS,
-      skipFiles
+      skipFiles,
+      adapter,
     } = options;
-
-    // Initialize SQL.js
-    this.SQL = options.SQL || (await initSqlJs(options.locateFile ? { locateFile: options.locateFile } : {}));
 
     // Determine cache store to use
     // Cache store must be provided explicitly by the user
@@ -275,7 +340,8 @@ export class GtfsSqlJs {
             message: 'Loading from cache...',
           });
 
-          this.db = new this.SQL.Database(new Uint8Array(cacheEntry.data));
+          this.db = await adapter.openFromBuffer(new Uint8Array(cacheEntry.data));
+          this.ownsDatabase = true;
 
           // Set RT configuration
           if (options.realtimeFeedUrls) {
@@ -315,15 +381,26 @@ export class GtfsSqlJs {
         message: 'Saving to cache...',
       });
 
-      const dbBuffer = this.export();
-      await cache.set(cacheKey, dbBuffer, {
-        checksum,
-        version: cacheVersion,
-        timestamp: Date.now(),
-        source,
-        size: dbBuffer.byteLength,
-        skipFiles,
-      });
+      try {
+        const dbBuffer = await this.export();
+        await cache.set(cacheKey, dbBuffer, {
+          checksum,
+          version: cacheVersion,
+          timestamp: Date.now(),
+          source,
+          size: dbBuffer.byteLength,
+          skipFiles,
+        });
+      } catch (error) {
+        if (error instanceof ExportNotSupportedError) {
+          console.warn(
+            'Skipping cache write: the active adapter does not support export(). ' +
+            'File-backed adapters persist their own DB on disk and do not need the library cache.'
+          );
+        } else {
+          throw error;
+        }
+      }
 
       onProgress?.({
         phase: 'complete',
@@ -360,15 +437,12 @@ export class GtfsSqlJs {
    */
   private async loadFromZipData(
     zipData: ArrayBuffer | Uint8Array,
-    options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'>,
+    options: FactoryOptions,
     onProgress?: ProgressCallback
   ): Promise<void> {
-    if (!this.SQL) {
-      throw new Error('SQL.js not initialized');
-    }
-
-    // Create new database
-    this.db = new this.SQL.Database();
+    // Create new database via the adapter
+    this.db = await options.adapter.createEmpty();
+    this.ownsDatabase = true;
 
     // Create GTFS tables (without indexes)
     onProgress?.({
@@ -384,11 +458,11 @@ export class GtfsSqlJs {
 
     const createTableStatements = getAllCreateTableStatements();
     for (const statement of createTableStatements) {
-      this.db.run(statement);
+      await this.db.run(statement);
     }
 
     // Create GTFS-RT tables
-    createRealtimeTables(this.db);
+    await createRealtimeTables(this.db);
 
     // Extract files from zip
     onProgress?.({
@@ -433,7 +507,7 @@ export class GtfsSqlJs {
     const createIndexStatements = getAllCreateIndexStatements();
     let indexCount = 0;
     for (const statement of createIndexStatements) {
-      this.db.run(statement);
+      await this.db.run(statement);
       indexCount++;
       const indexProgress = 75 + Math.floor((indexCount / createIndexStatements.length) * 10);
       onProgress?.({
@@ -460,7 +534,7 @@ export class GtfsSqlJs {
       message: 'Optimizing query performance',
     });
 
-    this.db.run('ANALYZE');
+    await this.db.run('ANALYZE');
 
     // Set RT configuration
     if (options.realtimeFeedUrls) {
@@ -497,16 +571,13 @@ export class GtfsSqlJs {
    */
   private async initFromDatabase(
     database: ArrayBuffer,
-    options: Omit<GtfsSqlJsOptions, 'zipPath' | 'database'>
+    options: FactoryOptions
   ): Promise<void> {
-    // Initialize SQL.js
-    this.SQL = options.SQL || (await initSqlJs(options.locateFile ? { locateFile: options.locateFile } : {}));
-
-    // Load existing database
-    this.db = new this.SQL.Database(new Uint8Array(database));
+    this.db = await options.adapter.openFromBuffer(new Uint8Array(database));
+    this.ownsDatabase = true;
 
     // Ensure RT tables exist (in case loading old database)
-    createRealtimeTables(this.db);
+    await createRealtimeTables(this.db);
 
     // Set RT configuration
     if (options.realtimeFeedUrls) {
@@ -519,13 +590,16 @@ export class GtfsSqlJs {
 
   /**
    * Export database to ArrayBuffer
+   *
+   * Throws `ExportNotSupportedError` if the active adapter is file-backed
+   * and cannot serialize the database to bytes.
    */
-  export(): ArrayBuffer {
+  async export(): Promise<ArrayBuffer> {
     if (!this.db) {
       throw new Error('Database not initialized');
     }
 
-    const data = this.db.export();
+    const data = await this.db.export();
     // Create a new ArrayBuffer and copy the data to ensure proper type
     const buffer = new ArrayBuffer(data.length);
     new Uint8Array(buffer).set(data);
@@ -533,19 +607,25 @@ export class GtfsSqlJs {
   }
 
   /**
-   * Close the database connection
+   * Close the database connection.
+   *
+   * When the library itself created the DB handle (via `fromZip`,
+   * `fromZipData`, `fromDatabase`, or when `attach()` was called with
+   * `ownsDatabase: true`), this also closes the underlying adapter. For
+   * handles passed to `attach()` without `ownsDatabase`, this is a no-op
+   * beyond clearing the internal reference — the caller owns the handle.
    */
-  close(): void {
-    if (this.db) {
-      this.db.close();
-      this.db = null;
+  async close(): Promise<void> {
+    if (this.db && this.ownsDatabase) {
+      await this.db.close();
     }
+    this.db = null;
   }
 
   /**
-   * Get direct access to the database (for advanced queries)
+   * Get direct access to the underlying adapter database handle (for advanced queries).
    */
-  getDatabase(): Database {
+  getDatabase(): GtfsDatabase {
     if (!this.db) {
       throw new Error('Database not initialized');
     }
@@ -558,7 +638,7 @@ export class GtfsSqlJs {
    * Get agencies with optional filters
    * Pass agencyId filter to get a specific agency
    */
-  getAgencies(filters?: AgencyFilters): Agency[] {
+  async getAgencies(filters?: AgencyFilters): Promise<Agency[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getAgencies(this.db, filters);
   }
@@ -569,7 +649,7 @@ export class GtfsSqlJs {
    * Get stops with optional filters
    * Pass stopId filter to get a specific stop
    */
-  getStops(filters?: StopFilters): Stop[] {
+  async getStops(filters?: StopFilters): Promise<Stop[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getStops(this.db, filters);
   }
@@ -580,7 +660,7 @@ export class GtfsSqlJs {
    * Get routes with optional filters
    * Pass routeId filter to get a specific route
    */
-  getRoutes(filters?: RouteFilters): Route[] {
+  async getRoutes(filters?: RouteFilters): Promise<Route[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getRoutes(this.db, filters);
   }
@@ -590,7 +670,7 @@ export class GtfsSqlJs {
   /**
    * Get active service IDs for a given date (YYYYMMDD format)
    */
-  getActiveServiceIds(date: string): string[] {
+  async getActiveServiceIds(date: string): Promise<string[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getActiveServiceIds(this.db, date);
   }
@@ -598,7 +678,7 @@ export class GtfsSqlJs {
   /**
    * Get calendar entry by service_id
    */
-  getCalendarByServiceId(serviceId: string): Calendar | null {
+  async getCalendarByServiceId(serviceId: string): Promise<Calendar | null> {
     if (!this.db) throw new Error('Database not initialized');
     return getCalendarByServiceId(this.db, serviceId);
   }
@@ -606,7 +686,7 @@ export class GtfsSqlJs {
   /**
    * Get calendar date exceptions for a service
    */
-  getCalendarDates(serviceId: string): CalendarDate[] {
+  async getCalendarDates(serviceId: string): Promise<CalendarDate[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getCalendarDates(this.db, serviceId);
   }
@@ -614,7 +694,7 @@ export class GtfsSqlJs {
   /**
    * Get calendar date exceptions for a specific date
    */
-  getCalendarDatesForDate(date: string): CalendarDate[] {
+  async getCalendarDatesForDate(date: string): Promise<CalendarDate[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getCalendarDatesForDate(this.db, date);
   }
@@ -624,28 +704,8 @@ export class GtfsSqlJs {
   /**
    * Get trips with optional filters
    * Pass tripId filter to get a specific trip
-   *
-   * @param filters - Optional filters
-   * @param filters.tripId - Filter by trip ID (single value or array)
-   * @param filters.routeId - Filter by route ID (single value or array)
-   * @param filters.date - Filter by date (YYYYMMDD format) - will get active services for that date
-   * @param filters.directionId - Filter by direction ID (single value or array)
-   * @param filters.agencyId - Filter by agency ID (single value or array)
-   * @param filters.limit - Limit number of results
-   *
-   * @example
-   * // Get all trips for a route on a specific date
-   * const trips = gtfs.getTrips({ routeId: 'ROUTE_1', date: '20240115' });
-   *
-   * @example
-   * // Get all trips for a route going in one direction
-   * const trips = gtfs.getTrips({ routeId: 'ROUTE_1', directionId: 0 });
-   *
-   * @example
-   * // Get a specific trip
-   * const trips = gtfs.getTrips({ tripId: 'TRIP_123' });
    */
-  getTrips(filters?: TripFilters & { date?: string }): Trip[] {
+  async getTrips(filters?: TripFilters & { date?: string }): Promise<Trip[]> {
     if (!this.db) throw new Error('Database not initialized');
 
     // Handle date parameter by converting it to serviceIds
@@ -653,7 +713,7 @@ export class GtfsSqlJs {
     const finalFilters = { ...restFilters };
 
     if (date) {
-      const serviceIds = getActiveServiceIds(this.db, date);
+      const serviceIds = await getActiveServiceIds(this.db, date);
       finalFilters.serviceIds = serviceIds;
     }
 
@@ -664,75 +724,16 @@ export class GtfsSqlJs {
 
   /**
    * Get shapes with optional filters
-   *
-   * @param filters - Optional filters
-   * @param filters.shapeId - Filter by shape ID (single value or array)
-   * @param filters.routeId - Filter by route ID (single value or array) - joins with trips table
-   * @param filters.tripId - Filter by trip ID (single value or array) - joins with trips table
-   * @param filters.limit - Limit number of results
-   *
-   * @example
-   * // Get all points for a specific shape
-   * const shapes = gtfs.getShapes({ shapeId: 'SHAPE_1' });
-   *
-   * @example
-   * // Get shapes for a specific route
-   * const shapes = gtfs.getShapes({ routeId: 'ROUTE_1' });
-   *
-   * @example
-   * // Get shapes for multiple trips
-   * const shapes = gtfs.getShapes({ tripId: ['TRIP_1', 'TRIP_2'] });
    */
-  getShapes(filters?: ShapeFilters): Shape[] {
+  async getShapes(filters?: ShapeFilters): Promise<Shape[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getShapes(this.db, filters);
   }
 
   /**
    * Get shapes as GeoJSON FeatureCollection
-   *
-   * Each shape is converted to a LineString Feature with route properties.
-   * Coordinates are in [longitude, latitude] format per GeoJSON spec.
-   *
-   * @param filters - Optional filters (same as getShapes)
-   * @param filters.shapeId - Filter by shape ID (single value or array)
-   * @param filters.routeId - Filter by route ID (single value or array)
-   * @param filters.tripId - Filter by trip ID (single value or array)
-   * @param filters.limit - Limit number of results
-   * @param precision - Number of decimal places for coordinates (default: 6, ~10cm precision)
-   *
-   * @returns GeoJSON FeatureCollection with LineString features
-   *
-   * @example
-   * // Get all shapes as GeoJSON
-   * const geojson = gtfs.getShapesToGeojson();
-   *
-   * @example
-   * // Get shapes for a route with lower precision
-   * const geojson = gtfs.getShapesToGeojson({ routeId: 'ROUTE_1' }, 5);
-   *
-   * @example
-   * // Result structure:
-   * // {
-   * //   type: 'FeatureCollection',
-   * //   features: [{
-   * //     type: 'Feature',
-   * //     properties: {
-   * //       shape_id: 'SHAPE_1',
-   * //       route_id: 'ROUTE_1',
-   * //       route_short_name: '1',
-   * //       route_long_name: 'Main Street',
-   * //       route_type: 3,
-   * //       route_color: 'FF0000'
-   * //     },
-   * //     geometry: {
-   * //       type: 'LineString',
-   * //       coordinates: [[-122.123456, 37.123456], ...]
-   * //     }
-   * //   }]
-   * // }
    */
-  getShapesToGeojson(filters?: ShapeFilters, precision: number = 6): GeoJsonFeatureCollection {
+  async getShapesToGeojson(filters?: ShapeFilters, precision: number = 6): Promise<GeoJsonFeatureCollection> {
     if (!this.db) throw new Error('Database not initialized');
     return getShapesToGeojson(this.db, filters, precision);
   }
@@ -741,37 +742,8 @@ export class GtfsSqlJs {
 
   /**
    * Get stop times with optional filters
-   *
-   * @param filters - Optional filters
-   * @param filters.tripId - Filter by trip ID (single value or array)
-   * @param filters.stopId - Filter by stop ID (single value or array)
-   * @param filters.routeId - Filter by route ID (single value or array)
-   * @param filters.date - Filter by date (YYYYMMDD format) - will get active services for that date
-   * @param filters.directionId - Filter by direction ID (single value or array)
-   * @param filters.agencyId - Filter by agency ID (single value or array)
-   * @param filters.includeRealtime - Include realtime data (delay and time fields)
-   * @param filters.limit - Limit number of results
-   *
-   * @example
-   * // Get stop times for a specific trip
-   * const stopTimes = gtfs.getStopTimes({ tripId: 'TRIP_123' });
-   *
-   * @example
-   * // Get stop times at a stop for a specific route on a date
-   * const stopTimes = gtfs.getStopTimes({
-   *   stopId: 'STOP_123',
-   *   routeId: 'ROUTE_1',
-   *   date: '20240115'
-   * });
-   *
-   * @example
-   * // Get stop times with realtime data
-   * const stopTimes = gtfs.getStopTimes({
-   *   tripId: 'TRIP_123',
-   *   includeRealtime: true
-   * });
    */
-  getStopTimes(filters?: StopTimeFilters & { date?: string }): StopTime[] {
+  async getStopTimes(filters?: StopTimeFilters & { date?: string }): Promise<StopTime[]> {
     if (!this.db) throw new Error('Database not initialized');
 
     // Handle date parameter by converting it to serviceIds
@@ -779,7 +751,7 @@ export class GtfsSqlJs {
     const finalFilters = { ...restFilters };
 
     if (date) {
-      const serviceIds = getActiveServiceIds(this.db, date);
+      const serviceIds = await getActiveServiceIds(this.db, date);
       finalFilters.serviceIds = serviceIds;
     }
 
@@ -788,31 +760,8 @@ export class GtfsSqlJs {
 
   /**
    * Build an ordered list of stops from multiple trips
-   *
-   * This is useful when you need to display a timetable for a route where different trips
-   * may stop at different sets of stops (e.g., express vs local service, or trips with
-   * different start/end points).
-   *
-   * The method intelligently merges stop sequences from all provided trips to create
-   * a comprehensive ordered list of all unique stops.
-   *
-   * @param tripIds - Array of trip IDs to analyze
-   * @returns Ordered array of Stop objects representing all unique stops
-   *
-   * @example
-   * // Get all trips for a route going in one direction
-   * const trips = gtfs.getTrips({ routeId: 'ROUTE_1', directionId: 0 });
-   * const tripIds = trips.map(t => t.trip_id);
-   *
-   * // Build ordered stop list for all these trips
-   * const stops = gtfs.buildOrderedStopList(tripIds);
-   *
-   * // Now you can display a timetable with all possible stops
-   * stops.forEach(stop => {
-   *   console.log(stop.stop_name);
-   * });
    */
-  buildOrderedStopList(tripIds: string[]): Stop[] {
+  async buildOrderedStopList(tripIds: string[]): Promise<Stop[]> {
     if (!this.db) throw new Error('Database not initialized');
     return buildOrderedStopList(this.db, tripIds);
   }
@@ -849,7 +798,6 @@ export class GtfsSqlJs {
 
   /**
    * Get timestamp of the last successful realtime data fetch and insertion
-   * @returns Unix timestamp in seconds, or null if no realtime data has been fetched
    */
   getLastRealtimeFetchTimestamp(): number | null {
     return this.lastRealtimeFetchTimestamp;
@@ -857,7 +805,6 @@ export class GtfsSqlJs {
 
   /**
    * Fetch and load GTFS Realtime data from configured feed URLs or provided URLs
-   * @param urls - Optional array of feed URLs. If not provided, uses configured feed URLs
    */
   async fetchRealtimeData(urls?: string[]): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
@@ -873,7 +820,6 @@ export class GtfsSqlJs {
 
   /**
    * Load GTFS Realtime data from pre-loaded protobuf buffers
-   * @param buffers - Array of Uint8Array protobuf-encoded GTFS-RT feed messages
    */
   async loadRealtimeDataFromBuffers(buffers: Uint8Array[]): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
@@ -885,91 +831,67 @@ export class GtfsSqlJs {
   /**
    * Clear all realtime data from the database
    */
-  clearRealtimeData(): void {
+  async clearRealtimeData(): Promise<void> {
     if (!this.db) throw new Error('Database not initialized');
-    clearRTData(this.db);
+    await clearRTData(this.db);
   }
 
   /**
    * Get alerts with optional filters
-   * Pass alertId filter to get a specific alert
    */
-  getAlerts(filters?: AlertFilters): Alert[] {
+  async getAlerts(filters?: AlertFilters): Promise<Alert[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getAlertsQuery(this.db, filters, this.stalenessThreshold);
   }
 
   /**
    * Get vehicle positions with optional filters
-   * Pass tripId filter to get vehicle position for a specific trip
    */
-  getVehiclePositions(filters?: VehiclePositionFilters): VehiclePosition[] {
+  async getVehiclePositions(filters?: VehiclePositionFilters): Promise<VehiclePosition[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getVehiclePositionsQuery(this.db, filters, this.stalenessThreshold);
   }
 
   /**
    * Get trip updates with optional filters
-   * Pass tripId filter to get trip update for a specific trip
    */
-  getTripUpdates(filters?: TripUpdateFilters): TripUpdate[] {
+  async getTripUpdates(filters?: TripUpdateFilters): Promise<TripUpdate[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getTripUpdates(this.db, filters, this.stalenessThreshold);
   }
 
   /**
    * Get stop time updates with optional filters
-   * Pass tripId filter to get stop time updates for a specific trip
    */
-  getStopTimeUpdates(filters?: StopTimeUpdateFilters): import('./types/gtfs-rt').StopTimeUpdate[] {
+  async getStopTimeUpdates(filters?: StopTimeUpdateFilters): Promise<import('./types/gtfs-rt').StopTimeUpdate[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getStopTimeUpdates(this.db, filters, this.stalenessThreshold);
   }
 
   // ==================== Debug Export Methods ====================
-  // These methods export all realtime data without staleness filtering
-  // for debugging purposes
 
-  /**
-   * Export all alerts without staleness filtering (for debugging)
-   */
-  debugExportAllAlerts(): Alert[] {
+  async debugExportAllAlerts(): Promise<Alert[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getAllAlerts(this.db);
   }
 
-  /**
-   * Export all vehicle positions without staleness filtering (for debugging)
-   */
-  debugExportAllVehiclePositions(): VehiclePosition[] {
+  async debugExportAllVehiclePositions(): Promise<VehiclePosition[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getAllVehiclePositions(this.db);
   }
 
-  /**
-   * Export all trip updates without staleness filtering (for debugging)
-   */
-  debugExportAllTripUpdates(): TripUpdate[] {
+  async debugExportAllTripUpdates(): Promise<TripUpdate[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getAllTripUpdates(this.db);
   }
 
-  /**
-   * Export all stop time updates without staleness filtering (for debugging)
-   * Returns stop time updates with trip_id and rt_last_updated populated
-   */
-  debugExportAllStopTimeUpdates(): StopTimeUpdate[] {
+  async debugExportAllStopTimeUpdates(): Promise<StopTimeUpdate[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getAllStopTimeUpdates(this.db);
   }
 
   // ==================== Cache Management Methods ====================
 
-  /**
-   * Get cache statistics
-   * @param cacheStore - Cache store to query (required)
-   * @returns Cache statistics including size, entry count, and age information
-   */
   static async getCacheStats(cacheStore: CacheStore) {
     const { getCacheStats } = await import('./cache/utils');
 
@@ -981,12 +903,6 @@ export class GtfsSqlJs {
     return getCacheStats(entries);
   }
 
-  /**
-   * Clean expired cache entries
-   * @param cacheStore - Cache store to clean (required)
-   * @param expirationMs - Expiration time in milliseconds (default: 7 days)
-   * @returns Number of entries deleted
-   */
   static async cleanExpiredCache(
     cacheStore: CacheStore,
     expirationMs: number = DEFAULT_CACHE_EXPIRATION_MS
@@ -1002,16 +918,11 @@ export class GtfsSqlJs {
       !filterExpiredEntries([entry], expirationMs).length
     );
 
-    // Delete expired entries
     await Promise.all(expiredEntries.map(entry => cacheStore.delete(entry.key)));
 
     return expiredEntries.length;
   }
 
-  /**
-   * Clear all cache entries
-   * @param cacheStore - Cache store to clear (required)
-   */
   static async clearCache(cacheStore: CacheStore): Promise<void> {
     if (!cacheStore) {
       throw new Error('Cache store is required');
@@ -1020,12 +931,6 @@ export class GtfsSqlJs {
     await cacheStore.clear();
   }
 
-  /**
-   * List all cache entries
-   * @param cacheStore - Cache store to query (required)
-   * @param includeExpired - Include expired entries (default: false)
-   * @returns Array of cache entries with metadata
-   */
   static async listCache(
     cacheStore: CacheStore,
     includeExpired: boolean = false
@@ -1043,5 +948,16 @@ export class GtfsSqlJs {
     }
 
     return filterExpiredEntries(entries);
+  }
+}
+
+function assertAdapter(options: FactoryOptions | undefined, method: string): void {
+  if (!options || !options.adapter) {
+    throw new Error(
+      `${method}() requires an \`adapter\`. Pass one via options — e.g. ` +
+      `import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js' and ` +
+      `set \`adapter: await createSqlJsAdapter()\`, or call GtfsSqlJs.attach() ` +
+      `with an already-open handle.`
+    );
   }
 }

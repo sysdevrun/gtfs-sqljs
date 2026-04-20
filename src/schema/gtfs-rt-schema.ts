@@ -1,11 +1,11 @@
-import type { Database } from 'sql.js';
+import type { GtfsDatabase } from '../adapters/types';
 
 /**
  * Create GTFS Realtime tables in the database
  */
-export function createRealtimeTables(db: Database): void {
+export async function createRealtimeTables(db: GtfsDatabase): Promise<void> {
   // Alerts table
-  db.run(`
+  await db.run(`
     CREATE TABLE IF NOT EXISTS rt_alerts (
       id TEXT PRIMARY KEY,
       active_period TEXT,           -- JSON array of TimeRange objects
@@ -20,10 +20,10 @@ export function createRealtimeTables(db: Database): void {
   `);
 
   // Create index on rt_last_updated for staleness filtering
-  db.run('CREATE INDEX IF NOT EXISTS idx_rt_alerts_updated ON rt_alerts(rt_last_updated)');
+  await db.run('CREATE INDEX IF NOT EXISTS idx_rt_alerts_updated ON rt_alerts(rt_last_updated)');
 
   // Vehicle Positions table
-  db.run(`
+  await db.run(`
     CREATE TABLE IF NOT EXISTS rt_vehicle_positions (
       trip_id TEXT PRIMARY KEY,
       route_id TEXT,
@@ -45,11 +45,11 @@ export function createRealtimeTables(db: Database): void {
     )
   `);
 
-  db.run('CREATE INDEX IF NOT EXISTS idx_rt_vehicle_positions_updated ON rt_vehicle_positions(rt_last_updated)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_rt_vehicle_positions_route ON rt_vehicle_positions(route_id)');
+  await db.run('CREATE INDEX IF NOT EXISTS idx_rt_vehicle_positions_updated ON rt_vehicle_positions(rt_last_updated)');
+  await db.run('CREATE INDEX IF NOT EXISTS idx_rt_vehicle_positions_route ON rt_vehicle_positions(route_id)');
 
   // Trip Updates table
-  db.run(`
+  await db.run(`
     CREATE TABLE IF NOT EXISTS rt_trip_updates (
       trip_id TEXT PRIMARY KEY,
       route_id TEXT,
@@ -63,11 +63,11 @@ export function createRealtimeTables(db: Database): void {
     )
   `);
 
-  db.run('CREATE INDEX IF NOT EXISTS idx_rt_trip_updates_updated ON rt_trip_updates(rt_last_updated)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_rt_trip_updates_route ON rt_trip_updates(route_id)');
+  await db.run('CREATE INDEX IF NOT EXISTS idx_rt_trip_updates_updated ON rt_trip_updates(rt_last_updated)');
+  await db.run('CREATE INDEX IF NOT EXISTS idx_rt_trip_updates_route ON rt_trip_updates(route_id)');
 
   // Stop Time Updates table (child of trip updates)
-  db.run(`
+  await db.run(`
     CREATE TABLE IF NOT EXISTS rt_stop_time_updates (
       trip_id TEXT NOT NULL,
       stop_sequence INTEGER,
@@ -85,16 +85,16 @@ export function createRealtimeTables(db: Database): void {
     )
   `);
 
-  db.run('CREATE INDEX IF NOT EXISTS idx_rt_stop_time_updates_updated ON rt_stop_time_updates(rt_last_updated)');
-  db.run('CREATE INDEX IF NOT EXISTS idx_rt_stop_time_updates_stop ON rt_stop_time_updates(stop_id)');
+  await db.run('CREATE INDEX IF NOT EXISTS idx_rt_stop_time_updates_updated ON rt_stop_time_updates(rt_last_updated)');
+  await db.run('CREATE INDEX IF NOT EXISTS idx_rt_stop_time_updates_stop ON rt_stop_time_updates(stop_id)');
 }
 
 /**
  * Clear all realtime data from the database
  */
-export function clearRealtimeData(db: Database): void {
-  db.run('DELETE FROM rt_alerts');
-  db.run('DELETE FROM rt_vehicle_positions');
-  db.run('DELETE FROM rt_trip_updates');
-  db.run('DELETE FROM rt_stop_time_updates');
+export async function clearRealtimeData(db: GtfsDatabase): Promise<void> {
+  await db.run('DELETE FROM rt_alerts');
+  await db.run('DELETE FROM rt_vehicle_positions');
+  await db.run('DELETE FROM rt_trip_updates');
+  await db.run('DELETE FROM rt_stop_time_updates');
 }

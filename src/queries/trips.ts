@@ -2,7 +2,7 @@
  * Trip Query Methods
  */
 
-import type { Database, ParamsObject } from 'sql.js';
+import type { GtfsDatabase, Row } from '../adapters/types';
 import type { Trip } from '../types/gtfs';
 import type { TripRealtime, VehiclePosition } from '../types/gtfs-rt';
 import { parseVehiclePosition } from './rt-vehicle-positions';
@@ -24,11 +24,11 @@ export interface TripWithRealtime extends Trip {
 /**
  * Merge realtime data with trips
  */
-function mergeRealtimeData(
+async function mergeRealtimeData(
   trips: Trip[],
-  db: Database,
+  db: GtfsDatabase,
   stalenessThreshold: number
-): TripWithRealtime[] {
+): Promise<TripWithRealtime[]> {
   const now = Math.floor(Date.now() / 1000);
   const staleThreshold = now - stalenessThreshold;
 
@@ -38,39 +38,39 @@ function mergeRealtimeData(
   const placeholders = tripIds.map(() => '?').join(', ');
 
   // Get vehicle positions
-  const vpStmt = db.prepare(`
+  const vpStmt = await db.prepare(`
     SELECT * FROM rt_vehicle_positions
     WHERE trip_id IN (${placeholders})
       AND rt_last_updated >= ?
   `);
-  vpStmt.bind([...tripIds, staleThreshold]);
+  await vpStmt.bind([...tripIds, staleThreshold]);
 
   const vpMap = new Map<string, VehiclePosition>();
-  while (vpStmt.step()) {
-    const row = vpStmt.getAsObject();
+  while (await vpStmt.step()) {
+    const row = await vpStmt.getAsObject();
     const vp = parseVehiclePosition(row);
     vpMap.set(vp.trip_id, vp);
   }
-  vpStmt.free();
+  await vpStmt.free();
 
   // Get trip updates
-  const tuStmt = db.prepare(`
+  const tuStmt = await db.prepare(`
     SELECT * FROM rt_trip_updates
     WHERE trip_id IN (${placeholders})
       AND rt_last_updated >= ?
   `);
-  tuStmt.bind([...tripIds, staleThreshold]);
+  await tuStmt.bind([...tripIds, staleThreshold]);
 
   const tuMap = new Map<string, { delay?: number; schedule_relationship?: number }>();
-  while (tuStmt.step()) {
-    const row = tuStmt.getAsObject();
+  while (await tuStmt.step()) {
+    const row = await tuStmt.getAsObject();
     const tripId = String(row.trip_id);
     tuMap.set(tripId, {
       delay: row.delay !== null ? Number(row.delay) : undefined,
       schedule_relationship: row.schedule_relationship !== null ? Number(row.schedule_relationship) : undefined
     });
   }
-  tuStmt.free();
+  await tuStmt.free();
 
   // Merge realtime data
   return trips.map((trip): TripWithRealtime => {
@@ -95,11 +95,11 @@ function mergeRealtimeData(
  * Get trips with optional filters
  * - Filters support both single values and arrays
  */
-export function getTrips(
-  db: Database,
+export async function getTrips(
+  db: GtfsDatabase,
   filters: TripFilters = {},
   stalenessThreshold: number = 120
-): Trip[] | TripWithRealtime[] {
+): Promise<Trip[] | TripWithRealtime[]> {
   const { tripId, routeId, serviceIds, directionId, agencyId, includeRealtime, limit } = filters;
 
   // Determine if we need to join with routes table
@@ -166,18 +166,18 @@ export function getTrips(
     params.push(limit);
   }
 
-  const stmt = db.prepare(sql);
+  const stmt = await db.prepare(sql);
   if (params.length > 0) {
-    stmt.bind(params);
+    await stmt.bind(params);
   }
 
   const trips: Trip[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     trips.push(rowToTrip(row));
   }
 
-  stmt.free();
+  await stmt.free();
 
   // Merge realtime data if requested
   if (includeRealtime) {
@@ -190,7 +190,7 @@ export function getTrips(
 /**
  * Convert database row to Trip object
  */
-function rowToTrip(row: ParamsObject): Trip {
+function rowToTrip(row: Row): Trip {
   return {
     trip_id: String(row.trip_id),
     route_id: String(row.route_id),
