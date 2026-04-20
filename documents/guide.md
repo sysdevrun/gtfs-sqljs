@@ -6,100 +6,241 @@ title: Usage Guide
 
 This guide covers all usage patterns for **gtfs-sqljs**, from basic setup to advanced features like GTFS Realtime and smart caching.
 
+> **Breaking change in v0.6.** The library no longer hard-depends on sql.js. Pass an adapter explicitly via `options.adapter`, or hand a pre-opened handle to `GtfsSqlJs.attach()`. All query methods now return `Promise<T>` — use `await`.
+
+## Adapters overview
+
+gtfs-sqljs talks to a small async database interface (`GtfsDatabase`). Two adapters ship in the box:
+
+| Subpath | Driver | When to use |
+|---|---|---|
+| `gtfs-sqljs/adapters/sql-js` | [sql.js](https://sql.js.org/) (WASM) | Browser; Node without native deps; always in-memory. |
+| `gtfs-sqljs/adapters/better-sqlite3` | [better-sqlite3](https://github.com/WiseLibs/better-sqlite3) (native) | Node; file-backed persistence; fastest native performance. |
+
+Two entry points cover every scenario:
+
+- **Factory path** — `fromZip` / `fromZipData` / `fromDatabase` take `options.adapter`. The library creates or opens the DB internally. Best for in-memory drivers.
+- **Pre-opened handle** — `GtfsSqlJs.attach(db, options?)` takes a live `GtfsDatabase` you built yourself. Best for file-backed drivers where you want to control the file path, journal mode, readonly flag, etc.
+
 ## Loading the sql.js WASM File
 
-sql.js requires a WASM file to be loaded. There are several ways to handle this:
+sql.js requires a WASM file. You configure it via `createSqlJsAdapter({ locateFile })`.
 
 ### Node.js
 
-In Node.js, sql.js will automatically locate the WASM file from the installed package:
+sql.js locates its WASM automatically in Node.js. No extra setup needed:
 
 ```typescript
 import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
 
-// The WASM file is loaded automatically
-const gtfs = await GtfsSqlJs.fromZip('path/to/gtfs.zip');
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  adapter: await createSqlJsAdapter(),
+});
 ```
 
 ### Browser with CDN
 
-You can use a CDN to serve the WASM file:
-
 ```typescript
-import initSqlJs from 'sql.js';
 import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
 
-// Initialize sql.js with CDN WASM file
-const SQL = await initSqlJs({
-  locateFile: (filename) => `https://sql.js.org/dist/${filename}`
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  adapter: await createSqlJsAdapter({
+    locateFile: (filename) => `https://sql.js.org/dist/${filename}`,
+  }),
 });
-
-// Pass the SQL instance to GtfsSqlJs
-const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', { SQL });
 ```
 
-### Browser with Bundler (Webpack, Vite, etc.)
-
-If you're using a bundler, you need to configure it to handle the WASM file:
+### Browser with Bundler (Vite / Webpack / …)
 
 #### Vite
 
 ```typescript
-import initSqlJs from 'sql.js';
 import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
 import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 
-const SQL = await initSqlJs({
-  locateFile: () => sqlWasmUrl
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  adapter: await createSqlJsAdapter({ locateFile: () => sqlWasmUrl }),
 });
-
-const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', { SQL });
 ```
 
 #### Webpack
 
 ```typescript
-import initSqlJs from 'sql.js';
 import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
 
-const SQL = await initSqlJs({
-  locateFile: (filename) => `/path/to/public/${filename}`
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  adapter: await createSqlJsAdapter({
+    locateFile: (filename) => `/path/to/public/${filename}`,
+  }),
 });
-
-const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', { SQL });
 ```
 
-Make sure to copy `sql-wasm.wasm` from `node_modules/sql.js/dist/` to your public directory.
+Copy `sql-wasm.wasm` from `node_modules/sql.js/dist/` to your public directory.
+
+### Reusing an existing `SqlJsStatic`
+
+If you already called `initSqlJs()` elsewhere, pass the instance in to skip re-initialization:
+
+```typescript
+import initSqlJs from 'sql.js';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
+
+const SQL = await initSqlJs({ locateFile: (f) => `/sqljs/${f}` });
+const adapter = await createSqlJsAdapter({ SQL });
+```
 
 ## Creating an Instance
 
-### From a GTFS ZIP file
+This section covers the four typical starting points: ZIP on disk or as bytes, an existing `.db` as bytes, and a pre-opened native handle.
+
+### sql.js — from a GTFS ZIP URL
 
 ```typescript
 import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
 
-// From URL
-const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip');
-
-// From local file (Node.js)
-const gtfs = await GtfsSqlJs.fromZip('./path/to/gtfs.zip');
-
-// Skip importing specific files to reduce memory usage
-// Tables will be created but data won't be imported
 const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
-  skipFiles: ['shapes.txt', 'frequencies.txt']
+  adapter: await createSqlJsAdapter(),
+});
+
+// Skip importing specific files to reduce memory usage.
+// Tables are still created; just no data is inserted for them.
+const lean = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  adapter: await createSqlJsAdapter(),
+  skipFiles: ['shapes.txt', 'frequencies.txt'],
 });
 ```
 
-### From an existing SQLite database
+### sql.js — from GTFS ZIP bytes (no fetch or no file path)
+
+If you already have the ZIP in memory (uploaded from a `<input type="file">`, pre-fetched, bundled as an asset…):
 
 ```typescript
 import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
 
-// Load from ArrayBuffer
-const dbBuffer = await fetch('https://example.com/gtfs.db').then(r => r.arrayBuffer());
-const gtfs = await GtfsSqlJs.fromDatabase(dbBuffer);
+const zipBytes: ArrayBuffer = /* from fetch / FileReader / fs.readFile / … */;
+
+const gtfs = await GtfsSqlJs.fromZipData(zipBytes, {
+  adapter: await createSqlJsAdapter(),
+});
+
+const routes = await gtfs.getRoutes();
 ```
+
+### sql.js — from an existing SQLite database
+
+Use this when you have a pre-built `.db` (e.g. an earlier `gtfs.export()` saved to disk or shipped as a static asset):
+
+```typescript
+import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
+
+// Browser
+const dbBytes = await fetch('https://example.com/gtfs.db').then(r => r.arrayBuffer());
+
+// Node
+// const dbBytes = (await fs.readFile('./gtfs.db')).buffer;
+
+const gtfs = await GtfsSqlJs.fromDatabase(dbBytes, {
+  adapter: await createSqlJsAdapter(),
+});
+```
+
+### better-sqlite3 — attach to a pre-opened file
+
+The idiomatic better-sqlite3 pattern: **you** create the connection (path, readonly, pragmas…) and hand the wrapped handle to `attach()`.
+
+```typescript
+import BetterSqlite3 from 'better-sqlite3';
+import { GtfsSqlJs } from 'gtfs-sqljs';
+import { wrapBetterSqlite3 } from 'gtfs-sqljs/adapters/better-sqlite3';
+
+// Read-only attach to an existing GTFS DB on disk.
+const raw = new BetterSqlite3('./gtfs.db', { readonly: true });
+const gtfs = await GtfsSqlJs.attach(wrapBetterSqlite3(raw), {
+  skipSchema: true, // the file already has the GTFS schema
+});
+
+const routes = await gtfs.getRoutes();
+
+// attach() does not own the handle by default — you close both.
+await gtfs.close();
+raw.close();
+```
+
+If the file is **empty** or you want the library to create the schema, omit `skipSchema`:
+
+```typescript
+const raw = new BetterSqlite3('./gtfs.db');
+const gtfs = await GtfsSqlJs.attach(wrapBetterSqlite3(raw));
+// CREATE TABLE IF NOT EXISTS … runs automatically.
+```
+
+Pass `ownsDatabase: true` if you want `gtfs.close()` to also close the raw handle:
+
+```typescript
+const gtfs = await GtfsSqlJs.attach(wrapBetterSqlite3(raw), { ownsDatabase: true });
+// Later: await gtfs.close();  // raw is closed too
+```
+
+### better-sqlite3 — factory path (in-memory)
+
+Use the factory when you want the library to manage an in-memory better-sqlite3 DB — typical for ingesting a GTFS ZIP you have in memory without writing anything to disk:
+
+```typescript
+import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createBetterSqlite3Adapter } from 'gtfs-sqljs/adapters/better-sqlite3';
+
+const zipBytes: ArrayBuffer = /* … */;
+
+const gtfs = await GtfsSqlJs.fromZipData(zipBytes, {
+  adapter: createBetterSqlite3Adapter(), // defaults to ':memory:'
+});
+
+const trips = await gtfs.getTrips({ routeId: 'AB' });
+```
+
+Pass a path to create / open a file-backed DB via the factory:
+
+```typescript
+const gtfs = await GtfsSqlJs.fromZipData(zipBytes, {
+  adapter: createBetterSqlite3Adapter('./gtfs.db'),
+});
+```
+
+### Decision table
+
+| You have… | sql.js | better-sqlite3 |
+|---|---|---|
+| A GTFS **ZIP URL** | `fromZip(url, { adapter: await createSqlJsAdapter(...) })` | `fromZip(url, { adapter: createBetterSqlite3Adapter(path?) })` |
+| GTFS **ZIP bytes** | `fromZipData(zip, { adapter: await createSqlJsAdapter(...) })` | `fromZipData(zip, { adapter: createBetterSqlite3Adapter(path?) })` |
+| An **existing `.db` as bytes** | `fromDatabase(bytes, { adapter: await createSqlJsAdapter(...) })` | Write the bytes to a file first, then `attach()` — better-sqlite3 opens paths, not buffers, for file-backed use |
+| A **pre-opened handle** you control | *(uncommon for sql.js)* | `attach(wrapBetterSqlite3(raw), { skipSchema? })` |
+
+### Bringing your own adapter (op-sqlite / expo-sqlite / …)
+
+Implement the `GtfsDatabase` / `GtfsDatabaseAdapter` interfaces from `gtfs-sqljs`. The full contract is small — `prepare`, `run`, `export`, `close` on the DB, and `bind`, `step`, `getAsObject`, `run`, `free` on statements. File-backed drivers that cannot serialize should throw `ExportNotSupportedError` from `export()`; the cache layer catches it and no-ops.
+
+```typescript
+import type { GtfsDatabase, GtfsDatabaseAdapter, GtfsStatement, Row, SqlValue } from 'gtfs-sqljs';
+import { ExportNotSupportedError } from 'gtfs-sqljs';
+
+function wrapMyDriver(raw: MyDriverDb): GtfsDatabase {
+  return {
+    prepare: async (sql) => /* … wrap into GtfsStatement … */,
+    run: async (sql) => { raw.exec(sql); },
+    export: async () => { throw new ExportNotSupportedError(); },
+    close: async () => { raw.close(); },
+  };
+}
+```
+
+See `src/adapters/better-sqlite3/index.ts` in the repository for a complete reference implementation (~130 lines).
 
 ## Progress Tracking
 
@@ -206,17 +347,17 @@ The library provides flexible filter-based methods for querying GTFS data. Pass 
 
 ```typescript
 // Get stops - combine any filters
-const stops = gtfs.getStops({
+const stops = await gtfs.getStops({
   name: 'Station',        // Search by name
   limit: 10               // Limit results
 });
 
 // Get routes - with or without filters
-const allRoutes = gtfs.getRoutes();
-const agencyRoutes = gtfs.getRoutes({ agencyId: 'AGENCY_1' });
+const allRoutes = await gtfs.getRoutes();
+const agencyRoutes = await gtfs.getRoutes({ agencyId: 'AGENCY_1' });
 
 // Get trips - combine multiple filters
-const trips = gtfs.getTrips({
+const trips = await gtfs.getTrips({
   routeId: 'ROUTE_1',     // Filter by route
   date: '20240115',       // Filter by date (gets active services)
   directionId: 0,         // Filter by direction
@@ -224,7 +365,7 @@ const trips = gtfs.getTrips({
 });
 
 // Get stop times - flexible filtering
-const stopTimes = gtfs.getStopTimes({
+const stopTimes = await gtfs.getStopTimes({
   stopId: 'STOP_123',     // At a specific stop
   routeId: 'ROUTE_1',     // For a specific route
   date: '20240115',       // On a specific date
@@ -275,122 +416,125 @@ const stopTimes = gtfs.getStopTimes({
 
 ```typescript
 // Get stop by ID
-const stops = gtfs.getStops({ stopId: 'STOP_123' });
+const stops = await gtfs.getStops({ stopId: 'STOP_123' });
 const stop = stops.length > 0 ? stops[0] : null;
 console.log(stop?.stop_name);
 
 // Get stop by code (using filters)
-const stops = gtfs.getStops({ stopCode: 'ABC' });
+const stops = await gtfs.getStops({ stopCode: 'ABC' });
 const stop = stops[0];
 
 // Search stops by name (using filters)
-const stops = gtfs.getStops({ name: 'Main Street' });
+const stops = await gtfs.getStops({ name: 'Main Street' });
 
 // Get all stops (using filters with no parameters)
-const allStops = gtfs.getStops();
+const allStops = await gtfs.getStops();
 
 // Get stops with limit
-const stops = gtfs.getStops({ limit: 10 });
+const stops = await gtfs.getStops({ limit: 10 });
 
 // Get stops for a specific trip
-const stops = gtfs.getStops({ tripId: 'TRIP_123' });
+const stops = await gtfs.getStops({ tripId: 'TRIP_123' });
 ```
 
 ### Get Route Information
 
 ```typescript
 // Get route by ID
-const routes = gtfs.getRoutes({ routeId: 'ROUTE_1' });
+const routes = await gtfs.getRoutes({ routeId: 'ROUTE_1' });
 const route = routes.length > 0 ? routes[0] : null;
 
 // Get all routes (using filters with no parameters)
-const routes = gtfs.getRoutes();
+const routes = await gtfs.getRoutes();
 
 // Get routes by agency (using filters)
-const agencyRoutes = gtfs.getRoutes({ agencyId: 'AGENCY_1' });
+const agencyRoutes = await gtfs.getRoutes({ agencyId: 'AGENCY_1' });
 
 // Get routes with limit
-const routes = gtfs.getRoutes({ limit: 10 });
+const routes = await gtfs.getRoutes({ limit: 10 });
 ```
 
 ### Get Agency Information
 
 ```typescript
 // Get agency by ID
-const agencies = gtfs.getAgencies({ agencyId: 'AGENCY_1' });
+const agencies = await gtfs.getAgencies({ agencyId: 'AGENCY_1' });
 const agency = agencies.length > 0 ? agencies[0] : null;
 
 // Get all agencies
-const allAgencies = gtfs.getAgencies();
+const allAgencies = await gtfs.getAgencies();
 
 // Get agencies with limit
-const agencies = gtfs.getAgencies({ limit: 5 });
+const agencies = await gtfs.getAgencies({ limit: 5 });
 ```
 
 ### Get Calendar Information
 
 ```typescript
 // Get active services for a date (YYYYMMDD format)
-const serviceIds = gtfs.getActiveServiceIds('20240115');
+const serviceIds = await gtfs.getActiveServiceIds('20240115');
 
-// Get calendar by service ID
-const calendars = gtfs.getCalendars({ serviceId: 'WEEKDAY' });
+// Get calendar by service ID (returns Calendar | null)
+const calendar = await gtfs.getCalendarByServiceId('WEEKDAY');
 
-// Get calendar date exceptions
-const exceptions = gtfs.getCalendarDates('WEEKDAY');
+// Get calendar date exceptions for a service
+const exceptions = await gtfs.getCalendarDates('WEEKDAY');
+
+// Get calendar date exceptions for a specific date
+const exceptionsForDate = await gtfs.getCalendarDatesForDate('20240115');
 ```
 
 ### Get Trip Information
 
 ```typescript
 // Get trip by ID
-const trips = gtfs.getTrips({ tripId: 'TRIP_123' });
+const trips = await gtfs.getTrips({ tripId: 'TRIP_123' });
 const trip = trips.length > 0 ? trips[0] : null;
 
 // Get trips by route (using filters)
-const trips = gtfs.getTrips({ routeId: 'ROUTE_1' });
+const trips = await gtfs.getTrips({ routeId: 'ROUTE_1' });
 
 // Get trips by route and date (using filters)
-const trips = gtfs.getTrips({ routeId: 'ROUTE_1', date: '20240115' });
+const trips = await gtfs.getTrips({ routeId: 'ROUTE_1', date: '20240115' });
 
 // Get trips by route, date, and direction (using filters)
-const trips = gtfs.getTrips({
+const trips = await gtfs.getTrips({
   routeId: 'ROUTE_1',
   date: '20240115',
   directionId: 0
 });
 
 // Get all trips for a date
-const trips = gtfs.getTrips({ date: '20240115' });
+const trips = await gtfs.getTrips({ date: '20240115' });
 
 // Get trips by agency
-const trips = gtfs.getTrips({ agencyId: 'AGENCY_1' });
+const trips = await gtfs.getTrips({ agencyId: 'AGENCY_1' });
 ```
 
 ### Get Stop Time Information
 
 ```typescript
 // Get stop times for a trip (ordered by stop_sequence)
-const stopTimes = gtfs.getStopTimes({ tripId: 'TRIP_123' });
+const stopTimes = await gtfs.getStopTimes({ tripId: 'TRIP_123' });
 
 // Get stop times for a stop (using filters)
-const stopTimes = gtfs.getStopTimes({ stopId: 'STOP_123' });
+const stopTimes = await gtfs.getStopTimes({ stopId: 'STOP_123' });
 
 // Get stop times for a stop and route (using filters)
-const stopTimes = gtfs.getStopTimes({
+const stopTimes = await gtfs.getStopTimes({
   stopId: 'STOP_123',
   routeId: 'ROUTE_1'
 });
 
 // Get stop times for a stop, route, and date (using filters)
-const stopTimes = gtfs.getStopTimes({
+const stopTimes = await gtfs.getStopTimes({
   stopId: 'STOP_123',
   routeId: 'ROUTE_1',
   date: '20240115'
 });
 
 // Get stop times with direction filter (using filters)
-const stopTimes = gtfs.getStopTimes({
+const stopTimes = await gtfs.getStopTimes({
   stopId: 'STOP_123',
   routeId: 'ROUTE_1',
   date: '20240115',
@@ -398,7 +542,7 @@ const stopTimes = gtfs.getStopTimes({
 });
 
 // Get stop times by agency
-const stopTimes = gtfs.getStopTimes({
+const stopTimes = await gtfs.getStopTimes({
   agencyId: 'AGENCY_1',
   date: '20240115'
 });
@@ -410,7 +554,7 @@ When displaying timetables for routes where different trips may stop at differen
 
 ```typescript
 // Get all trips for a route in one direction
-const trips = gtfs.getTrips({
+const trips = await gtfs.getTrips({
   routeId: 'ROUTE_1',
   directionId: 0,
   date: '20240115'
@@ -418,7 +562,7 @@ const trips = gtfs.getTrips({
 
 // Build ordered list of all stops served by these trips
 const tripIds = trips.map(t => t.trip_id);
-const orderedStops = gtfs.buildOrderedStopList(tripIds);
+const orderedStops = await gtfs.buildOrderedStopList(tripIds);
 
 // Now display a timetable with all possible stops
 console.log('Route stops:');
@@ -428,7 +572,7 @@ orderedStops.forEach(stop => {
 
 // For each trip, you can now show which stops it serves
 for (const trip of trips) {
-  const tripStopTimes = gtfs.getStopTimes({ tripId: trip.trip_id });
+  const tripStopTimes = await gtfs.getStopTimes({ tripId: trip.trip_id });
   console.log(`\nTrip ${trip.trip_headsign}:`);
 
   // Show all stops, marking which ones this trip serves
@@ -463,9 +607,9 @@ The method intelligently merges stop sequences from all provided trips:
 // - Express trips: A -> C -> E -> F (skips B and D)
 // - Short trips: B -> C -> D (doesn't go to end of line)
 
-const allTrips = gtfs.getTrips({ routeId: 'BUS_42', directionId: 0 });
+const allTrips = await gtfs.getTrips({ routeId: 'BUS_42', directionId: 0 });
 const tripIds = allTrips.map(t => t.trip_id);
-const stops = gtfs.buildOrderedStopList(tripIds);
+const stops = await gtfs.buildOrderedStopList(tripIds);
 
 // Result: [A, B, C, D, E, F] - all stops in correct order
 // Now you can create a timetable showing all stops with departure times
@@ -477,14 +621,14 @@ Shapes define the path a vehicle takes along a route. Use {@link GtfsSqlJs.getSh
 
 ```typescript
 // Get all shape points for a specific shape
-const shapePoints = gtfs.getShapes({ shapeId: 'SHAPE_1' });
+const shapePoints = await gtfs.getShapes({ shapeId: 'SHAPE_1' });
 console.log(`Shape has ${shapePoints.length} points`);
 
 // Get shapes for a specific route
-const routeShapes = gtfs.getShapes({ routeId: 'ROUTE_1' });
+const routeShapes = await gtfs.getShapes({ routeId: 'ROUTE_1' });
 
 // Get shapes for multiple trips
-const tripShapes = gtfs.getShapes({ tripId: ['TRIP_1', 'TRIP_2'] });
+const tripShapes = await gtfs.getShapes({ tripId: ['TRIP_1', 'TRIP_2'] });
 
 // Each shape point contains:
 // - shape_id: string
@@ -500,13 +644,13 @@ Convert shapes to GeoJSON format for use with mapping libraries (Leaflet, Mapbox
 
 ```typescript
 // Get all shapes as GeoJSON FeatureCollection
-const geojson = gtfs.getShapesToGeojson();
+const geojson = await gtfs.getShapesToGeojson();
 
 // Get shapes for a specific route
-const routeGeojson = gtfs.getShapesToGeojson({ routeId: 'ROUTE_1' });
+const routeGeojson = await gtfs.getShapesToGeojson({ routeId: 'ROUTE_1' });
 
 // Customize coordinate precision (default: 6 decimals = ~10cm)
-const lowPrecision = gtfs.getShapesToGeojson({ routeId: 'ROUTE_1' }, 4); // ~11m precision
+const lowPrecision = await gtfs.getShapesToGeojson({ routeId: 'ROUTE_1' }, 4); // ~11m precision
 
 // GeoJSON structure:
 // {
@@ -554,6 +698,7 @@ This library supports [GTFS Realtime](https://gtfs.org/documentation/realtime/re
 ```typescript
 // Configure RT feed URLs - data will be fetched automatically after GTFS load
 const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  adapter: await createSqlJsAdapter(),
   realtimeFeedUrls: [
     'https://example.com/gtfs-rt/alerts',
     'https://example.com/gtfs-rt/trip-updates',
@@ -592,27 +737,27 @@ if (lastFetch) {
 
 ```typescript
 // Get all active alerts
-const activeAlerts = gtfs.getAlerts({ activeOnly: true });
+const activeAlerts = await gtfs.getAlerts({ activeOnly: true });
 
 // Filter alerts by route
-const routeAlerts = gtfs.getAlerts({
+const routeAlerts = await gtfs.getAlerts({
   routeId: 'ROUTE_1',
   activeOnly: true
 });
 
 // Filter alerts by stop
-const stopAlerts = gtfs.getAlerts({
+const stopAlerts = await gtfs.getAlerts({
   stopId: 'STOP_123',
   activeOnly: true
 });
 
 // Filter alerts by trip
-const tripAlerts = gtfs.getAlerts({
+const tripAlerts = await gtfs.getAlerts({
   tripId: 'TRIP_456'
 });
 
 // Get alert by ID
-const alerts = gtfs.getAlerts({ alertId: 'alert:12345' });
+const alerts = await gtfs.getAlerts({ alertId: 'alert:12345' });
 const alert = alerts.length > 0 ? alerts[0] : null;
 
 // Alert structure
@@ -628,15 +773,15 @@ console.log(alert.informed_entity);  // EntitySelector[]
 
 ```typescript
 // Get all vehicle positions
-const vehicles = gtfs.getVehiclePositions();
+const vehicles = await gtfs.getVehiclePositions();
 
 // Filter by route
-const routeVehicles = gtfs.getVehiclePositions({
+const routeVehicles = await gtfs.getVehiclePositions({
   routeId: 'ROUTE_1'
 });
 
 // Filter by trip
-const tripVehicles = gtfs.getVehiclePositions({
+const tripVehicles = await gtfs.getVehiclePositions({
   tripId: 'TRIP_123'
 });
 const vehicle = tripVehicles.length > 0 ? tripVehicles[0] : null;
@@ -654,7 +799,7 @@ The library automatically merges realtime data with static schedules when reques
 
 ```typescript
 // Get trips with realtime data
-const tripsWithRT = gtfs.getTrips({
+const tripsWithRT = await gtfs.getTrips({
   routeId: 'ROUTE_1',
   date: '20240115',
   includeRealtime: true  // Include RT data
@@ -670,7 +815,7 @@ for (const trip of tripsWithRT) {
 }
 
 // Get stop times with realtime delays
-const stopTimesWithRT = gtfs.getStopTimes({
+const stopTimesWithRT = await gtfs.getStopTimes({
   tripId: 'TRIP_123',
   includeRealtime: true  // Include RT data
 });
@@ -688,7 +833,7 @@ for (const st of stopTimesWithRT) {
 
 ```typescript
 // Clear all realtime data
-gtfs.clearRealtimeData();
+await gtfs.clearRealtimeData();
 
 // Then fetch fresh data
 await gtfs.fetchRealtimeData();
@@ -726,29 +871,37 @@ Cache store implementations are available in `examples/cache/`. Copy the appropr
 ```typescript
 // Copy examples/cache/IndexedDBCacheStore.ts to your project
 import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
 import { IndexedDBCacheStore } from './IndexedDBCacheStore';
 
 const cache = new IndexedDBCacheStore();
+const adapter = await createSqlJsAdapter();
 
 // First load: processes GTFS zip file and caches the result
-const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', { cache });
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', { adapter, cache });
 
 // Second load: uses cached database (much faster!)
-const gtfs2 = await GtfsSqlJs.fromZip('gtfs.zip', { cache });
+const gtfs2 = await GtfsSqlJs.fromZip('gtfs.zip', { adapter, cache });
 ```
 
 **Node.js - FileSystem:**
 ```typescript
 // Copy examples/cache/FileSystemCacheStore.ts to your project
 import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
 import { FileSystemCacheStore } from './FileSystemCacheStore';
 
 const cache = new FileSystemCacheStore({ dir: './.cache/gtfs' });
 
-const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', { cache });
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', {
+  adapter: await createSqlJsAdapter(),
+  cache,
+});
 ```
 
 **Note:** `FileSystemCacheStore` uses Node.js built-in modules (`fs`, `path`, `os`) and is **NOT compatible** with browser or React Native environments.
+
+**Caching with file-backed adapters (better-sqlite3, op-sqlite, …):** file-backed drivers persist their own database on disk, so the library's cache is redundant. If you plug in a file-backed adapter and enable the cache, the cache layer catches `ExportNotSupportedError` from `export()` and logs a warning instead of failing the load.
 
 ### Cache Invalidation
 
@@ -764,14 +917,20 @@ The cache is automatically invalidated when any of these change:
 Use `cacheVersion` to control cache invalidation:
 
 ```typescript
+const adapter = await createSqlJsAdapter();
+
 // Load with version 1.0
 const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', {
-  cacheVersion: '1.0'
+  adapter,
+  cache,
+  cacheVersion: '1.0',
 });
 
 // Load with version 2.0 - will reprocess and create new cache
 const gtfs2 = await GtfsSqlJs.fromZip('gtfs.zip', {
-  cacheVersion: '2.0'
+  adapter,
+  cache,
+  cacheVersion: '2.0',
 });
 ```
 
@@ -850,7 +1009,9 @@ await GtfsSqlJs.clearCache(cache);
 By default, caching is disabled. Simply omit the `cache` option:
 
 ```typescript
-const gtfs = await GtfsSqlJs.fromZip('gtfs.zip');
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', {
+  adapter: await createSqlJsAdapter(),
+});
 // No caching - GTFS is processed fresh each time
 ```
 
@@ -860,7 +1021,9 @@ Change the default expiration time (default: 7 days):
 
 ```typescript
 const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', {
-  cacheExpirationMs: 3 * 24 * 60 * 60 * 1000  // 3 days
+  adapter: await createSqlJsAdapter(),
+  cache,
+  cacheExpirationMs: 3 * 24 * 60 * 60 * 1000, // 3 days
 });
 ```
 
@@ -898,14 +1061,17 @@ class RedisCacheStore implements CacheStore {
 }
 
 const cache = new RedisCacheStore();
-const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', { cache });
+const gtfs = await GtfsSqlJs.fromZip('gtfs.zip', {
+  adapter: await createSqlJsAdapter(),
+  cache,
+});
 ```
 
 ## Export Database
 
 ```typescript
 // Export to ArrayBuffer for storage (includes RT data)
-const buffer = gtfs.export();
+const buffer = await gtfs.export();
 
 // Save to file (Node.js)
 import fs from 'fs';
@@ -919,85 +1085,89 @@ fs.writeFileSync('gtfs.db', Buffer.from(buffer));
 
 ### Direct Database Access
 
-For advanced queries not covered by the API:
+For advanced queries not covered by the API, use `getDatabase()` — it returns the adapter's `GtfsDatabase`, which exposes `prepare`, `run`, `export`, `close`. Every method is async:
 
 ```typescript
 const db = gtfs.getDatabase();
 
-const stmt = db.prepare('SELECT * FROM stops WHERE stop_lat > ? AND stop_lon < ?');
-stmt.bind([40.7, -74.0]);
+const stmt = await db.prepare('SELECT * FROM stops WHERE stop_lat > ? AND stop_lon < ?');
+await stmt.bind([40.7, -74.0]);
 
-while (stmt.step()) {
-  const row = stmt.getAsObject();
+while (await stmt.step()) {
+  const row = await stmt.getAsObject();
   console.log(row);
 }
 
-stmt.free();
+await stmt.free();
 ```
+
+If you need the underlying raw driver (sql.js `Database`, better-sqlite3 `Database`, …) for driver-specific features, keep a reference to it at the point you created the adapter — gtfs-sqljs deliberately does not re-expose it, to keep the library driver-agnostic.
 
 ### Close Database
 
 ```typescript
 // Close the database when done
-gtfs.close();
+await gtfs.close();
 ```
+
+For `GtfsSqlJs.attach()` with a handle you created yourself, `close()` does **not** release the underlying handle by default — you are responsible for closing it. Pass `ownsDatabase: true` to `attach()` if you want the library to close it for you.
 
 ## Complete Example
 
 ```typescript
 import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
 
 async function example() {
   // Load GTFS data (skip shapes.txt to reduce memory usage)
   const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
-    skipFiles: ['shapes.txt']
+    adapter: await createSqlJsAdapter(),
+    skipFiles: ['shapes.txt'],
   });
 
   // Find a stop using flexible filters
-  const stops = gtfs.getStops({ name: 'Central Station' });
+  const stops = await gtfs.getStops({ name: 'Central Station' });
   const stop = stops[0];
   console.log(`Found stop: ${stop.stop_name}`);
 
   // Find routes serving this stop (via stop_times and trips)
-  const allStopTimes = gtfs.getStopTimes({ stopId: stop.stop_id });
-  const routeIds = new Set(
-    allStopTimes.map(st => {
-      const trips = gtfs.getTrips({ tripId: st.trip_id });
-      return trips.length > 0 ? trips[0].route_id : null;
-    })
-  );
+  const allStopTimes = await gtfs.getStopTimes({ stopId: stop.stop_id });
+  const routeIds = new Set<string>();
+  for (const st of allStopTimes) {
+    const trips = await gtfs.getTrips({ tripId: st.trip_id });
+    if (trips.length > 0) routeIds.add(trips[0].route_id);
+  }
 
   // Get route details
   for (const routeId of routeIds) {
-    if (!routeId) continue;
-    const routes = gtfs.getRoutes({ routeId });
+    const routes = await gtfs.getRoutes({ routeId });
     const route = routes.length > 0 ? routes[0] : null;
     console.log(`Route: ${route?.route_short_name} - ${route?.route_long_name}`);
   }
 
   // Get trips for a specific route on a date using flexible filters
   const today = '20240115'; // YYYYMMDD format
-  const trips = gtfs.getTrips({
+  const trips = await gtfs.getTrips({
     routeId: Array.from(routeIds)[0]!,
-    date: today
+    date: today,
   });
   console.log(`Found ${trips.length} trips for today`);
 
   // Get stop times for a specific trip
-  const stopTimes = gtfs.getStopTimes({ tripId: trips[0].trip_id });
+  const stopTimes = await gtfs.getStopTimes({ tripId: trips[0].trip_id });
   console.log('Trip schedule:');
   for (const st of stopTimes) {
-    const stops = gtfs.getStops({ stopId: st.stop_id });
-    const stop = stops.length > 0 ? stops[0] : null;
-    console.log(`  ${st.arrival_time} - ${stop?.stop_name}`);
+    const matched = await gtfs.getStops({ stopId: st.stop_id });
+    const matchedStop = matched.length > 0 ? matched[0] : null;
+    console.log(`  ${st.arrival_time} - ${matchedStop?.stop_name}`);
   }
 
   // Export database for later use
-  const buffer = gtfs.export();
+  const buffer = await gtfs.export();
   // ... save buffer to file or storage
 
   // Clean up
-  gtfs.close();
+  await gtfs.close();
 }
 
 example();

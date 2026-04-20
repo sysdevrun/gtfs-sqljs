@@ -4,7 +4,7 @@
 
   [![npm version](https://img.shields.io/npm/v/gtfs-sqljs)](https://www.npmjs.com/package/gtfs-sqljs)
 
-  <p>A TypeScript library for loading <a href="https://gtfs.org/documentation/schedule/reference/">GTFS</a> (General Transit Feed Specification) data into a <a href="https://sql.js.org/">sql.js</a> SQLite database for querying in both browser and Node.js environments.</p>
+  <p>A TypeScript library for loading <a href="https://gtfs.org/documentation/schedule/reference/">GTFS</a> (General Transit Feed Specification) data into a SQLite database for querying in browser, Node.js, and React Native environments. Ships with adapters for <a href="https://sql.js.org/">sql.js</a> (browser / Node WASM) and <a href="https://github.com/WiseLibs/better-sqlite3">better-sqlite3</a> (Node native); bring your own for op-sqlite, expo-sqlite, etc.</p>
 </div>
 
 > **[Live Demo](https://sysdevrun.github.io/gtfs-sqljs-demo/)** — A fully static demo website with GTFS and GTFS-RT data running in a Web Worker, with no backend.
@@ -28,15 +28,16 @@ This project is greatly inspired by [node-gtfs](https://github.com/BlinkTagInc/n
 ## Features
 
 ### GTFS Static Data
-- Load GTFS data from ZIP files (URL or local path)
+- Load GTFS data from ZIP files (URL or `ArrayBuffer`) or existing SQLite databases
+- **Pluggable database adapter** — sql.js, better-sqlite3 (built-in), or your own for op-sqlite / expo-sqlite
+- **Attach to a pre-opened database** — ideal for file-backed native drivers where the caller controls the file path, readonly flag, etc.
 - **High-performance loading** with optimized bulk inserts
 - **Progress tracking** - Real-time progress callbacks (0-100%)
 - Skip importing specific files (e.g., shapes.txt) to reduce memory usage
-- Load existing SQLite databases
-- Export databases to ArrayBuffer for persistence
+- Export databases to `ArrayBuffer` for persistence (sql.js / in-memory better-sqlite3)
 - Flexible filter-based query API - combine multiple filters easily
 - Full TypeScript support with comprehensive types
-- Works in both browser and Node.js
+- Works in browser, Node.js, and React Native
 
 ### [GTFS Realtime](https://gtfs.org/documentation/realtime/reference/) Support
 - Load GTFS-RT data from protobuf feeds (URLs or local files)
@@ -56,51 +57,99 @@ This project is greatly inspired by [node-gtfs](https://github.com/BlinkTagInc/n
 npm install gtfs-sqljs
 ```
 
-You also need to install sql.js as a peer dependency:
+Install the adapter(s) you want as peer dependencies. Install one or both depending on where the library runs:
 
 ```bash
+# Browser or Node (WASM-backed, in-memory)
 npm install sql.js
+
+# Node (native, can be file-backed)
+npm install better-sqlite3
 ```
+
+> **Note (v0.6 breaking change):** the core library no longer hard-depends on sql.js. You must pass an adapter to `fromZip` / `fromZipData` / `fromDatabase`, or hand a pre-opened handle to `GtfsSqlJs.attach()`. All query methods are now `async` and return `Promise<T>`.
 
 ## Quick Start
 
+### sql.js (browser / Node WASM)
+
 ```typescript
 import { GtfsSqlJs } from 'gtfs-sqljs';
+import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
 
-// Load GTFS data from a ZIP file
-const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip');
+// Load GTFS data from a ZIP URL
+const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', {
+  adapter: await createSqlJsAdapter(),
+});
 
 // Query routes
-const routes = gtfs.getRoutes();
+const routes = await gtfs.getRoutes();
 
 // Query stops with filters
-const stops = gtfs.getStops({ name: 'Central Station' });
+const stops = await gtfs.getStops({ name: 'Central Station' });
 
 // Get trips for a route on a specific date
-const trips = gtfs.getTrips({
+const trips = await gtfs.getTrips({
   routeId: 'ROUTE_1',
   date: '20240115',
-  directionId: 0
+  directionId: 0,
 });
 
 // Get stop times for a trip
-const stopTimes = gtfs.getStopTimes({ tripId: trips[0].trip_id });
+const stopTimes = await gtfs.getStopTimes({ tripId: trips[0].trip_id });
 
 // Clean up
-gtfs.close();
+await gtfs.close();
 ```
 
-For detailed usage examples, see the [Usage Guide](https://sysdevrun.github.io/gtfs-sqljs/docs/documents/Usage_Guide.html).
+### better-sqlite3 (Node native)
+
+```typescript
+import BetterSqlite3 from 'better-sqlite3';
+import { GtfsSqlJs } from 'gtfs-sqljs';
+import { wrapBetterSqlite3 } from 'gtfs-sqljs/adapters/better-sqlite3';
+
+// Open a file-backed DB yourself, then attach.
+const raw = new BetterSqlite3('./gtfs.db');
+const gtfs = await GtfsSqlJs.attach(wrapBetterSqlite3(raw));
+
+const routes = await gtfs.getRoutes();
+
+// `attach()` does not own the handle by default — you close both.
+await gtfs.close();
+raw.close();
+```
+
+See the [Usage Guide](https://sysdevrun.github.io/gtfs-sqljs/docs/documents/Usage_Guide.html) for detailed examples covering `fromDatabase`, `fromZipData`, GTFS-RT, and caching.
+
+## Adapters
+
+gtfs-sqljs talks to a narrow async `GtfsDatabase` interface (`prepare`, `run`, `export`, `close`). Pick the adapter that matches your runtime:
+
+| Adapter | Subpath | Typical use |
+|---|---|---|
+| sql.js | `gtfs-sqljs/adapters/sql-js` | Browser; Node without native deps; always in-memory |
+| better-sqlite3 | `gtfs-sqljs/adapters/better-sqlite3` | Node; file-backed persistence; fastest native performance |
+| op-sqlite | *(user-provided — see Usage Guide)* | React Native (JSI) |
+| expo-sqlite | *(user-provided — see Usage Guide)* | Expo / React Native |
+
+Two entry points cover every scenario:
+
+- **Factory path** — `fromZip`/`fromZipData`/`fromDatabase` take `options.adapter: GtfsDatabaseAdapter`. The library creates / opens the DB for you. Best for in-memory drivers (sql.js, in-memory better-sqlite3).
+- **Pre-opened handle** — `GtfsSqlJs.attach(db, options?)` takes a live `GtfsDatabase` you already built. Best for file-backed drivers where the caller owns the file path, journal mode, etc.
 
 ## API Reference
 
 Full API documentation: [API Reference](https://sysdevrun.github.io/gtfs-sqljs/docs/)
 
+All `GtfsSqlJs` instance methods return `Promise<T>` — use `await`.
+
 ### Static Methods
 
-- `GtfsSqlJs.fromZip(zipPath, options?)` - Create instance from GTFS ZIP file path or URL
-- `GtfsSqlJs.fromZipData(zipData, options?)` - Create instance from pre-loaded GTFS ZIP data (`ArrayBuffer` or `Uint8Array`)
-- `GtfsSqlJs.fromDatabase(database, options?)` - Create instance from existing database
+- `GtfsSqlJs.fromZip(zipPath, options)` — Create instance from a GTFS ZIP URL. `options.adapter` is **required**.
+- `GtfsSqlJs.fromZipData(zipData, options)` — Create instance from pre-loaded ZIP bytes (`ArrayBuffer` or `Uint8Array`). `options.adapter` is **required**.
+- `GtfsSqlJs.fromDatabase(database, options)` — Create instance from existing SQLite bytes (`ArrayBuffer`). `options.adapter` is **required**.
+- `GtfsSqlJs.attach(db, options?)` — Attach to a pre-opened `GtfsDatabase` handle. No `adapter` needed (the handle is the adapter output). Pass `skipSchema: true` when the attached DB already has the GTFS schema; pass `ownsDatabase: true` to have `close()` release the underlying handle.
 
 ### Instance Methods
 
@@ -152,6 +201,8 @@ This library is written in TypeScript and provides full type definitions for all
 
 ```typescript
 import type {
+  // Adapter surface
+  GtfsDatabase, GtfsDatabaseAdapter, GtfsStatement, Row, SqlValue,
   // Static GTFS types
   Stop, Route, Trip, StopTime, Shape,
   TripFilters, StopTimeFilters, ShapeFilters,
@@ -165,6 +216,7 @@ import type {
   // Progress tracking types
   ProgressInfo, ProgressCallback
 } from 'gtfs-sqljs';
+import { ExportNotSupportedError } from 'gtfs-sqljs';
 ```
 
 ## GTFS Specification
