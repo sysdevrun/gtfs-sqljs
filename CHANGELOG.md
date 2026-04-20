@@ -19,7 +19,7 @@
 
 - New `src/adapters/types.ts` public surface: `GtfsDatabase`, `GtfsStatement`, `GtfsDatabaseAdapter`, `SqlValue`, `Row`, `ExportNotSupportedError`.
 - sql.js adapter at subpath `gtfs-sqljs/adapters/sql-js` (exports `createSqlJsAdapter`, `wrapSqlJsDatabase`). The core module no longer imports sql.js.
-- Reference `BetterSqlite3Adapter` in `examples/adapters/` (and the equivalent test helper) — the Node file-backed path used by the CI end-to-end test.
+- **better-sqlite3 adapter at subpath `gtfs-sqljs/adapters/better-sqlite3`** (exports `wrapBetterSqlite3`, `createBetterSqlite3Adapter`). First-class Node / file-backed path; the adapter is the only file in the repo that imports `better-sqlite3`, so projects that do not reference this subpath never pull in the native module. Exercised by `tests/e2e-better-sqlite3.test.ts` on every CI run.
 - Cache layer now catches `ExportNotSupportedError` from adapters that cannot serialize in-memory and logs a warning instead of failing the load; file-backed drivers persist their own DB on disk.
 
 ### Performance (from earlier work in this cycle)

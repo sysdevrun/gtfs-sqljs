@@ -13,6 +13,10 @@
     "./adapters/sql-js": {
       "types": "./dist/adapters/sql-js/index.d.ts",
       "default": "./dist/adapters/sql-js/index.js"
+    },
+    "./adapters/better-sqlite3": {
+      "types": "./dist/adapters/better-sqlite3/index.d.ts",
+      "default": "./dist/adapters/better-sqlite3/index.js"
     }
   },
   "files": [
@@ -55,9 +59,13 @@
     "protobufjs": "^8.0.0"
   },
   "peerDependencies": {
+    "better-sqlite3": ">=10",
     "sql.js": "1.x"
   },
   "peerDependenciesMeta": {
+    "better-sqlite3": {
+      "optional": true
+    },
     "sql.js": {
       "optional": true
     }

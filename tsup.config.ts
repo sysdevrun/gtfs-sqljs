@@ -4,6 +4,7 @@ export default defineConfig({
   entry: {
     'index': 'src/index.ts',
     'adapters/sql-js/index': 'src/adapters/sql-js/index.ts',
+    'adapters/better-sqlite3/index': 'src/adapters/better-sqlite3/index.ts',
   },
   format: ['esm'],
   dts: true,

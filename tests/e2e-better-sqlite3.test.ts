@@ -1,5 +1,5 @@
 /**
- * End-to-end test exercising a non-sql.js adapter.
+ * End-to-end test exercising the built-in better-sqlite3 adapter.
  *
  * Loads the sample GTFS feed into a better-sqlite3 database via
  * `GtfsSqlJs.attach()`, runs the same query assertions as the sql.js tests,
@@ -17,7 +17,7 @@ import { GtfsSqlJs } from '../src/gtfs-sqljs';
 import { ExportNotSupportedError } from '../src/adapters/types';
 import { loadGTFSZip } from '../src/loaders/zip-loader';
 import { loadGTFSData } from '../src/loaders/data-loader';
-import { wrapBetterSqlite3 } from './helpers/better-sqlite3-adapter';
+import { wrapBetterSqlite3 } from '../src/adapters/better-sqlite3';
 import type { CacheMetadata, CacheStore } from '../src/cache/types';
 
 describe('better-sqlite3 adapter — end-to-end', () => {

@@ -101,4 +101,6 @@ export { isCacheExpired, filterExpiredEntries, getCacheStats, DEFAULT_CACHE_EXPI
 
 // Note: Cache store implementations (IndexedDBCacheStore, FileSystemCacheStore) are available
 // in examples/cache/ directory. Copy them to your project as needed.
-// Note: The sql.js adapter lives at the subpath `gtfs-sqljs/adapters/sql-js`.
+// Note: Database adapters live at subpaths:
+//   - `gtfs-sqljs/adapters/sql-js`        (browser / Node WASM path)
+//   - `gtfs-sqljs/adapters/better-sqlite3` (Node file-backed / in-memory path)

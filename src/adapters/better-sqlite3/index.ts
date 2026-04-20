@@ -1,26 +1,27 @@
 /**
  * better-sqlite3 adapter for gtfs-sqljs.
  *
- * Reference implementation. Copy into your project and import directly, or
- * re-export from your own module. `better-sqlite3` stays in your
- * dependencies — gtfs-sqljs does not depend on it at runtime.
+ * Ships as an opt-in subpath export (`gtfs-sqljs/adapters/better-sqlite3`).
+ * This is the only file in the repository that imports `better-sqlite3`, so
+ * projects that never reference this subpath do not pull in the native
+ * module.
  *
- * Usage (caller-managed DB, recommended for file-backed drivers):
+ * Typical usage (caller-managed DB, recommended for file-backed drivers):
  *
  * ```ts
  * import Database from 'better-sqlite3';
  * import { GtfsSqlJs } from 'gtfs-sqljs';
- * import { wrapBetterSqlite3 } from './examples/adapters/BetterSqlite3Adapter';
+ * import { wrapBetterSqlite3 } from 'gtfs-sqljs/adapters/better-sqlite3';
  *
  * const raw = new Database('gtfs.db');
  * const gtfs = await GtfsSqlJs.attach(wrapBetterSqlite3(raw));
  * ```
  *
- * Usage (library-managed, in-memory — less common):
+ * Library-managed usage (in-memory, less common):
  *
  * ```ts
  * import { GtfsSqlJs } from 'gtfs-sqljs';
- * import { createBetterSqlite3Adapter } from './examples/adapters/BetterSqlite3Adapter';
+ * import { createBetterSqlite3Adapter } from 'gtfs-sqljs/adapters/better-sqlite3';
  *
  * const gtfs = await GtfsSqlJs.fromZip(url, {
  *   adapter: createBetterSqlite3Adapter(),
@@ -36,7 +37,7 @@ import {
   type GtfsStatement,
   type Row,
   type SqlValue,
-} from 'gtfs-sqljs';
+} from '../types';
 
 type BetterSqlite3Database = BetterSqlite3.Database;
 
@@ -47,24 +48,13 @@ type StatementState = {
   boundParams: SqlValue[] | null;
 };
 
-function wrapStatement(
-  db: BetterSqlite3Database,
-  sql: string
-): GtfsStatement {
+function wrapStatement(db: BetterSqlite3Database, sql: string): GtfsStatement {
   const state: StatementState = {
     stmt: db.prepare(sql),
     iterator: null,
     currentRow: null,
     boundParams: null,
   };
-
-  // better-sqlite3 switches on whether the statement returns rows.
-  // `pluck(false)` + `raw(false)` is the default object-row mode we want.
-  try {
-    state.stmt.raw(false);
-  } catch {
-    // Non-SELECT statements throw; harmless.
-  }
 
   const resetIterator = () => {
     state.iterator = null;
@@ -96,11 +86,16 @@ function wrapStatement(
     },
     free: async () => {
       resetIterator();
-      // better-sqlite3 statements are garbage-collected; nothing to free.
+      // better-sqlite3 statements are GC-managed; no explicit release needed.
     },
   };
 }
 
+/**
+ * Wrap an already-open `better-sqlite3` database handle as a `GtfsDatabase`.
+ * Pair with `GtfsSqlJs.attach()` — the caller retains ownership of the raw
+ * handle unless `ownsDatabase: true` is passed.
+ */
 export function wrapBetterSqlite3(db: BetterSqlite3Database): GtfsDatabase {
   return {
     prepare: async (sql) => wrapStatement(db, sql),
@@ -108,16 +103,17 @@ export function wrapBetterSqlite3(db: BetterSqlite3Database): GtfsDatabase {
       db.exec(sql);
     },
     export: async () => {
-      // better-sqlite3 can only serialize in-memory databases, and only in
-      // versions ≥10. For a file-backed DB the caller should read the file.
+      // `serialize()` only works on in-memory databases (better-sqlite3 ≥ 10).
+      // File-backed DBs persist themselves on disk; the library's cache layer
+      // catches this error and no-ops.
       const serialize = (db as unknown as { serialize?: () => Buffer }).serialize;
       if (typeof serialize === 'function') {
         const buf = serialize.call(db);
         return new Uint8Array(buf.buffer, buf.byteOffset, buf.byteLength);
       }
       throw new ExportNotSupportedError(
-        'better-sqlite3 does not support in-memory serialization for this database. ' +
-        'Read the underlying file on disk directly to persist it.'
+        'better-sqlite3 cannot serialize this database. Read the underlying ' +
+        'file on disk directly to persist it.'
       );
     },
     close: async () => {
@@ -126,6 +122,11 @@ export function wrapBetterSqlite3(db: BetterSqlite3Database): GtfsDatabase {
   };
 }
 
+/**
+ * Factory for the library-managed path (`fromZip` / `fromZipData` /
+ * `fromDatabase`). `filename` defaults to `:memory:`; pass a path to have the
+ * adapter create / open a file-backed database.
+ */
 export function createBetterSqlite3Adapter(
   filename: string = ':memory:',
   options?: BetterSqlite3.Options
@@ -134,7 +135,8 @@ export function createBetterSqlite3Adapter(
     createEmpty: async () => wrapBetterSqlite3(new BetterSqlite3(filename, options)),
     openFromBuffer: async (buf) => {
       // better-sqlite3 accepts a Buffer as the first argument and loads the
-      // database bytes into an in-memory connection.
+      // database bytes into an in-memory connection. The typings still say
+      // `string`, so we cast through `unknown`.
       const data = buf instanceof Uint8Array
         ? Buffer.from(buf.buffer, buf.byteOffset, buf.byteLength)
         : Buffer.from(new Uint8Array(buf));
@@ -148,8 +150,6 @@ export function createBetterSqlite3Adapter(
 }
 
 function toPositionalArgs(params: SqlValue[]): unknown[] {
-  // better-sqlite3 expects rest-args, and does not accept `undefined` — we
-  // pass nulls through and coerce Uint8Array to Buffer for BLOBs.
   return params.map((p) => {
     if (p instanceof Uint8Array) {
       return Buffer.from(p.buffer, p.byteOffset, p.byteLength);
