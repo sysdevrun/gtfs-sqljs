@@ -1,5 +1,5 @@
 /**
- * gtfs-sqljs - Load GTFS data into sql.js SQLite database
+ * gtfs-sqljs - Load GTFS data into a SQLite database (pluggable adapter)
  * @author Théophile Helleboid/SysDevRun
  * @license MIT
  */
@@ -7,6 +7,7 @@
 export {
   GtfsSqlJs,
   type GtfsSqlJsOptions,
+  type GtfsSqlJsAttachOptions,
   type AgencyFilters,
   type StopFilters,
   type RouteFilters,
@@ -24,6 +25,16 @@ export {
   type StopTimeWithRealtime,
   type GeoJsonFeatureCollection
 } from './gtfs-sqljs';
+
+// Export adapter surface (types + error class)
+export type {
+  SqlValue,
+  Row,
+  GtfsStatement,
+  GtfsDatabase,
+  GtfsDatabaseAdapter,
+} from './adapters/types';
+export { ExportNotSupportedError } from './adapters/types';
 
 // Export GTFS types
 export type {
@@ -90,3 +101,4 @@ export { isCacheExpired, filterExpiredEntries, getCacheStats, DEFAULT_CACHE_EXPI
 
 // Note: Cache store implementations (IndexedDBCacheStore, FileSystemCacheStore) are available
 // in examples/cache/ directory. Copy them to your project as needed.
+// Note: The sql.js adapter lives at the subpath `gtfs-sqljs/adapters/sql-js`.

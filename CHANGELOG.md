@@ -2,10 +2,30 @@
 
 ## Upcoming release
 
-### Performance
+### Breaking changes — pluggable database adapter
+
+- **All query methods are now `async`** and return `Promise<T>`. Call sites must `await` (`const routes = await gtfs.getRoutes()`). This includes `gtfs.close()` and `gtfs.export()`. See `documents/pluggable-db-adapter.md`.
+- **`options.adapter` is now required** on `GtfsSqlJs.fromZip()`, `fromZipData()`, and `fromDatabase()`. Consumers using sql.js migrate as:
+  ```ts
+  import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
+  const gtfs = await GtfsSqlJs.fromZip(url, { adapter: await createSqlJsAdapter({ locateFile }) });
+  ```
+- **New `GtfsSqlJs.attach(db, options?)` entry point** for callers who already hold a live database handle (typical for file-backed drivers: better-sqlite3, op-sqlite, expo-sqlite). `attach()` does not own the handle by default; pass `ownsDatabase: true` to have `close()` release it.
+- **sql.js moves to an optional `peerDependency`.** Projects using another adapter never install or bundle sql.js. Projects using the sql.js adapter keep `sql.js` in their own dependencies.
+- `SQL` and `locateFile` options are removed from `GtfsSqlJsOptions`; equivalent options live on `createSqlJsAdapter()` now.
+- sql.js type re-exports (`SqlJsStatic`, sql.js `Database`) are dropped from the public surface. Migrate to `GtfsDatabase` or import from `sql.js` directly.
+
+### New features
+
+- New `src/adapters/types.ts` public surface: `GtfsDatabase`, `GtfsStatement`, `GtfsDatabaseAdapter`, `SqlValue`, `Row`, `ExportNotSupportedError`.
+- sql.js adapter at subpath `gtfs-sqljs/adapters/sql-js` (exports `createSqlJsAdapter`, `wrapSqlJsDatabase`). The core module no longer imports sql.js.
+- Reference `BetterSqlite3Adapter` in `examples/adapters/` (and the equivalent test helper) — the Node file-backed path used by the CI end-to-end test.
+- Cache layer now catches `ExportNotSupportedError` from adapters that cannot serialize in-memory and logs a warning instead of failing the load; file-backed drivers persist their own DB on disk.
+
+### Performance (from earlier work in this cycle)
 
 - Ingestion is ~35-45% faster on medium-to-large feeds: ASTUCE (Rouen, ~430k stop_times rows) drops from ~2650 ms to ~1670 ms; Car Jaune from ~312 ms to ~188 ms. Wins come from parsing each CSV only once (progress totals now use a fast newline-based row-count estimate), loading rows as positional arrays instead of per-row objects, and reusing a single prepared INSERT per table instead of re-preparing a multi-row statement per 1000-row batch.
-- Dropped the bulk-load PRAGMA block (`synchronous`, `journal_mode`, `temp_store`, `cache_size`, `locking_mode`) from ingestion. Benchmarked aggregate effect on sql.js is within noise (≤1%); removing them simplifies the code and unblocks upcoming pluggable-adapter work.
+- Dropped the bulk-load PRAGMA block (`synchronous`, `journal_mode`, `temp_store`, `cache_size`, `locking_mode`) from ingestion. Benchmarked aggregate effect on sql.js is within noise (≤1%); removing them simplifies the code and unblocks the pluggable adapter.
 
 ### Behaviour changes
 

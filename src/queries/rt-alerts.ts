@@ -1,4 +1,4 @@
-import type { Database, ParamsObject } from 'sql.js';
+import type { GtfsDatabase, Row } from '../adapters/types';
 import type { Alert, EntitySelector, TimeRange, TranslatedString } from '../types/gtfs-rt';
 import type { AlertFilters } from '../types/gtfs-rt';
 
@@ -7,7 +7,7 @@ export type { AlertFilters };
 /**
  * Parse JSON fields from database
  */
-function parseAlert(row: ParamsObject): Alert {
+function parseAlert(row: Row): Alert {
   return {
     id: String(row.id),
     active_period: row.active_period ? JSON.parse(String(row.active_period)) as TimeRange[] : [],
@@ -74,7 +74,7 @@ function alertAffectsEntity(alert: Alert, filters: AlertFilters): boolean {
 /**
  * Get alerts with optional filters
  */
-export function getAlerts(db: Database, filters: AlertFilters = {}, stalenessThreshold: number = 120): Alert[] {
+export async function getAlerts(db: GtfsDatabase, filters: AlertFilters = {}, stalenessThreshold: number = 120): Promise<Alert[]> {
   const {
     alertId,
     activeOnly,
@@ -126,14 +126,14 @@ export function getAlerts(db: Database, filters: AlertFilters = {}, stalenessThr
   }
 
   // Execute query
-  const stmt = db.prepare(sql);
+  const stmt = await db.prepare(sql);
   if (params.length > 0) {
-    stmt.bind(params);
+    await stmt.bind(params);
   }
 
   const alerts: Alert[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     const alert = parseAlert(row);
 
     // Apply activeOnly filter in application code
@@ -151,31 +151,31 @@ export function getAlerts(db: Database, filters: AlertFilters = {}, stalenessThr
     alerts.push(alert);
   }
 
-  stmt.free();
+  await stmt.free();
   return alerts;
 }
 
 /**
  * Get alert by ID
  */
-export function getAlertById(db: Database, alertId: string, stalenessThreshold: number = 120): Alert | null {
-  const alerts = getAlerts(db, { alertId, limit: 1 }, stalenessThreshold);
+export async function getAlertById(db: GtfsDatabase, alertId: string, stalenessThreshold: number = 120): Promise<Alert | null> {
+  const alerts = await getAlerts(db, { alertId, limit: 1 }, stalenessThreshold);
   return alerts.length > 0 ? alerts[0] : null;
 }
 
 /**
  * Get all alerts without staleness filtering (for debugging)
  */
-export function getAllAlerts(db: Database): Alert[] {
+export async function getAllAlerts(db: GtfsDatabase): Promise<Alert[]> {
   const sql = 'SELECT * FROM rt_alerts ORDER BY rt_last_updated DESC';
-  const stmt = db.prepare(sql);
+  const stmt = await db.prepare(sql);
 
   const alerts: Alert[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     alerts.push(parseAlert(row));
   }
 
-  stmt.free();
+  await stmt.free();
   return alerts;
 }

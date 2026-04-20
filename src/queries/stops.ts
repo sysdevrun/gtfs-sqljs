@@ -2,7 +2,7 @@
  * Stop Query Methods
  */
 
-import type { Database, ParamsObject } from 'sql.js';
+import type { GtfsDatabase, Row } from '../adapters/types';
 import type { Stop } from '../types/gtfs';
 
 export interface StopFilters {
@@ -19,7 +19,7 @@ export interface StopFilters {
  * - Use name filter for partial name matching
  * - Use tripId filter to get stops for a specific trip (ordered by stop_sequence)
  */
-export function getStops(db: Database, filters: StopFilters = {}): Stop[] {
+export async function getStops(db: GtfsDatabase, filters: StopFilters = {}): Promise<Stop[]> {
   const { stopId, stopCode, name, tripId, limit } = filters;
 
   // Handle special case: get stops by trip (requires JOIN)
@@ -28,21 +28,21 @@ export function getStops(db: Database, filters: StopFilters = {}): Stop[] {
     if (tripIds.length === 0) return [];
 
     const placeholders = tripIds.map(() => '?').join(', ');
-    const stmt = db.prepare(`
+    const stmt = await db.prepare(`
       SELECT s.* FROM stops s
       INNER JOIN stop_times st ON s.stop_id = st.stop_id
       WHERE st.trip_id IN (${placeholders})
       ORDER BY st.stop_sequence
     `);
-    stmt.bind(tripIds);
+    await stmt.bind(tripIds);
 
     const stops: Stop[] = [];
-    while (stmt.step()) {
-      const row = stmt.getAsObject();
+    while (await stmt.step()) {
+      const row = await stmt.getAsObject();
       stops.push(rowToStop(row));
     }
 
-    stmt.free();
+    await stmt.free();
     return stops;
   }
 
@@ -84,18 +84,18 @@ export function getStops(db: Database, filters: StopFilters = {}): Stop[] {
     params.push(limit);
   }
 
-  const stmt = db.prepare(sql);
+  const stmt = await db.prepare(sql);
   if (params.length > 0) {
-    stmt.bind(params);
+    await stmt.bind(params);
   }
 
   const stops: Stop[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     stops.push(rowToStop(row));
   }
 
-  stmt.free();
+  await stmt.free();
   return stops;
 }
 
@@ -103,14 +103,14 @@ export function getStops(db: Database, filters: StopFilters = {}): Stop[] {
  * Search stops by name (case-insensitive, partial match)
  * This is a convenience method for name-based searches
  */
-export function searchStopsByName(db: Database, name: string, limit = 50): Stop[] {
+export async function searchStopsByName(db: GtfsDatabase, name: string, limit = 50): Promise<Stop[]> {
   return getStops(db, { name, limit });
 }
 
 /**
  * Convert database row to Stop object
  */
-function rowToStop(row: ParamsObject): Stop {
+function rowToStop(row: Row): Stop {
   return {
     stop_id: String(row.stop_id),
     stop_name: String(row.stop_name),

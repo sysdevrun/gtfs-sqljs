@@ -1,4 +1,4 @@
-import type { Database } from 'sql.js';
+import type { GtfsDatabase } from '../adapters/types';
 import protobuf from 'protobufjs';
 
 
@@ -348,8 +348,8 @@ function parseTranslatedString(ts: ProtobufTranslatedString | undefined): string
 }
 
 // Insert alerts into database
-function insertAlerts(db: Database, alerts: ProtobufAlert[], timestamp: number): void {
-  const stmt = db.prepare(`
+async function insertAlerts(db: GtfsDatabase, alerts: ProtobufAlert[], timestamp: number): Promise<void> {
+  const stmt = await db.prepare(`
     INSERT OR REPLACE INTO rt_alerts (
       id, active_period, informed_entity, cause, effect,
       url, header_text, description_text, rt_last_updated
@@ -361,7 +361,7 @@ function insertAlerts(db: Database, alerts: ProtobufAlert[], timestamp: number):
     const activePeriodSnake = (alert.activePeriod ?? []).map(convertObjectKeysToSnakeCase);
     const informedEntitySnake = (alert.informedEntity ?? []).map(convertObjectKeysToSnakeCase);
 
-    stmt.run([
+    await stmt.run([
       alert.id,
       JSON.stringify(activePeriodSnake),
       JSON.stringify(informedEntitySnake),
@@ -374,12 +374,12 @@ function insertAlerts(db: Database, alerts: ProtobufAlert[], timestamp: number):
     ]);
   }
 
-  stmt.free();
+  await stmt.free();
 }
 
 // Insert vehicle positions into database
-function insertVehiclePositions(db: Database, positions: ProtobufVehiclePosition[], timestamp: number): void {
-  const stmt = db.prepare(`
+async function insertVehiclePositions(db: GtfsDatabase, positions: ProtobufVehiclePosition[], timestamp: number): Promise<void> {
+  const stmt = await db.prepare(`
     INSERT OR REPLACE INTO rt_vehicle_positions (
       trip_id, route_id, vehicle_id, vehicle_label, vehicle_license_plate,
       latitude, longitude, bearing, odometer, speed,
@@ -392,7 +392,7 @@ function insertVehiclePositions(db: Database, positions: ProtobufVehiclePosition
     const trip = vp.trip;
     if (!trip || !trip.tripId) continue;
 
-    stmt.run([
+    await stmt.run([
       trip.tripId,
       trip.routeId || null,
       vp.vehicle?.id || null,
@@ -413,19 +413,19 @@ function insertVehiclePositions(db: Database, positions: ProtobufVehiclePosition
     ]);
   }
 
-  stmt.free();
+  await stmt.free();
 }
 
 // Insert trip updates into database
-function insertTripUpdates(db: Database, updates: ProtobufTripUpdate[], timestamp: number): void {
-  const tripStmt = db.prepare(`
+async function insertTripUpdates(db: GtfsDatabase, updates: ProtobufTripUpdate[], timestamp: number): Promise<void> {
+  const tripStmt = await db.prepare(`
     INSERT OR REPLACE INTO rt_trip_updates (
       trip_id, route_id, vehicle_id, vehicle_label, vehicle_license_plate,
       timestamp, delay, schedule_relationship, rt_last_updated
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
-  const stopTimeStmt = db.prepare(`
+  const stopTimeStmt = await db.prepare(`
     INSERT OR REPLACE INTO rt_stop_time_updates (
       trip_id, stop_sequence, stop_id,
       arrival_delay, arrival_time, arrival_uncertainty,
@@ -439,7 +439,7 @@ function insertTripUpdates(db: Database, updates: ProtobufTripUpdate[], timestam
     if (!trip || !trip.tripId) continue;
 
     // Insert trip update
-    tripStmt.run([
+    await tripStmt.run([
       trip.tripId,
       trip.routeId || null,
       tu.vehicle?.id || null,
@@ -454,7 +454,7 @@ function insertTripUpdates(db: Database, updates: ProtobufTripUpdate[], timestam
     // Insert stop time updates
     if (tu.stopTimeUpdate) {
       for (const stu of tu.stopTimeUpdate) {
-        stopTimeStmt.run([
+        await stopTimeStmt.run([
           trip.tripId,
           stu.stopSequence || null,
           stu.stopId || null,
@@ -471,8 +471,8 @@ function insertTripUpdates(db: Database, updates: ProtobufTripUpdate[], timestam
     }
   }
 
-  tripStmt.free();
-  stopTimeStmt.free();
+  await tripStmt.free();
+  await stopTimeStmt.free();
 }
 
 // Decode protobuf data into feed objects
@@ -492,7 +492,7 @@ function decodeFeedMessage(data: Uint8Array): object {
 
 // Process decoded feed objects: collect entities and insert into database
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function processRealtimeFeeds(db: Database, feeds: any[]): void {
+async function processRealtimeFeeds(db: GtfsDatabase, feeds: any[]): Promise<void> {
   // Current timestamp for staleness tracking
   const now = Math.floor(Date.now() / 1000);
 
@@ -518,28 +518,28 @@ function processRealtimeFeeds(db: Database, feeds: any[]): void {
   }
 
   // Clear old data and insert new data in a single transaction
-  db.run('BEGIN TRANSACTION');
+  await db.run('BEGIN TRANSACTION');
   try {
     // Clear all realtime tables
-    db.run('DELETE FROM rt_stop_time_updates');
-    db.run('DELETE FROM rt_trip_updates');
-    db.run('DELETE FROM rt_vehicle_positions');
-    db.run('DELETE FROM rt_alerts');
+    await db.run('DELETE FROM rt_stop_time_updates');
+    await db.run('DELETE FROM rt_trip_updates');
+    await db.run('DELETE FROM rt_vehicle_positions');
+    await db.run('DELETE FROM rt_alerts');
 
     // Insert new data
     if (allAlerts.length > 0) {
-      insertAlerts(db, allAlerts, now);
+      await insertAlerts(db, allAlerts, now);
     }
     if (allVehiclePositions.length > 0) {
-      insertVehiclePositions(db, allVehiclePositions, now);
+      await insertVehiclePositions(db, allVehiclePositions, now);
     }
     if (allTripUpdates.length > 0) {
-      insertTripUpdates(db, allTripUpdates, now);
+      await insertTripUpdates(db, allTripUpdates, now);
     }
 
-    db.run('COMMIT');
+    await db.run('COMMIT');
   } catch (error) {
-    db.run('ROLLBACK');
+    await db.run('ROLLBACK');
     throw error;
   }
 }
@@ -548,7 +548,7 @@ function processRealtimeFeeds(db: Database, feeds: any[]): void {
  * Fetch and load GTFS Realtime data from multiple feed URLs
  * All feeds are fetched in parallel. If any feed fails, an error is thrown.
  */
-export async function loadRealtimeData(db: Database, feedUrls: string[]): Promise<void> {
+export async function loadRealtimeData(db: GtfsDatabase, feedUrls: string[]): Promise<void> {
   // Fetch all feeds in parallel
   const buffers = await Promise.all(feedUrls.map(async (url) => {
     try {
@@ -565,7 +565,7 @@ export async function loadRealtimeData(db: Database, feedUrls: string[]): Promis
  * Load GTFS Realtime data from pre-loaded protobuf buffers
  * Decodes and inserts data from Uint8Array buffers — same as loadRealtimeData but skips fetching.
  */
-export async function loadRealtimeDataFromBuffers(db: Database, buffers: Uint8Array[]): Promise<void> {
+export async function loadRealtimeDataFromBuffers(db: GtfsDatabase, buffers: Uint8Array[]): Promise<void> {
   const feeds = buffers.map((buffer) => decodeFeedMessage(buffer));
-  processRealtimeFeeds(db, feeds);
+  await processRealtimeFeeds(db, feeds);
 }

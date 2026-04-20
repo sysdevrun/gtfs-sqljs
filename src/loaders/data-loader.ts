@@ -2,12 +2,12 @@
  * Data Loader - Loads GTFS data into SQLite database
  */
 
-import type { Database } from 'sql.js';
 import Papa from 'papaparse';
 import { countCsvRows } from './csv-parser';
 import { GTFS_SCHEMA, type TableSchema } from '../schema/schema';
 import type { GTFSFiles } from './zip-loader';
 import type { ProgressCallback } from '../gtfs-sqljs';
+import type { GtfsDatabase, SqlValue } from '../adapters/types';
 
 const PROGRESS_BATCH = 1000;
 
@@ -17,7 +17,7 @@ const PROGRESS_BATCH = 1000;
  * @param onProgress - Optional progress callback
  */
 export async function loadGTFSData(
-  db: Database,
+  db: GtfsDatabase,
   files: GTFSFiles,
   skipFiles?: string[],
   onProgress?: ProgressCallback
@@ -144,7 +144,7 @@ function computePercent(rowsProcessed: number, totalRows: number): number {
  * allocation) and binds column values by pre-computed index.
  */
 async function loadTableData(
-  db: Database,
+  db: GtfsDatabase,
   schema: TableSchema,
   csvContent: string,
   onProgress?: (rowsProcessed: number) => void
@@ -174,11 +174,11 @@ async function loadTableData(
     .map(() => '?')
     .join(', ')})`;
 
-  db.run('BEGIN TRANSACTION');
+  await db.run('BEGIN TRANSACTION');
   try {
-    const stmt = db.prepare(insertSQL);
+    const stmt = await db.prepare(insertSQL);
     try {
-      const rowVals: (string | number | null)[] = new Array(columns.length);
+      const rowVals: SqlValue[] = new Array(columns.length);
       for (let r = 0; r < dataRows.length; r++) {
         const row = dataRows[r];
         for (let j = 0; j < colIndexes.length; j++) {
@@ -190,19 +190,19 @@ async function loadTableData(
             rowVals[j] = trimmed === '' ? null : trimmed;
           }
         }
-        stmt.run(rowVals);
+        await stmt.run(rowVals);
 
         const done = r + 1;
         if (done % PROGRESS_BATCH === 0) onProgress?.(done);
       }
       if (dataRows.length % PROGRESS_BATCH !== 0) onProgress?.(dataRows.length);
     } finally {
-      stmt.free();
+      await stmt.free();
     }
-    db.run('COMMIT');
+    await db.run('COMMIT');
   } catch (error) {
     try {
-      db.run('ROLLBACK');
+      await db.run('ROLLBACK');
     } catch (rollbackError) {
       console.error('Error rolling back transaction:', rollbackError);
     }

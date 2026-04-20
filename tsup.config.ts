@@ -1,7 +1,10 @@
 import { defineConfig } from 'tsup';
 
 export default defineConfig({
-  entry: ['src/index.ts'],
+  entry: {
+    'index': 'src/index.ts',
+    'adapters/sql-js/index': 'src/adapters/sql-js/index.ts',
+  },
   format: ['esm'],
   dts: true,
   splitting: false,

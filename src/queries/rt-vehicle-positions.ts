@@ -1,4 +1,4 @@
-import type { Database, ParamsObject } from 'sql.js';
+import type { GtfsDatabase, Row } from '../adapters/types';
 import type { VehiclePosition } from '../types/gtfs-rt';
 import type { VehiclePositionFilters } from '../types/gtfs-rt';
 
@@ -7,7 +7,7 @@ export type { VehiclePositionFilters };
 /**
  * Parse vehicle position from database row
  */
-export function parseVehiclePosition(row: ParamsObject): VehiclePosition {
+export function parseVehiclePosition(row: Row): VehiclePosition {
   const vp: VehiclePosition = {
     trip_id: String(row.trip_id),
     route_id: row.route_id ? String(row.route_id) : undefined,
@@ -60,11 +60,11 @@ export function parseVehiclePosition(row: ParamsObject): VehiclePosition {
 /**
  * Get vehicle positions with optional filters
  */
-export function getVehiclePositions(
-  db: Database,
+export async function getVehiclePositions(
+  db: GtfsDatabase,
   filters: VehiclePositionFilters = {},
   stalenessThreshold: number = 120
-): VehiclePosition[] {
+): Promise<VehiclePosition[]> {
   const { tripId, routeId, vehicleId, limit } = filters;
 
   const conditions: string[] = [];
@@ -107,46 +107,46 @@ export function getVehiclePositions(
   }
 
   // Execute query
-  const stmt = db.prepare(sql);
+  const stmt = await db.prepare(sql);
   if (params.length > 0) {
-    stmt.bind(params);
+    await stmt.bind(params);
   }
 
   const positions: VehiclePosition[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     positions.push(parseVehiclePosition(row));
   }
 
-  stmt.free();
+  await stmt.free();
   return positions;
 }
 
 /**
  * Get vehicle position by trip ID
  */
-export function getVehiclePositionByTripId(
-  db: Database,
+export async function getVehiclePositionByTripId(
+  db: GtfsDatabase,
   tripId: string,
   stalenessThreshold: number = 120
-): VehiclePosition | null {
-  const positions = getVehiclePositions(db, { tripId, limit: 1 }, stalenessThreshold);
+): Promise<VehiclePosition | null> {
+  const positions = await getVehiclePositions(db, { tripId, limit: 1 }, stalenessThreshold);
   return positions.length > 0 ? positions[0] : null;
 }
 
 /**
  * Get all vehicle positions without staleness filtering (for debugging)
  */
-export function getAllVehiclePositions(db: Database): VehiclePosition[] {
+export async function getAllVehiclePositions(db: GtfsDatabase): Promise<VehiclePosition[]> {
   const sql = 'SELECT * FROM rt_vehicle_positions ORDER BY rt_last_updated DESC';
-  const stmt = db.prepare(sql);
+  const stmt = await db.prepare(sql);
 
   const positions: VehiclePosition[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     positions.push(parseVehiclePosition(row));
   }
 
-  stmt.free();
+  await stmt.free();
   return positions;
 }

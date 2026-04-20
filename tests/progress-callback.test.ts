@@ -1,15 +1,10 @@
 /**
  * Tests for the progress callback emitted during GTFS ingestion.
- *
- * Guards against regressions in:
- *  - totalRows estimate accuracy (within a small tolerance of the real
- *    COUNT(*) sum after ingestion completes)
- *  - percentComplete bounds (stays in [0, 100])
- *  - the terminal 'complete' phase being emitted exactly once
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { GtfsSqlJs, type ProgressInfo } from '../src/gtfs-sqljs';
+import { createSqlJsAdapter } from '../src/adapters/sql-js';
 import path from 'path';
 import fs from 'fs/promises';
 
@@ -24,6 +19,7 @@ describe('Progress callback', () => {
 
     events = [];
     gtfs = await GtfsSqlJs.fromZipData(zipData, {
+      adapter: await createSqlJsAdapter(),
       onProgress: (info) => events.push({ ...info }),
     });
 
@@ -48,16 +44,17 @@ describe('Progress callback', () => {
     ];
     let total = 0;
     for (const t of tables) {
-      const stmt = db.prepare(`SELECT COUNT(*) AS n FROM ${t}`);
-      stmt.step();
-      total += (stmt.getAsObject().n as number) || 0;
-      stmt.free();
+      const stmt = await db.prepare(`SELECT COUNT(*) AS n FROM ${t}`);
+      await stmt.step();
+      const row = await stmt.getAsObject();
+      total += (row.n as number) || 0;
+      await stmt.free();
     }
     actualRowCount = total;
   });
 
-  afterAll(() => {
-    gtfs?.close();
+  afterAll(async () => {
+    await gtfs?.close();
   });
 
   it('emits at least one progress event', () => {
@@ -65,8 +62,6 @@ describe('Progress callback', () => {
   });
 
   it('reports a totalRows estimate close to the real COUNT(*) sum', () => {
-    // GtfsSqlJs emits one synthetic inserting_data event with totalRows=0
-    // before loadGTFSData starts; ignore it and look at the loader's events.
     const loaderEvents = events.filter(
       (e) => e.phase === 'inserting_data' && e.totalRows > 0
     );
@@ -76,8 +71,6 @@ describe('Progress callback', () => {
     expect(estimates.size).toBe(1);
 
     const estimate = loaderEvents[0].totalRows;
-    // Tolerance: up to one row of drift per GTFS file to absorb trailing
-    // blank lines or missing trailing newlines. The fixture has <=20 files.
     expect(Math.abs(estimate - actualRowCount)).toBeLessThanOrEqual(20);
   });
 

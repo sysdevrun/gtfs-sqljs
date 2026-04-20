@@ -2,7 +2,7 @@
  * Shape Query Methods
  */
 
-import type { Database, ParamsObject } from 'sql.js';
+import type { GtfsDatabase, Row } from '../adapters/types';
 import type { Shape, Route } from '../types/gtfs';
 
 export interface ShapeFilters {
@@ -41,10 +41,10 @@ export interface GeoJsonFeatureCollection {
  * Get shapes with optional filters
  * - Filters support both single values and arrays
  */
-export function getShapes(
-  db: Database,
+export async function getShapes(
+  db: GtfsDatabase,
   filters: ShapeFilters = {}
-): Shape[] {
+): Promise<Shape[]> {
   const { shapeId, routeId, tripId, limit } = filters;
 
   // Determine if we need to join with trips table
@@ -108,18 +108,18 @@ export function getShapes(
     params.push(limit);
   }
 
-  const stmt = db.prepare(sql);
+  const stmt = await db.prepare(sql);
   if (params.length > 0) {
-    stmt.bind(params);
+    await stmt.bind(params);
   }
 
   const shapes: Shape[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     shapes.push(rowToShape(row));
   }
 
-  stmt.free();
+  await stmt.free();
 
   return shapes;
 }
@@ -130,12 +130,12 @@ export function getShapes(
  * @param filters - Same filters as getShapes
  * @param precision - Number of decimal places for coordinates (default: 6)
  */
-export function getShapesToGeojson(
-  db: Database,
+export async function getShapesToGeojson(
+  db: GtfsDatabase,
   filters: ShapeFilters = {},
   precision: number = 6
-): GeoJsonFeatureCollection {
-  const shapes = getShapes(db, filters);
+): Promise<GeoJsonFeatureCollection> {
+  const shapes = await getShapes(db, filters);
 
   // Group shapes by shape_id
   const shapeGroups = new Map<string, Shape[]>();
@@ -149,7 +149,7 @@ export function getShapesToGeojson(
   }
 
   // Get route information for each shape
-  const shapeRouteMap = getRoutesByShapeIds(db, Array.from(shapeGroups.keys()));
+  const shapeRouteMap = await getRoutesByShapeIds(db, Array.from(shapeGroups.keys()));
 
   // Build GeoJSON features
   const features: GeoJsonFeature[] = [];
@@ -200,10 +200,10 @@ export function getShapesToGeojson(
 /**
  * Get the first matching route for each shape_id
  */
-function getRoutesByShapeIds(
-  db: Database,
+async function getRoutesByShapeIds(
+  db: GtfsDatabase,
   shapeIds: string[]
-): Map<string, Route> {
+): Promise<Map<string, Route>> {
   if (shapeIds.length === 0) {
     return new Map();
   }
@@ -219,17 +219,17 @@ function getRoutesByShapeIds(
     GROUP BY t.shape_id
   `;
 
-  const stmt = db.prepare(sql);
-  stmt.bind(shapeIds);
+  const stmt = await db.prepare(sql);
+  await stmt.bind(shapeIds);
 
   const result = new Map<string, Route>();
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     const shapeId = String(row.shape_id);
     result.set(shapeId, rowToRoute(row));
   }
 
-  stmt.free();
+  await stmt.free();
 
   return result;
 }
@@ -237,7 +237,7 @@ function getRoutesByShapeIds(
 /**
  * Convert database row to Shape object
  */
-function rowToShape(row: ParamsObject): Shape {
+function rowToShape(row: Row): Shape {
   return {
     shape_id: String(row.shape_id),
     shape_pt_lat: Number(row.shape_pt_lat),
@@ -250,7 +250,7 @@ function rowToShape(row: ParamsObject): Shape {
 /**
  * Convert database row to Route object
  */
-function rowToRoute(row: ParamsObject): Route {
+function rowToRoute(row: Row): Route {
   return {
     route_id: String(row.route_id),
     route_short_name: row.route_short_name ? String(row.route_short_name) : '',

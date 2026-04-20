@@ -1,84 +1,78 @@
 /**
- * Basic Usage Example for gtfs-sqljs
+ * Basic Usage Example for gtfs-sqljs (v0.5+ async / pluggable-adapter API).
  *
- * This example demonstrates how to load GTFS data and perform basic queries.
+ * This example shows the sql.js path. For a file-backed native driver
+ * (better-sqlite3, op-sqlite, expo-sqlite), open a connection yourself and
+ * pass the wrapped handle to `GtfsSqlJs.attach()` instead.
  */
 
 import { GtfsSqlJs } from '../src/index';
+import { createSqlJsAdapter } from '../src/adapters/sql-js';
 
 async function main() {
   console.log('Loading GTFS data...');
 
-  // Load GTFS data from a ZIP file
-  // Replace with your GTFS feed URL or local path
-  const gtfs = await GtfsSqlJs.fromZip('path/to/gtfs.zip');
+  const gtfs = await GtfsSqlJs.fromZip('path/to/gtfs.zip', {
+    adapter: await createSqlJsAdapter(),
+  });
 
   console.log('GTFS data loaded successfully!\n');
 
-  // Example 1: Find stops by name
   console.log('=== Example 1: Search for stops ===');
-  const stops = gtfs.searchStopsByName('Station', 5);
+  const stops = await gtfs.getStops({ name: 'Station', limit: 5 });
   console.log(`Found ${stops.length} stops:`);
   stops.forEach(stop => {
     console.log(`  - ${stop.stop_name} (${stop.stop_id})`);
   });
   console.log();
 
-  // Example 2: Get all routes
   console.log('=== Example 2: List all routes ===');
-  const routes = gtfs.getAllRoutes(5);
+  const routes = await gtfs.getRoutes({ limit: 5 });
   console.log(`Found ${routes.length} routes:`);
   routes.forEach(route => {
     console.log(`  - ${route.route_short_name}: ${route.route_long_name}`);
   });
   console.log();
 
-  // Example 3: Get active services for today
   console.log('=== Example 3: Active services for a date ===');
-  const date = '20240115'; // YYYYMMDD format
-  const serviceIds = gtfs.getActiveServiceIds(date);
+  const date = '20240115';
+  const serviceIds = await gtfs.getActiveServiceIds(date);
   console.log(`Active services on ${date}:`);
   serviceIds.forEach(serviceId => {
     console.log(`  - ${serviceId}`);
   });
   console.log();
 
-  // Example 4: Get trips for a route on a specific date
   if (routes.length > 0) {
     console.log('=== Example 4: Trips for a route ===');
     const route = routes[0];
-    const trips = gtfs.getTripsByRouteAndDate(route.route_id, date);
+    const trips = await gtfs.getTrips({ routeId: route.route_id, date });
     console.log(`Trips for route ${route.route_short_name} on ${date}:`);
     trips.slice(0, 5).forEach(trip => {
       console.log(`  - ${trip.trip_id} (${trip.trip_headsign || 'No headsign'})`);
     });
     console.log();
 
-    // Example 5: Get stop times for a trip
     if (trips.length > 0) {
       console.log('=== Example 5: Stop times for a trip ===');
       const trip = trips[0];
-      const stopTimes = gtfs.getStopTimesByTrip(trip.trip_id);
+      const stopTimes = await gtfs.getStopTimes({ tripId: trip.trip_id });
+      const stopsForTrip = await gtfs.getStops({ tripId: trip.trip_id });
+      const stopById = new Map(stopsForTrip.map(s => [s.stop_id, s]));
       console.log(`Schedule for trip ${trip.trip_id}:`);
       stopTimes.forEach(st => {
-        const stop = gtfs.getStopById(st.stop_id);
-        console.log(`  ${st.arrival_time} - ${stop?.stop_name}`);
+        console.log(`  ${st.arrival_time} - ${stopById.get(st.stop_id)?.stop_name ?? st.stop_id}`);
       });
       console.log();
     }
   }
 
-  // Example 6: Export database for later use
   console.log('=== Example 6: Export database ===');
-  const buffer = gtfs.export();
+  const buffer = await gtfs.export();
   console.log(`Database exported: ${buffer.byteLength} bytes`);
-  console.log('You can save this buffer and load it later with GtfsSqlJs.fromDatabase()');
-  console.log();
 
-  // Clean up
-  gtfs.close();
+  await gtfs.close();
   console.log('Done!');
 }
 
-// Run the example
 main().catch(console.error);

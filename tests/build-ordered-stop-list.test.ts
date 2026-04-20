@@ -1,12 +1,10 @@
 /**
  * Tests for buildOrderedStopList method
- *
- * This method builds an optimal ordered list of stops from multiple trips
- * that may have different stop patterns (express vs local, different start/end points)
  */
 
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { GtfsSqlJs } from '../src/gtfs-sqljs';
+import { createSqlJsAdapter } from '../src/adapters/sql-js';
 import path from 'path';
 import fs from 'fs/promises';
 import initSqlJs from 'sql.js';
@@ -18,26 +16,28 @@ describe('buildOrderedStopList', () => {
     // Load the sample GTFS feed
     const feedPath = path.join(__dirname, 'fixtures', 'sample-feed.zip');
     const zipData = await fs.readFile(feedPath);
-    gtfs = await GtfsSqlJs.fromZipData(zipData);
+    gtfs = await GtfsSqlJs.fromZipData(zipData, {
+      adapter: await createSqlJsAdapter(),
+    });
   });
 
-  afterAll(() => {
-    gtfs?.close();
+  afterAll(async () => {
+    await gtfs?.close();
   });
 
   describe('Edge Cases', () => {
-    it('should return empty array for empty trip list', () => {
-      const stops = gtfs.buildOrderedStopList([]);
+    it('should return empty array for empty trip list', async () => {
+      const stops = await gtfs.buildOrderedStopList([]);
       expect(stops).toEqual([]);
     });
 
-    it('should return empty array for non-existent trip IDs', () => {
-      const stops = gtfs.buildOrderedStopList(['NONEXISTENT_TRIP']);
+    it('should return empty array for non-existent trip IDs', async () => {
+      const stops = await gtfs.buildOrderedStopList(['NONEXISTENT_TRIP']);
       expect(stops).toEqual([]);
     });
 
-    it('should handle single trip', () => {
-      const stops = gtfs.buildOrderedStopList(['AB1']);
+    it('should handle single trip', async () => {
+      const stops = await gtfs.buildOrderedStopList(['AB1']);
 
       expect(stops.length).toBe(2);
       expect(stops[0].stop_id).toBe('BEATTY_AIRPORT');
@@ -46,13 +46,13 @@ describe('buildOrderedStopList', () => {
   });
 
   describe('Simple Cases - Same Route Same Direction', () => {
-    it('should handle two trips with identical stop sequences', () => {
+    it('should handle two trips with identical stop sequences', async () => {
       // Get trips for route CITY going in direction 0
-      const trips = gtfs.getTrips({ routeId: 'CITY', directionId: 0 });
+      const trips = await gtfs.getTrips({ routeId: 'CITY', directionId: 0 });
       const tripIds = trips.map(t => t.trip_id);
 
       // Build ordered stop list
-      const stops = gtfs.buildOrderedStopList(tripIds);
+      const stops = await gtfs.buildOrderedStopList(tripIds);
 
       // Verify we get all unique stops
       expect(stops.length).toBeGreaterThan(0);
@@ -63,9 +63,8 @@ describe('buildOrderedStopList', () => {
       expect(stopIds.length).toBe(uniqueStopIds.length);
 
       // Verify stops are in a valid order
-      // Each individual trip should have its stops in the same order as the result
       for (const tripId of tripIds) {
-        const tripStops = gtfs.getStops({ tripId });
+        const tripStops = await gtfs.getStops({ tripId });
         const tripStopIds = tripStops.map(s => s.stop_id);
 
         // Extract the positions of this trip's stops in the result
@@ -80,14 +79,12 @@ describe('buildOrderedStopList', () => {
   });
 
   describe('Real-World Scenarios', () => {
-    it('should handle route AB (both directions)', () => {
-      // Route AB has trips going both directions
-      const trips = gtfs.getTrips({ routeId: 'AB' });
+    it('should handle route AB (both directions)', async () => {
+      const trips = await gtfs.getTrips({ routeId: 'AB' });
       const tripIds = trips.map(t => t.trip_id);
 
-      const stops = gtfs.buildOrderedStopList(tripIds);
+      const stops = await gtfs.buildOrderedStopList(tripIds);
 
-      // Should have both stops
       expect(stops.length).toBe(2);
 
       const stopIds = stops.map(s => s.stop_id);
@@ -95,11 +92,11 @@ describe('buildOrderedStopList', () => {
       expect(stopIds).toContain('BULLFROG');
     });
 
-    it('should handle route CITY trips', () => {
-      const trips = gtfs.getTrips({ routeId: 'CITY' });
+    it('should handle route CITY trips', async () => {
+      const trips = await gtfs.getTrips({ routeId: 'CITY' });
       const tripIds = trips.map(t => t.trip_id);
 
-      const stops = gtfs.buildOrderedStopList(tripIds);
+      const stops = await gtfs.buildOrderedStopList(tripIds);
 
       // Verify we have multiple stops
       expect(stops.length).toBeGreaterThan(0);
@@ -113,14 +110,14 @@ describe('buildOrderedStopList', () => {
       });
     });
 
-    it('should maintain correct ordering for CITY route direction 0', () => {
-      const trips = gtfs.getTrips({ routeId: 'CITY', directionId: 0 });
+    it('should maintain correct ordering for CITY route direction 0', async () => {
+      const trips = await gtfs.getTrips({ routeId: 'CITY', directionId: 0 });
       const tripIds = trips.map(t => t.trip_id);
 
-      const stops = gtfs.buildOrderedStopList(tripIds);
+      const stops = await gtfs.buildOrderedStopList(tripIds);
 
       // Get stops for first trip to compare
-      const firstTripStops = gtfs.getStops({ tripId: tripIds[0] });
+      const firstTripStops = await gtfs.getStops({ tripId: tripIds[0] });
       const firstTripStopIds = firstTripStops.map(s => s.stop_id);
 
       // All stops from first trip should appear in result in the same order
@@ -137,7 +134,6 @@ describe('buildOrderedStopList', () => {
     let customGtfs: GtfsSqlJs;
 
     beforeAll(async () => {
-      // Create a custom GTFS database with specific test scenarios
       const SQL = await initSqlJs();
       const db = new SQL.Database();
 
@@ -215,16 +211,17 @@ describe('buildOrderedStopList', () => {
         );
       });
 
-      // Initialize GtfsSqlJs with the populated database
-      customGtfs = await GtfsSqlJs.fromDatabase(db.export());
+      customGtfs = await GtfsSqlJs.fromDatabase(db.export().buffer, {
+        adapter: await createSqlJsAdapter({ SQL }),
+      });
     });
 
-    afterAll(() => {
-      customGtfs?.close();
+    afterAll(async () => {
+      await customGtfs?.close();
     });
 
-    it('should merge local and express trips correctly', () => {
-      const stops = customGtfs.buildOrderedStopList(['LOCAL', 'EXPRESS']);
+    it('should merge local and express trips correctly', async () => {
+      const stops = await customGtfs.buildOrderedStopList(['LOCAL', 'EXPRESS']);
 
       const stopIds = stops.map(s => s.stop_id);
 
@@ -232,21 +229,19 @@ describe('buildOrderedStopList', () => {
       expect(stopIds).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
     });
 
-    it('should handle trips with different start/end points', () => {
-      const stops = customGtfs.buildOrderedStopList(['LOCAL', 'SHORT']);
+    it('should handle trips with different start/end points', async () => {
+      const stops = await customGtfs.buildOrderedStopList(['LOCAL', 'SHORT']);
 
       const stopIds = stops.map(s => s.stop_id);
 
-      // Should have all stops from both trips in correct order
       expect(stopIds).toEqual(['A', 'B', 'C', 'D', 'E', 'F']);
     });
 
-    it('should correctly insert intermediate stops', () => {
-      const stops = customGtfs.buildOrderedStopList(['LOCAL', 'WITH_X']);
+    it('should correctly insert intermediate stops', async () => {
+      const stops = await customGtfs.buildOrderedStopList(['LOCAL', 'WITH_X']);
 
       const stopIds = stops.map(s => s.stop_id);
 
-      // X should appear between B and C
       const xIndex = stopIds.indexOf('X');
       const bIndex = stopIds.indexOf('B');
       const cIndex = stopIds.indexOf('C');
@@ -254,37 +249,33 @@ describe('buildOrderedStopList', () => {
       expect(xIndex).toBeGreaterThan(bIndex);
       expect(xIndex).toBeLessThan(cIndex);
 
-      // Should maintain overall order: A-B-X-C-D-E-F
       expect(stopIds).toEqual(['A', 'B', 'X', 'C', 'D', 'E', 'F']);
     });
 
-    it('should handle all four trips together', () => {
-      const stops = customGtfs.buildOrderedStopList(['LOCAL', 'EXPRESS', 'SHORT', 'WITH_X']);
+    it('should handle all four trips together', async () => {
+      const stops = await customGtfs.buildOrderedStopList(['LOCAL', 'EXPRESS', 'SHORT', 'WITH_X']);
 
       const stopIds = stops.map(s => s.stop_id);
 
-      // Should have all 7 unique stops in correct order
       expect(stopIds).toEqual(['A', 'B', 'X', 'C', 'D', 'E', 'F']);
     });
 
-    it('should maintain order regardless of trip order', () => {
-      // Test with different orderings of the same trips
-      const stops1 = customGtfs.buildOrderedStopList(['EXPRESS', 'LOCAL', 'SHORT', 'WITH_X']);
-      const stops2 = customGtfs.buildOrderedStopList(['SHORT', 'WITH_X', 'EXPRESS', 'LOCAL']);
-      const stops3 = customGtfs.buildOrderedStopList(['WITH_X', 'SHORT', 'LOCAL', 'EXPRESS']);
+    it('should maintain order regardless of trip order', async () => {
+      const stops1 = await customGtfs.buildOrderedStopList(['EXPRESS', 'LOCAL', 'SHORT', 'WITH_X']);
+      const stops2 = await customGtfs.buildOrderedStopList(['SHORT', 'WITH_X', 'EXPRESS', 'LOCAL']);
+      const stops3 = await customGtfs.buildOrderedStopList(['WITH_X', 'SHORT', 'LOCAL', 'EXPRESS']);
 
       const stopIds1 = stops1.map(s => s.stop_id);
       const stopIds2 = stops2.map(s => s.stop_id);
       const stopIds3 = stops3.map(s => s.stop_id);
 
-      // All should produce the same ordering
       expect(stopIds1).toEqual(['A', 'B', 'X', 'C', 'D', 'E', 'F']);
       expect(stopIds2).toEqual(['A', 'B', 'X', 'C', 'D', 'E', 'F']);
       expect(stopIds3).toEqual(['A', 'B', 'X', 'C', 'D', 'E', 'F']);
     });
 
-    it('should return full Stop objects with all properties', () => {
-      const stops = customGtfs.buildOrderedStopList(['LOCAL']);
+    it('should return full Stop objects with all properties', async () => {
+      const stops = await customGtfs.buildOrderedStopList(['LOCAL']);
 
       expect(stops.length).toBe(6);
 
@@ -302,7 +293,6 @@ describe('buildOrderedStopList', () => {
     let complexGtfs: GtfsSqlJs;
 
     beforeAll(async () => {
-      // Create a more complex scenario mimicking real transit patterns
       const SQL = await initSqlJs();
       const db = new SQL.Database();
 
@@ -371,35 +361,28 @@ describe('buildOrderedStopList', () => {
         );
       }
 
-      // Initialize GtfsSqlJs with the populated database
-      complexGtfs = await GtfsSqlJs.fromDatabase(db.export());
+      complexGtfs = await GtfsSqlJs.fromDatabase(db.export().buffer, {
+        adapter: await createSqlJsAdapter({ SQL }),
+      });
     });
 
-    afterAll(() => {
-      complexGtfs?.close();
+    afterAll(async () => {
+      await complexGtfs?.close();
     });
 
-    it('should correctly merge trips with different patterns', () => {
-      const stops = complexGtfs.buildOrderedStopList(['T1', 'T2', 'T3']);
+    it('should correctly merge trips with different patterns', async () => {
+      const stops = await complexGtfs.buildOrderedStopList(['T1', 'T2', 'T3']);
 
       const stopIds = stops.map(s => s.stop_id);
 
-      // Should have all 10 stops in order
       expect(stopIds).toEqual(['S1', 'S2', 'S3', 'S4', 'S5', 'S6', 'S7', 'S8', 'S9', 'S10']);
     });
 
-    it('should handle subset of trips', () => {
-      const stops = complexGtfs.buildOrderedStopList(['T2', 'T3']);
+    it('should handle subset of trips', async () => {
+      const stops = await complexGtfs.buildOrderedStopList(['T2', 'T3']);
 
       const stopIds = stops.map(s => s.stop_id);
 
-      // T2 has: S2, S4, S6, S8, S10
-      // T3 has: S3, S4, S5, S6, S7
-      // Both trips share S4, S6
-      // Without a trip containing both S2 and S3, their relative order depends on processing order
-      // The result should maintain the ordering constraints from each individual trip
-
-      // Verify all expected stops are present
       expect(stopIds).toContain('S2');
       expect(stopIds).toContain('S3');
       expect(stopIds).toContain('S4');

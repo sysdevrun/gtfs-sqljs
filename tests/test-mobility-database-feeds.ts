@@ -12,6 +12,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { GtfsSqlJs } from '../src/index.js';
+import { createSqlJsAdapter } from '../src/adapters/sql-js/index.js';
 
 // ── ANSI colors ──────────────────────────────────────────────────────────────
 
@@ -110,6 +111,7 @@ async function ingestFeed(url: string, label: string): Promise<IngestResult> {
   let gtfs: GtfsSqlJs | undefined;
   try {
     gtfs = await GtfsSqlJs.fromZip(url, {
+      adapter: await createSqlJsAdapter(),
       skipFiles: ['shapes.txt'],
       onProgress: (info) => {
         process.stdout.write(`\r  ${dim(info.message)} ${dim(`(${info.percentComplete}%)`)}`);
@@ -117,8 +119,8 @@ async function ingestFeed(url: string, label: string): Promise<IngestResult> {
     });
     process.stdout.write('\r\x1b[K'); // clear progress line
 
-    const routes = gtfs.getRoutes();
-    const agencies = gtfs.getAgencies();
+    const routes = await gtfs.getRoutes();
+    const agencies = await gtfs.getAgencies();
     result.routeCount = routes.length;
     result.agencyNames = agencies.map((a) => a.agency_name);
     result.success = true;
@@ -126,7 +128,7 @@ async function ingestFeed(url: string, label: string): Promise<IngestResult> {
     process.stdout.write('\r\x1b[K');
     result.error = err instanceof Error ? err.message : String(err);
   } finally {
-    gtfs?.close();
+    await gtfs?.close();
   }
   return result;
 }

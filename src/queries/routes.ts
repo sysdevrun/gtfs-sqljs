@@ -2,7 +2,7 @@
  * Route Query Methods
  */
 
-import type { Database, ParamsObject } from 'sql.js';
+import type { GtfsDatabase, Row } from '../adapters/types';
 import type { Route } from '../types/gtfs';
 
 export interface RouteFilters {
@@ -15,7 +15,7 @@ export interface RouteFilters {
  * Get routes with optional filters
  * - Filters support both single values and arrays
  */
-export function getRoutes(db: Database, filters: RouteFilters = {}): Route[] {
+export async function getRoutes(db: GtfsDatabase, filters: RouteFilters = {}): Promise<Route[]> {
   const { routeId, agencyId, limit } = filters;
 
   // Build WHERE clause dynamically
@@ -51,25 +51,25 @@ export function getRoutes(db: Database, filters: RouteFilters = {}): Route[] {
     params.push(limit);
   }
 
-  const stmt = db.prepare(sql);
+  const stmt = await db.prepare(sql);
   if (params.length > 0) {
-    stmt.bind(params);
+    await stmt.bind(params);
   }
 
   const routes: Route[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     routes.push(rowToRoute(row));
   }
 
-  stmt.free();
+  await stmt.free();
   return routes;
 }
 
 /**
  * Convert database row to Route object
  */
-function rowToRoute(row: ParamsObject): Route {
+function rowToRoute(row: Row): Route {
   return {
     route_id: String(row.route_id),
     route_short_name: row.route_short_name ? String(row.route_short_name) : undefined,

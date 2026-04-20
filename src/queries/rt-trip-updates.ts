@@ -1,4 +1,4 @@
-import type { Database, ParamsObject } from 'sql.js';
+import type { GtfsDatabase, Row } from '../adapters/types';
 import type { TripUpdate, StopTimeUpdate } from '../types/gtfs-rt';
 import { getStopTimeUpdates } from './rt-stop-time-updates';
 
@@ -12,7 +12,7 @@ export interface TripUpdateFilters {
 /**
  * Parse trip update from database row
  */
-export function parseTripUpdate(row: ParamsObject): TripUpdate {
+export function parseTripUpdate(row: Row): TripUpdate {
   const tu: TripUpdate = {
     trip_id: String(row.trip_id),
     route_id: row.route_id ? String(row.route_id) : undefined,
@@ -38,11 +38,11 @@ export function parseTripUpdate(row: ParamsObject): TripUpdate {
 /**
  * Get trip updates with optional filters
  */
-export function getTripUpdates(
-  db: Database,
+export async function getTripUpdates(
+  db: GtfsDatabase,
   filters: TripUpdateFilters = {},
   stalenessThreshold: number = 120
-): TripUpdate[] {
+): Promise<TripUpdate[]> {
   const { tripId, routeId, vehicleId, limit } = filters;
 
   const conditions: string[] = [];
@@ -85,25 +85,25 @@ export function getTripUpdates(
   }
 
   // Execute query
-  const stmt = db.prepare(sql);
+  const stmt = await db.prepare(sql);
   if (params.length > 0) {
-    stmt.bind(params);
+    await stmt.bind(params);
   }
 
   const tripUpdates: TripUpdate[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     tripUpdates.push(parseTripUpdate(row));
   }
 
-  stmt.free();
+  await stmt.free();
 
   // Populate stop_time_update arrays
   if (tripUpdates.length > 0) {
     const tripIds = tripUpdates.map(tu => tu.trip_id);
 
     // Query stop time updates for all retrieved trip IDs
-    const stopTimeUpdates = getStopTimeUpdates(db, { tripId: tripIds }, stalenessThreshold);
+    const stopTimeUpdates = await getStopTimeUpdates(db, { tripId: tripIds }, stalenessThreshold);
 
     // Group stop time updates by trip_id
     const stopTimesByTripId = new Map<string, StopTimeUpdate[]>();
@@ -127,36 +127,36 @@ export function getTripUpdates(
 /**
  * Get trip update by trip ID
  */
-export function getTripUpdateByTripId(
-  db: Database,
+export async function getTripUpdateByTripId(
+  db: GtfsDatabase,
   tripId: string,
   stalenessThreshold: number = 120
-): TripUpdate | null {
-  const updates = getTripUpdates(db, { tripId, limit: 1 }, stalenessThreshold);
+): Promise<TripUpdate | null> {
+  const updates = await getTripUpdates(db, { tripId, limit: 1 }, stalenessThreshold);
   return updates.length > 0 ? updates[0] : null;
 }
 
 /**
  * Get all trip updates without staleness filtering (for debugging)
  */
-export function getAllTripUpdates(db: Database): TripUpdate[] {
+export async function getAllTripUpdates(db: GtfsDatabase): Promise<TripUpdate[]> {
   const sql = 'SELECT * FROM rt_trip_updates ORDER BY rt_last_updated DESC';
-  const stmt = db.prepare(sql);
+  const stmt = await db.prepare(sql);
 
   const tripUpdates: TripUpdate[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     tripUpdates.push(parseTripUpdate(row));
   }
 
-  stmt.free();
+  await stmt.free();
 
   // Populate stop_time_update arrays (no staleness filtering for debug function)
   if (tripUpdates.length > 0) {
     const tripIds = tripUpdates.map(tu => tu.trip_id);
 
     // Query stop time updates for all retrieved trip IDs (use very large threshold to disable staleness filtering)
-    const stopTimeUpdates = getStopTimeUpdates(db, { tripId: tripIds }, Number.MAX_SAFE_INTEGER);
+    const stopTimeUpdates = await getStopTimeUpdates(db, { tripId: tripIds }, Number.MAX_SAFE_INTEGER);
 
     // Group stop time updates by trip_id
     const stopTimesByTripId = new Map<string, StopTimeUpdate[]>();

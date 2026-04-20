@@ -2,7 +2,7 @@
  * Agency Query Methods
  */
 
-import type { Database, ParamsObject } from 'sql.js';
+import type { GtfsDatabase, Row } from '../adapters/types';
 import type { Agency } from '../types/gtfs';
 
 export interface AgencyFilters {
@@ -14,7 +14,7 @@ export interface AgencyFilters {
  * Get agencies with optional filters
  * - Filters support both single values and arrays
  */
-export function getAgencies(db: Database, filters: AgencyFilters = {}): Agency[] {
+export async function getAgencies(db: GtfsDatabase, filters: AgencyFilters = {}): Promise<Agency[]> {
   const { agencyId, limit } = filters;
 
   // Build WHERE clause dynamically
@@ -41,25 +41,25 @@ export function getAgencies(db: Database, filters: AgencyFilters = {}): Agency[]
     params.push(limit);
   }
 
-  const stmt = db.prepare(sql);
+  const stmt = await db.prepare(sql);
   if (params.length > 0) {
-    stmt.bind(params);
+    await stmt.bind(params);
   }
 
   const agencies: Agency[] = [];
-  while (stmt.step()) {
-    const row = stmt.getAsObject();
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
     agencies.push(rowToAgency(row));
   }
 
-  stmt.free();
+  await stmt.free();
   return agencies;
 }
 
 /**
  * Convert database row to Agency object
  */
-function rowToAgency(row: ParamsObject): Agency {
+function rowToAgency(row: Row): Agency {
   return {
     agency_id: String(row.agency_id),
     agency_name: String(row.agency_name),
