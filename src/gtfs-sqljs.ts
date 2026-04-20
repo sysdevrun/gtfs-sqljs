@@ -53,6 +53,14 @@ export interface ProgressInfo {
   filesCompleted: number;
   totalFiles: number;
   rowsProcessed: number;
+  /**
+   * Estimated total row count across all GTFS files being loaded.
+   *
+   * During `inserting_data` this value is a fast newline-based estimate
+   * (typically exact, but may differ by a few rows per file in edge cases
+   * such as trailing blank lines). For a precise post-ingest row count,
+   * query the database directly with `COUNT(*)`.
+   */
   totalRows: number;
   bytesDownloaded?: number;  // Bytes downloaded (used during 'downloading' phase)
   totalBytes?: number;        // Total bytes to download (used during 'downloading' phase)
@@ -362,13 +370,6 @@ export class GtfsSqlJs {
     // Create new database
     this.db = new this.SQL.Database();
 
-    // Apply performance PRAGMAs for bulk loading
-    this.db.run('PRAGMA synchronous = OFF');        // Skip fsync for performance
-    this.db.run('PRAGMA journal_mode = MEMORY');    // Keep journal in memory
-    this.db.run('PRAGMA temp_store = MEMORY');      // Temp tables in memory
-    this.db.run('PRAGMA cache_size = -64000');      // 64MB cache
-    this.db.run('PRAGMA locking_mode = EXCLUSIVE'); // No locking overhead
-
     // Create GTFS tables (without indexes)
     onProgress?.({
       phase: 'creating_schema',
@@ -460,10 +461,6 @@ export class GtfsSqlJs {
     });
 
     this.db.run('ANALYZE');
-
-    // Restore normal SQLite settings
-    this.db.run('PRAGMA synchronous = FULL');
-    this.db.run('PRAGMA locking_mode = NORMAL');
 
     // Set RT configuration
     if (options.realtimeFeedUrls) {

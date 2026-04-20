@@ -2,7 +2,14 @@
 
 ## Upcoming release
 
--
+### Performance
+
+- Ingestion is ~35-45% faster on medium-to-large feeds: ASTUCE (Rouen, ~430k stop_times rows) drops from ~2650 ms to ~1670 ms; Car Jaune from ~312 ms to ~188 ms. Wins come from parsing each CSV only once (progress totals now use a fast newline-based row-count estimate), loading rows as positional arrays instead of per-row objects, and reusing a single prepared INSERT per table instead of re-preparing a multi-row statement per 1000-row batch.
+- Dropped the bulk-load PRAGMA block (`synchronous`, `journal_mode`, `temp_store`, `cache_size`, `locking_mode`) from ingestion. Benchmarked aggregate effect on sql.js is within noise (≤1%); removing them simplifies the code and unblocks upcoming pluggable-adapter work.
+
+### Behaviour changes
+
+- `ProgressInfo.totalRows` is now an estimate based on CSV line count — typically exact, but may differ by a few rows per file in edge cases (e.g. trailing blank lines). For a precise post-ingest row count, query the database directly with `COUNT(*)`.
 
 ## 0.4.1
 

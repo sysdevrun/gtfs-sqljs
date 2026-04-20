@@ -31,6 +31,25 @@ export function parseCSV(text: string): ParsedCSV {
 }
 
 /**
+ * Fast O(bytes) estimate of the number of data rows in a CSV string.
+ *
+ * Counts newline characters and subtracts 1 for the header row. Assumes the
+ * CSV has a header line, no embedded newlines in quoted fields (GTFS spec
+ * compliant), and may or may not have a trailing newline. The result is
+ * typically exact but may be ±a few rows per file in edge cases (e.g. trailing
+ * blank lines). Suitable for driving progress callbacks, not for precise
+ * bookkeeping.
+ */
+export function countCsvRows(csv: string): number {
+  let lines = 0;
+  for (let i = 0; i < csv.length; i++) {
+    if (csv.charCodeAt(i) === 10) lines++;
+  }
+  const trailing = csv.length > 0 && csv.charCodeAt(csv.length - 1) !== 10 ? 1 : 0;
+  return Math.max(0, lines - 1 + trailing);
+}
+
+/**
  * Convert parsed row to typed object with proper type conversions
  */
 export function convertRowTypes(

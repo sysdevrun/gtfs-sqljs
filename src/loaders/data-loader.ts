@@ -3,10 +3,13 @@
  */
 
 import type { Database } from 'sql.js';
-import { parseCSV } from './csv-parser';
+import Papa from 'papaparse';
+import { countCsvRows } from './csv-parser';
 import { GTFS_SCHEMA, type TableSchema } from '../schema/schema';
 import type { GTFSFiles } from './zip-loader';
 import type { ProgressCallback } from '../gtfs-sqljs';
+
+const PROGRESS_BATCH = 1000;
 
 /**
  * Load GTFS files into SQLite database
@@ -19,17 +22,13 @@ export async function loadGTFSData(
   skipFiles?: string[],
   onProgress?: ProgressCallback
 ): Promise<void> {
-  // Map of file names to table schemas
   const fileToSchema: Map<string, TableSchema> = new Map();
   for (const schema of GTFS_SCHEMA) {
-    // Match file names like agency.txt to table name 'agency'
     fileToSchema.set(`${schema.name}.txt`, schema);
   }
 
-  // Normalize skipFiles to a Set for faster lookup
-  const skipSet = new Set(skipFiles?.map(f => f.toLowerCase()) || []);
+  const skipSet = new Set(skipFiles?.map((f) => f.toLowerCase()) || []);
 
-  // Define file priority order (small files first, largest last)
   const filePriority = [
     'agency.txt',
     'feed_info.txt',
@@ -49,44 +48,38 @@ export async function loadGTFSData(
     'stop_times.txt', // Largest file - process last
   ];
 
-  // Sort files by priority
   const sortedFiles: [string, string][] = [];
   for (const priorityFile of filePriority) {
     if (files[priorityFile]) {
       sortedFiles.push([priorityFile, files[priorityFile]]);
     }
   }
-  // Add any files not in priority list
   for (const [fileName, content] of Object.entries(files)) {
     if (!filePriority.includes(fileName)) {
       sortedFiles.push([fileName, content]);
     }
   }
 
-  // Calculate total rows for progress tracking
+  // Estimate total rows via newline count (O(bytes)) instead of parsing every
+  // file twice. totalRows may differ by a few rows from the true row count
+  // for files with trailing blank lines; see countCsvRows for details.
   let totalRows = 0;
   const fileRowCounts = new Map<string, number>();
   for (const [fileName, content] of sortedFiles) {
-    const schema = fileToSchema.get(fileName);
-    if (schema && !skipSet.has(fileName.toLowerCase())) {
-      const { rows } = parseCSV(content);
-      fileRowCounts.set(fileName, rows.length);
-      totalRows += rows.length;
+    if (fileToSchema.has(fileName) && !skipSet.has(fileName.toLowerCase())) {
+      const n = countCsvRows(content);
+      fileRowCounts.set(fileName, n);
+      totalRows += n;
     }
   }
 
   let rowsProcessed = 0;
   let filesCompleted = 0;
 
-  // Process each file
   for (const [fileName, content] of sortedFiles) {
     const schema = fileToSchema.get(fileName);
-    if (!schema) {
-      // Skip unknown files
-      continue;
-    }
+    if (!schema) continue;
 
-    // Skip if in skip list
     if (skipSet.has(fileName.toLowerCase())) {
       console.log(`Skipping import of ${fileName} (table ${schema.name} created but empty)`);
       filesCompleted++;
@@ -102,7 +95,7 @@ export async function loadGTFSData(
       totalFiles: sortedFiles.length,
       rowsProcessed,
       totalRows,
-      percentComplete: 40 + Math.floor((rowsProcessed / totalRows) * 35),
+      percentComplete: computePercent(rowsProcessed, totalRows),
       message: `Loading ${fileName} (${fileRows.toLocaleString()} rows)`,
     });
 
@@ -115,7 +108,7 @@ export async function loadGTFSData(
         totalFiles: sortedFiles.length,
         rowsProcessed: currentProgress,
         totalRows,
-        percentComplete: 40 + Math.floor((currentProgress / totalRows) * 35),
+        percentComplete: computePercent(currentProgress, totalRows),
         message: `Loading ${fileName} (${processedInFile.toLocaleString()}/${fileRows.toLocaleString()} rows)`,
       });
     });
@@ -130,14 +123,25 @@ export async function loadGTFSData(
       totalFiles: sortedFiles.length,
       rowsProcessed,
       totalRows,
-      percentComplete: 40 + Math.floor((rowsProcessed / totalRows) * 35),
+      percentComplete: computePercent(rowsProcessed, totalRows),
       message: `Completed ${fileName}`,
     });
   }
 }
 
+// Map [0, totalRows] → [40, 75] to match the legacy progress ranges reported
+// by GtfsSqlJs.loadFromZipData. Clamped to 74 to avoid jumping past the
+// following "creating_indexes" phase when the row-count estimate undershoots.
+function computePercent(rowsProcessed: number, totalRows: number): number {
+  if (totalRows <= 0) return 40;
+  const pct = 40 + Math.floor((rowsProcessed / totalRows) * 35);
+  return Math.min(74, pct);
+}
+
 /**
- * Load data for a single table with batch inserts and transaction
+ * Load data for a single table using a single prepared INSERT reused per row.
+ * Parses the CSV exactly once as positional arrays (no per-row object
+ * allocation) and binds column values by pre-computed index.
  */
 async function loadTableData(
   db: Database,
@@ -145,63 +149,58 @@ async function loadTableData(
   csvContent: string,
   onProgress?: (rowsProcessed: number) => void
 ): Promise<void> {
-  const { headers, rows } = parseCSV(csvContent);
+  const parsed = Papa.parse<string[]>(csvContent, {
+    header: false,
+    skipEmptyLines: true,
+  });
+  const data = parsed.data;
+  if (data.length < 2) return;
 
-  if (rows.length === 0) {
-    return;
-  }
+  const rawHeaders = (data[0] || []).map((h) => h.trim());
+  const dataRows = data.slice(1);
+  if (dataRows.length === 0) return;
 
-  // Prepare INSERT statement
-  const columns = headers.filter((h) => schema.columns.some((c) => c.name === h));
-  if (columns.length === 0) {
-    return;
-  }
-
-  const BATCH_SIZE = 1000;
-  let rowsProcessed = 0;
-
-  // Start transaction for better performance
-  db.run('BEGIN TRANSACTION');
-
-  try {
-    // Process in batches
-    for (let i = 0; i < rows.length; i += BATCH_SIZE) {
-      const batchRows = rows.slice(i, Math.min(i + BATCH_SIZE, rows.length));
-
-      // Build multi-row INSERT statement
-      const placeholders = batchRows.map(() => `(${columns.map(() => '?').join(', ')})`).join(', ');
-      const insertSQL = `INSERT INTO ${schema.name} (${columns.join(', ')}) VALUES ${placeholders}`;
-
-      // Collect all values for the batch
-      const allValues: (string | number | null)[] = [];
-      for (const row of batchRows) {
-        for (const col of columns) {
-          const value = row[col];
-          // Let SQLite handle type conversion - just pass empty strings as NULL
-          allValues.push(value === null || value === undefined || value === '' ? null : value);
-        }
-      }
-
-      // Execute batch insert
-      const stmt = db.prepare(insertSQL);
-      try {
-        stmt.run(allValues);
-      } catch (error) {
-        console.error(`Error inserting batch into ${schema.name}:`, error);
-        console.error('Batch size:', batchRows.length);
-        throw error;
-      } finally {
-        stmt.free();
-      }
-
-      rowsProcessed += batchRows.length;
-      onProgress?.(rowsProcessed);
+  const colIndexes: number[] = [];
+  const columns: string[] = [];
+  for (let i = 0; i < rawHeaders.length; i++) {
+    if (schema.columns.some((c) => c.name === rawHeaders[i])) {
+      colIndexes.push(i);
+      columns.push(rawHeaders[i]);
     }
+  }
+  if (columns.length === 0) return;
 
-    // Commit transaction
+  const insertSQL = `INSERT INTO ${schema.name} (${columns.join(', ')}) VALUES (${columns
+    .map(() => '?')
+    .join(', ')})`;
+
+  db.run('BEGIN TRANSACTION');
+  try {
+    const stmt = db.prepare(insertSQL);
+    try {
+      const rowVals: (string | number | null)[] = new Array(columns.length);
+      for (let r = 0; r < dataRows.length; r++) {
+        const row = dataRows[r];
+        for (let j = 0; j < colIndexes.length; j++) {
+          const v = row[colIndexes[j]];
+          if (v == null) {
+            rowVals[j] = null;
+          } else {
+            const trimmed = typeof v === 'string' ? v.trim() : v;
+            rowVals[j] = trimmed === '' ? null : trimmed;
+          }
+        }
+        stmt.run(rowVals);
+
+        const done = r + 1;
+        if (done % PROGRESS_BATCH === 0) onProgress?.(done);
+      }
+      if (dataRows.length % PROGRESS_BATCH !== 0) onProgress?.(dataRows.length);
+    } finally {
+      stmt.free();
+    }
     db.run('COMMIT');
   } catch (error) {
-    // Rollback on error
     try {
       db.run('ROLLBACK');
     } catch (rollbackError) {
