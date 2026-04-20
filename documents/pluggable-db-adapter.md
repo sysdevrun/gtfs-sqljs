@@ -26,6 +26,10 @@ The valuable, reusable part of this library is its **GTFS schema, CSV ingestion 
 - Exposing arbitrary native driver features through gtfs-sqljs (consumers who need raw driver access can always `getRawDatabase()` escape hatch).
 - Supporting drivers without prepared-statement semantics — those are out of scope for the first version.
 
+## Prerequisites
+
+**v0.5.0 must ship first.** The ingestion-optimization work in `gtfs-optimize-ingestion.md` is a hard prerequisite for this plan: it removes the bulk-load PRAGMA block from `initFromZipData`, switches the loader to a single prepared INSERT per table, and drops the double CSV parse. Together these changes eliminate the only non-trivial driver-portability wrinkle (PRAGMA semantics on file-backed native drivers) and shrink the ingestion surface the adapter interface has to cover. Landing v0.5.0 before v0.6 makes the adapter refactor strictly mechanical.
+
 ## Current sql.js API surface used by gtfs-sqljs
 
 A full grep confirms the surface is narrow and consistent. Only these methods are called:
@@ -280,19 +284,23 @@ sql.js and better-sqlite3 both support `.serialize()`/`.export()`. **op-sqlite**
 
 ## Ingestion loop and PRAGMAs
 
-`initFromZipData` runs several PRAGMAs to speed up bulk loading:
+**Resolved upstream.** `gtfs-optimize-ingestion.md` (shipping in v0.5.0, a prerequisite for this work) deletes the bulk-load PRAGMA block entirely from the ingestion path. Benchmarking showed the aggregate effect of all five PRAGMAs on sql.js to be within noise (≤1%), so they no longer earn their keep — and removing them eliminates the adapter-portability problem they would otherwise create.
+
+By the time v0.6 starts, `initFromZipData` no longer runs:
 
 ```
-PRAGMA synchronous = OFF
-PRAGMA journal_mode = MEMORY
-PRAGMA temp_store = MEMORY
-PRAGMA cache_size = -64000
-PRAGMA locking_mode = EXCLUSIVE
+PRAGMA synchronous    = OFF
+PRAGMA journal_mode   = MEMORY
+PRAGMA temp_store     = MEMORY
+PRAGMA cache_size     = -64000
+PRAGMA locking_mode   = EXCLUSIVE
 ```
 
-These are valid in all SQLite builds, but **op-sqlite and expo-sqlite's default connections may reject some** (e.g. `locking_mode=EXCLUSIVE` on a file-backed DB opened from the main thread) or require them earlier. Two mitigations:
+…and the matching post-ingestion reset (`synchronous = FULL`, `locking_mode = NORMAL`) is also gone. The ingestion path touches no PRAGMAs.
 
-**Decision: wrap each `await db.run(PRAGMA …)` in a try/catch and log-warn on failure** in v0.6. PRAGMAs are performance tuning, not correctness requirements, so a rejection from a native driver must not abort ingestion. Adapters document which PRAGMAs they honor in their README. We will revisit an adapter-level `onBulkLoadStart`/`onBulkLoadEnd` hook only if real-world feedback shows the try/catch approach is insufficient.
+**Adapter implication: nothing.** The core library doesn't apply bulk-load PRAGMAs, so adapters for op-sqlite, expo-sqlite, and better-sqlite3 don't need to honor them, reject them, or work around them. If a given driver genuinely benefits from driver-specific ingestion tuning, that tuning lives inside the adapter's setup code (or is applied by the caller before `attach()`), not in the shared ingestion path.
+
+This removes what was previously the single biggest adapter-portability wrinkle from this plan.
 
 ## Testing strategy
 
@@ -357,7 +365,7 @@ These are valid in all SQLite builds, but **op-sqlite and expo-sqlite's default 
 - A `examples/react-native-gtfs/` Expo app demonstrating end-to-end usage with a downloaded GTFS DB.
 
 **Phase 3 — stabilize**
-- Run against the reference React Native app on iOS + Android. File any adapter-interface mismatches (expect surprises around PRAGMA semantics and large-array bind parameters).
+- Run against the reference React Native app on iOS + Android. File any adapter-interface mismatches (expect surprises around large-array bind parameters and per-driver transaction semantics).
 - Publish `v0.6.0`.
 - Update README with an "Alternative drivers" section pointing to the examples.
 
@@ -377,4 +385,4 @@ All previously open questions have been resolved for v0.6:
 3. **Cache gating when `export()` is unsupported → log-warn + no-op.** A cacheless run is still a valid run; the cache layer catches `ExportNotSupportedError` and continues.
 4. **Reference adapter distribution → `examples/adapters/`** for non-sql.js drivers (copy-into-project, same pattern as existing `examples/cache/`). Promotion to published `@gtfs-sqljs/adapter-*` packages can happen later if adoption warrants.
 5. **sql.js type re-exports → dropped.** Clean cut in v0.6. Consumers migrate to `GtfsDatabase`; anyone still needing sql.js types can import them directly from `sql.js`.
-6. **PRAGMAs during ingestion → try/catch + log-warn per PRAGMA.** No adapter-level hook in v0.6.
+6. **PRAGMAs during ingestion → removed entirely upstream.** The v0.5.0 ingestion-optimization work (`gtfs-optimize-ingestion.md`) deletes the bulk-load PRAGMA block from `initFromZipData`; by the time v0.6 starts there is no PRAGMA for adapters to honor, reject, or wrap. v0.6 adapters are not required to implement any PRAGMA behavior; driver-specific tuning, if any, lives inside the adapter or is applied by the caller.
