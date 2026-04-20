@@ -28,7 +28,7 @@ The valuable, reusable part of this library is its **GTFS schema, CSV ingestion 
 
 ## Prerequisites
 
-**v0.5.0 must ship first.** The ingestion-optimization work in `gtfs-optimize-ingestion.md` is a hard prerequisite for this plan: it removes the bulk-load PRAGMA block from `initFromZipData`, switches the loader to a single prepared INSERT per table, and drops the double CSV parse. Together these changes eliminate the only non-trivial driver-portability wrinkle (PRAGMA semantics on file-backed native drivers) and shrink the ingestion surface the adapter interface has to cover. Landing v0.5.0 before v0.6 makes the adapter refactor strictly mechanical.
+**Done.** The ingestion-optimization work described in `gtfs-optimize-ingestion.md` landed on `main` as PR [#42](https://github.com/sysdevrun/gtfs-sqljs/pull/42) and ships in v0.5.0. It removed the bulk-load PRAGMA block from `initFromZipData`, switched the loader to a single prepared INSERT per table, and dropped the double CSV parse. Together these changes eliminated the only non-trivial driver-portability wrinkle (PRAGMA semantics on file-backed native drivers) and shrank the ingestion surface the adapter interface has to cover — verified by `grep -ri PRAGMA src/` returning zero matches.
 
 ## Current sql.js API surface used by gtfs-sqljs
 
@@ -284,29 +284,46 @@ sql.js and better-sqlite3 both support `.serialize()`/`.export()`. **op-sqlite**
 
 ## Ingestion loop and PRAGMAs
 
-**Resolved upstream.** `gtfs-optimize-ingestion.md` (shipping in v0.5.0, a prerequisite for this work) deletes the bulk-load PRAGMA block entirely from the ingestion path. Benchmarking showed the aggregate effect of all five PRAGMAs on sql.js to be within noise (≤1%), so they no longer earn their keep — and removing them eliminates the adapter-portability problem they would otherwise create.
+**Resolved — merged to `main` in PR [#42](https://github.com/sysdevrun/gtfs-sqljs/pull/42).** The bulk-load PRAGMA block is deleted. Benchmarking showed the aggregate effect of all five PRAGMAs on sql.js was within noise (≤1%), so they did not earn their keep, and removing them eliminates the adapter-portability problem they would otherwise create.
 
-By the time v0.6 starts, `initFromZipData` no longer runs:
+Verification (on `main` at time of this doc update):
 
 ```
-PRAGMA synchronous    = OFF
-PRAGMA journal_mode   = MEMORY
-PRAGMA temp_store     = MEMORY
-PRAGMA cache_size     = -64000
-PRAGMA locking_mode   = EXCLUSIVE
+$ git grep -ni PRAGMA -- src/
+(no matches)
 ```
 
-…and the matching post-ingestion reset (`synchronous = FULL`, `locking_mode = NORMAL`) is also gone. The ingestion path touches no PRAGMAs.
+The deleted calls were:
 
-**Adapter implication: nothing.** The core library doesn't apply bulk-load PRAGMAs, so adapters for op-sqlite, expo-sqlite, and better-sqlite3 don't need to honor them, reject them, or work around them. If a given driver genuinely benefits from driver-specific ingestion tuning, that tuning lives inside the adapter's setup code (or is applied by the caller before `attach()`), not in the shared ingestion path.
+```
+PRAGMA synchronous    = OFF        -- before ingestion (removed)
+PRAGMA journal_mode   = MEMORY     -- before ingestion (removed)
+PRAGMA temp_store     = MEMORY     -- before ingestion (removed)
+PRAGMA cache_size     = -64000     -- before ingestion (removed)
+PRAGMA locking_mode   = EXCLUSIVE  -- before ingestion (removed)
+PRAGMA synchronous    = FULL       -- after ingestion  (removed)
+PRAGMA locking_mode   = NORMAL     -- after ingestion  (removed)
+```
 
-This removes what was previously the single biggest adapter-portability wrinkle from this plan.
+The ingestion path now touches no PRAGMAs.
+
+**Adapter implication: nothing.** The core library does not apply bulk-load PRAGMAs, so adapters for op-sqlite, expo-sqlite, and better-sqlite3 do not need to honor them, reject them, or work around them. If a given driver genuinely benefits from driver-specific ingestion tuning, that tuning lives inside the adapter's setup code (or is applied by the caller before `attach()`), not in the shared ingestion path.
+
+This was previously the single biggest adapter-portability wrinkle in this plan; it is now gone.
 
 ## Testing strategy
 
 1. **Existing test suite runs unchanged on sql.js adapter.** This is the primary regression guard. Current tests exercise every query method — after the refactor, they still use the default adapter and must all pass. No test code changes except import paths if any test touches sql.js types directly.
-2. **New adapter-contract test suite** (`tests/adapter-contract.test.ts`). Parameterized over adapter implementations. Asserts the same observable behavior (INSERT → SELECT round-trip, PRAGMA execution, transaction control, statement reuse) across all adapters. Runs sql.js in CI by default; op-sqlite/expo-sqlite tests run only locally or in RN-specific CI because they require native builds.
-3. **Manual integration test for RN path.** A small Expo example app (`examples/react-native-gtfs`) that consumes gtfs-sqljs + `OpSqliteAdapter` against a prebuilt `.db`. Smoke test on iOS and Android simulator before each release.
+2. **New adapter-contract test suite** (`tests/adapter-contract.test.ts`). Parameterized over adapter implementations. Asserts the same observable behavior (INSERT → SELECT round-trip, transaction control, statement reuse, row iteration) across all adapters. Runs sql.js **and better-sqlite3** in CI by default (both are pure Node installs with no simulator requirement); op-sqlite/expo-sqlite tests run only locally or in RN-specific CI because they require native builds.
+3. **End-to-end test on better-sqlite3 adapter** (`tests/e2e-better-sqlite3.test.ts`). A full `GtfsSqlJs.attach()` round-trip against the sample fixture (`tests/fixtures/sample-feed.zip`) using a file-backed better-sqlite3 connection opened in a `tmp/` path:
+   - Open a fresh better-sqlite3 DB → wrap it with `BetterSqlite3Adapter` → `GtfsSqlJs.attach(db)`.
+   - Load the fixture via `fromZipData` using the attached handle.
+   - Run the same assertions as `tests/sample-feed.test.ts` (agency lookup, stop counts, route/trip/stop-time round-trips) to prove the query layer is adapter-agnostic.
+   - Verify `export()` throws `ExportNotSupportedError` and that the cache layer catches it and no-ops.
+   - Close the adapter; confirm the underlying file remains on disk (caller owns the handle unless `ownsDatabase: true`).
+
+   This is the non-sql.js adapter we can actually run in CI — it catches the vast majority of adapter-interface bugs (sync-vs-async boundary, transaction semantics, `stmt.run` vs `stmt.all` shape differences, error propagation) without needing iOS/Android. Sized to finish in under 10 s so it fits in the main vitest run. `better-sqlite3` lives in `devDependencies` alongside sql.js.
+4. **Manual integration test for RN path.** A small Expo example app (`examples/react-native-gtfs`) that consumes gtfs-sqljs + `OpSqliteAdapter` against a prebuilt `.db`. Smoke test on iOS and Android simulator before each release.
 
 ## Migration & compatibility
 
@@ -355,13 +372,14 @@ This removes what was previously the single biggest adapter-portability wrinkle 
 - Add `GtfsSqlJs.attach(db, options)` entry point for caller-managed handles. Wire `ownsDatabase` / `skipSchema` flags. Reference adapters for file-backed drivers should document `attach()` as the primary usage pattern.
 - Move `sql.js` from `dependencies` to optional `peerDependencies`; keep it in `devDependencies` for tests.
 - Update the test suite: every test calling a query method now awaits it, and every test bootstrap passes `adapter: await createSqlJsAdapter()` explicitly.
+- Add `better-sqlite3` and `@types/better-sqlite3` to `devDependencies`. Ship `BetterSqlite3Adapter` (see Phase 2) and the `tests/e2e-better-sqlite3.test.ts` end-to-end test so CI validates at least one non-sql.js adapter on every run.
 - Drop sql.js type re-exports from `src/index.ts`.
 - Publish as `v0.6.0-alpha`.
 
 **Phase 2 — reference adapters (target: 2–3 days)**
+- `examples/adapters/BetterSqlite3Adapter.ts` + README. **Promoted in Phase 1** to the repo's own dev/test dependency tree because it powers the Phase 1 CI end-to-end test. The `examples/` copy is the canonical consumer-facing reference; the same file is symlinked (or `import`-re-exported) from `tests/helpers/` so the test does not drift from the published example.
 - `examples/adapters/OpSqliteAdapter.ts` + README.
 - `examples/adapters/ExpoSqliteAdapter.ts` + README.
-- `examples/adapters/BetterSqlite3Adapter.ts` + README.
 - A `examples/react-native-gtfs/` Expo app demonstrating end-to-end usage with a downloaded GTFS DB.
 
 **Phase 3 — stabilize**
@@ -385,4 +403,5 @@ All previously open questions have been resolved for v0.6:
 3. **Cache gating when `export()` is unsupported → log-warn + no-op.** A cacheless run is still a valid run; the cache layer catches `ExportNotSupportedError` and continues.
 4. **Reference adapter distribution → `examples/adapters/`** for non-sql.js drivers (copy-into-project, same pattern as existing `examples/cache/`). Promotion to published `@gtfs-sqljs/adapter-*` packages can happen later if adoption warrants.
 5. **sql.js type re-exports → dropped.** Clean cut in v0.6. Consumers migrate to `GtfsDatabase`; anyone still needing sql.js types can import them directly from `sql.js`.
-6. **PRAGMAs during ingestion → removed entirely upstream.** The v0.5.0 ingestion-optimization work (`gtfs-optimize-ingestion.md`) deletes the bulk-load PRAGMA block from `initFromZipData`; by the time v0.6 starts there is no PRAGMA for adapters to honor, reject, or wrap. v0.6 adapters are not required to implement any PRAGMA behavior; driver-specific tuning, if any, lives inside the adapter or is applied by the caller.
+6. **PRAGMAs during ingestion → removed entirely (done).** Landed via PR #42 on `main` and shipping in v0.5.0. `grep -ri PRAGMA src/` returns zero matches. v0.6 adapters are not required to implement any PRAGMA behavior; driver-specific tuning, if any, lives inside the adapter or is applied by the caller.
+7. **Non-sql.js adapter in CI → better-sqlite3.** It is a pure Node install (no iOS/Android simulator or WASM toolchain), so it runs in the same `vitest` invocation as the sql.js tests. `BetterSqlite3Adapter` is therefore elevated from "copy-paste example" to a CI-run reference: the file lives in `examples/adapters/` for consumers but is also loaded by `tests/e2e-better-sqlite3.test.ts`. op-sqlite and expo-sqlite remain manual/local because they need native toolchains.
