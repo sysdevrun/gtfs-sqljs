@@ -2,6 +2,10 @@
 
 ## Upcoming release
 
+## 0.7.0
+
+- Add `buildGraph(tripIds)` method and `Graph` / `EdgeTrip` / `EdgeData` types. Builds a directed stop-to-stop graph from the given trips, with each deduplicated edge carrying the list of originating trips (plus `route_id` and `direction_id`). Handles non-contiguous `stop_sequence` values via `LEAD()`. Helpers `edgeCount()` and `edges()` are also exported.
+
 ## 0.6.0
 
 ### Breaking changes — pluggable database adapter

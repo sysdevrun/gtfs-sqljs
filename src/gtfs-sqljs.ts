@@ -28,6 +28,7 @@ import {
 } from './queries/calendar';
 import { getTrips, type TripFilters, type TripWithRealtime } from './queries/trips';
 import { getStopTimes, buildOrderedStopList, type StopTimeFilters, type StopTimeWithRealtime } from './queries/stop-times';
+import { buildGraph, type Graph } from './queries/graph';
 import { getShapes, getShapesToGeojson, type ShapeFilters, type GeoJsonFeatureCollection } from './queries/shapes';
 import { getAlerts as getAlertsQuery, getAllAlerts, type AlertFilters } from './queries/rt-alerts';
 import { getVehiclePositions as getVehiclePositionsQuery, getAllVehiclePositions, type VehiclePositionFilters } from './queries/rt-vehicle-positions';
@@ -764,6 +765,18 @@ export class GtfsSqlJs {
   async buildOrderedStopList(tripIds: string[]): Promise<Stop[]> {
     if (!this.db) throw new Error('Database not initialized');
     return buildOrderedStopList(this.db, tripIds);
+  }
+
+  /**
+   * Build a directed stop-to-stop graph for the given trips.
+   *
+   * Edges connect consecutive stops in a trip (paired via `stop_sequence`,
+   * whose values need not be contiguous). Each edge carries the list of
+   * trips traversing it, with route_id and direction_id attached.
+   */
+  async buildGraph(tripIds: string[]): Promise<Graph> {
+    if (!this.db) throw new Error('Database not initialized');
+    return buildGraph(this.db, tripIds);
   }
 
   // ==================== Realtime Methods ====================

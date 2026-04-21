@@ -36,6 +36,14 @@ export type {
 } from './adapters/types';
 export { ExportNotSupportedError } from './adapters/types';
 
+// Export graph types
+export type {
+  EdgeTrip,
+  EdgeData,
+  Graph,
+} from './queries/graph';
+export { edgeCount, edges } from './queries/graph';
+
 // Export GTFS types
 export type {
   Agency,
