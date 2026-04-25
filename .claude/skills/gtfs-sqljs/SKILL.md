@@ -258,6 +258,19 @@ const exceptionsForDate = await gtfs.getCalendarDatesForDate('20240115');
 
 // Build ordered stop list across multiple trip variants (express/local, etc.)
 const orderedStops = await gtfs.buildOrderedStopList(['TRIP_1', 'TRIP_2', 'TRIP_3']);
+
+// Build a directed stop-to-stop graph from a set of trips (v0.7.0+).
+// Edges connect consecutive stops in stop_sequence order (gaps allowed —
+// uses LEAD()). Each deduplicated edge carries the list of trips that
+// traverse it, with route_id and direction_id attached.
+const graph = await gtfs.buildGraph(['TRIP_1', 'TRIP_2']);
+// graph: Map<fromStopId, Map<toStopId, { trips: EdgeTrip[] }>>
+const edge = graph.get('STOP_A')?.get('STOP_B');
+edge?.trips.forEach(t => console.log(t.tripId, t.routeId, t.directionId));
+
+import { edgeCount, edges } from 'gtfs-sqljs';
+edgeCount(graph);                 // total directed edges
+for (const { from, to, data } of edges(graph)) { /* ... */ }
 ```
 
 All query methods support a `limit` filter parameter.
@@ -357,6 +370,9 @@ import {
   // Filters
   type StopFilters, type RouteFilters, type TripFilters,
   type StopTimeFilters, type ShapeFilters,
+  // Graph (v0.7.0+)
+  type Graph, type EdgeTrip, type EdgeData,
+  edgeCount, edges,
   // Realtime
   type Alert, type VehiclePosition, type TripUpdate, type StopTimeUpdate,
   type AlertFilters, type VehiclePositionFilters, type TripUpdateFilters,
