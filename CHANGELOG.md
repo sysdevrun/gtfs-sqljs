@@ -2,6 +2,8 @@
 
 ## Upcoming release
 
+## 0.8.0
+
 - **Add `getTripSchedules(filters)`** — display-ready trip schedules with everything pre-computed: seconds since the start of the service day (past-midnight times > 86400 supported), unix epochs computed in the agency's timezone (DST-safe "noon minus 12h" rule, zero-dependency via `Intl`), realtime delays resolved per the GTFS-RT spec (delay ↔ absolute time cross-computed, arrival ↔ departure borrowed, delay propagated to subsequent stops until the next update, trip-level delay fallback, `stop_id`-only matching), `SKIPPED`/`NO_DATA`/canceled flags, `display_epoch` (departure, or arrival at the terminus; `displayMode: 'arrival'` flips it), and stop names joined in. Filters: `tripId` and/or `routeId` (+ `directionId`), required service `date`, optional `now`, `displayMode`, `timezone`. Batched internally — one trip or a whole route's day costs the same five indexed queries.
 - **Add pure time/realtime helpers** (exported, usable without a database): `parseGtfsTime`, `gtfsTimeToEpoch`, `serviceDayStartEpoch`, and `resolveRealtime` — the resolution engine behind `getTripSchedules`.
 - Update the website demo's stop-times view to `getTripSchedules` (timezone-correct times, realtime departures with strikethrough schedule, canceled/skipped indicators, no more per-stop queries). Add `examples/trip-schedules.ts`.
