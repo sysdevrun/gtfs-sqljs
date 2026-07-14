@@ -142,6 +142,7 @@ message TripUpdate {
       SCHEDULED = 0;
       SKIPPED = 1;
       NO_DATA = 2;
+      UNSCHEDULED = 3;
     }
     optional ScheduleRelationship schedule_relationship = 5 [default = SCHEDULED];
   }
@@ -365,8 +366,8 @@ async function insertAlerts(db: GtfsDatabase, alerts: ProtobufAlert[], timestamp
       alert.id,
       JSON.stringify(activePeriodSnake),
       JSON.stringify(informedEntitySnake),
-      alert.cause || null,
-      alert.effect || null,
+      alert.cause ?? null,
+      alert.effect ?? null,
       parseTranslatedString(alert.url),
       parseTranslatedString(alert.headerText),
       parseTranslatedString(alert.descriptionText),
@@ -398,17 +399,17 @@ async function insertVehiclePositions(db: GtfsDatabase, positions: ProtobufVehic
       vp.vehicle?.id || null,
       vp.vehicle?.label || null,
       vp.vehicle?.licensePlate || null,
-      vp.position?.latitude || null,
-      vp.position?.longitude || null,
-      vp.position?.bearing || null,
-      vp.position?.odometer || null,
-      vp.position?.speed || null,
-      vp.currentStopSequence || null,
+      vp.position?.latitude ?? null,
+      vp.position?.longitude ?? null,
+      vp.position?.bearing ?? null,
+      vp.position?.odometer ?? null,
+      vp.position?.speed ?? null,
+      vp.currentStopSequence ?? null,
       vp.stopId || null,
-      vp.currentStatus || null,
-      vp.timestamp || null,
-      vp.congestionLevel || null,
-      vp.occupancyStatus || null,
+      vp.currentStatus ?? null,
+      vp.timestamp ?? null,
+      vp.congestionLevel ?? null,
+      vp.occupancyStatus ?? null,
       timestamp
     ]);
   }
@@ -445,9 +446,9 @@ async function insertTripUpdates(db: GtfsDatabase, updates: ProtobufTripUpdate[]
       tu.vehicle?.id || null,
       tu.vehicle?.label || null,
       tu.vehicle?.licensePlate || null,
-      tu.timestamp || null,
-      tu.delay || null,
-      trip.scheduleRelationship || null,
+      tu.timestamp ?? null,
+      tu.delay ?? null,
+      trip.scheduleRelationship ?? null,
       timestamp
     ]);
 
@@ -456,15 +457,15 @@ async function insertTripUpdates(db: GtfsDatabase, updates: ProtobufTripUpdate[]
       for (const stu of tu.stopTimeUpdate) {
         await stopTimeStmt.run([
           trip.tripId,
-          stu.stopSequence || null,
+          stu.stopSequence ?? null,
           stu.stopId || null,
-          stu.arrival?.delay || null,
-          stu.arrival?.time || null,
-          stu.arrival?.uncertainty || null,
-          stu.departure?.delay || null,
-          stu.departure?.time || null,
-          stu.departure?.uncertainty || null,
-          stu.scheduleRelationship || null,
+          stu.arrival?.delay ?? null,
+          stu.arrival?.time ?? null,
+          stu.arrival?.uncertainty ?? null,
+          stu.departure?.delay ?? null,
+          stu.departure?.time ?? null,
+          stu.departure?.uncertainty ?? null,
+          stu.scheduleRelationship ?? null,
           timestamp
         ]);
       }

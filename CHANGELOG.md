@@ -2,6 +2,10 @@
 
 ## Upcoming release
 
+- **Breaking: split `ScheduleRelationship` into `TripScheduleRelationship` and `StopTimeScheduleRelationship`.** The single enum conflated two protobuf enums with different numeric values: at stop level, `SKIPPED` is `1` and `NO_DATA` is `2` per the GTFS-RT spec, but the old enum decoded `1` as `ADDED` and defined `SKIPPED = 4` (a value that never occurs in feeds). `StopTimeUpdate.schedule_relationship` and `StopTimeRealtime.schedule_relationship` are now typed as `StopTimeScheduleRelationship`; trip-level fields as `TripScheduleRelationship`. `ScheduleRelationship` remains as a deprecated alias of `TripScheduleRelationship` (members `SKIPPED`/`NO_DATA` are gone — they were wrong).
+- **Fix: GTFS-RT loader dropped legitimate zero values.** `delay: 0` (explicitly on time), `stop_sequence: 0`, `uncertainty: 0`, `bearing: 0`, `speed: 0`, and `current_status: INCOMING_AT (0)` were coerced to NULL by `||`-based defaulting; now preserved with `??`.
+- **Fix: stop time updates identified by `stop_id` only** (without `stop_sequence`, allowed by the spec) are now stored reliably: the `rt_stop_time_updates` table no longer has a `(trip_id, stop_sequence)` primary key (SQLite treats NULLs in a composite key as distinct rows) and gained a `(trip_id, stop_sequence)` index instead.
+
 ## 0.7.0
 
 - Add `buildGraph(tripIds)` method and `Graph` / `EdgeTrip` / `EdgeData` types. Builds a directed stop-to-stop graph from the given trips, with each deduplicated edge carrying the list of originating trips (plus `route_id` and `direction_id`). Handles non-contiguous `stop_sequence` values via `LEAD()`. Helpers `edgeCount()` and `edges()` are also exported.

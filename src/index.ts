@@ -81,6 +81,8 @@ export type {
 // Export GTFS-RT enums
 export {
   ScheduleRelationship,
+  TripScheduleRelationship,
+  StopTimeScheduleRelationship,
   VehicleStopStatus,
   CongestionLevel,
   OccupancyStatus,

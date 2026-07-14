@@ -66,7 +66,10 @@ export async function createRealtimeTables(db: GtfsDatabase): Promise<void> {
   await db.run('CREATE INDEX IF NOT EXISTS idx_rt_trip_updates_updated ON rt_trip_updates(rt_last_updated)');
   await db.run('CREATE INDEX IF NOT EXISTS idx_rt_trip_updates_route ON rt_trip_updates(route_id)');
 
-  // Stop Time Updates table (child of trip updates)
+  // Stop Time Updates table (child of trip updates).
+  // No PRIMARY KEY: updates may be identified by stop_sequence OR stop_id alone,
+  // and SQLite treats NULLs in a composite PK as distinct. The table is fully
+  // cleared and rebuilt on every realtime load, so uniqueness is not needed.
   await db.run(`
     CREATE TABLE IF NOT EXISTS rt_stop_time_updates (
       trip_id TEXT NOT NULL,
@@ -79,12 +82,11 @@ export async function createRealtimeTables(db: GtfsDatabase): Promise<void> {
       departure_time INTEGER,
       departure_uncertainty INTEGER,
       schedule_relationship INTEGER,
-      rt_last_updated INTEGER NOT NULL,
-      PRIMARY KEY (trip_id, stop_sequence),
-      FOREIGN KEY (trip_id) REFERENCES rt_trip_updates(trip_id) ON DELETE CASCADE
+      rt_last_updated INTEGER NOT NULL
     )
   `);
 
+  await db.run('CREATE INDEX IF NOT EXISTS idx_rt_stop_time_updates_trip ON rt_stop_time_updates(trip_id, stop_sequence)');
   await db.run('CREATE INDEX IF NOT EXISTS idx_rt_stop_time_updates_updated ON rt_stop_time_updates(rt_last_updated)');
   await db.run('CREATE INDEX IF NOT EXISTS idx_rt_stop_time_updates_stop ON rt_stop_time_updates(stop_id)');
 }

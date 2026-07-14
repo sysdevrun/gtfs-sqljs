@@ -5,14 +5,38 @@
 
 // Enum types from GTFS-RT specification
 
-export enum ScheduleRelationship {
+/**
+ * Schedule relationship of a whole trip (TripDescriptor level).
+ * Values follow gtfs-realtime.proto `TripDescriptor.ScheduleRelationship`.
+ */
+export enum TripScheduleRelationship {
   SCHEDULED = 0,
   ADDED = 1,
   UNSCHEDULED = 2,
-  CANCELED = 3,
-  SKIPPED = 4,
-  NO_DATA = 5
+  CANCELED = 3
 }
+
+/**
+ * Schedule relationship of a single stop time update (StopTimeUpdate level).
+ * Values follow gtfs-realtime.proto `TripUpdate.StopTimeUpdate.ScheduleRelationship`.
+ * These numeric values differ from the trip-level enum: SKIPPED is 1 here.
+ */
+export enum StopTimeScheduleRelationship {
+  SCHEDULED = 0,
+  SKIPPED = 1,
+  NO_DATA = 2,
+  UNSCHEDULED = 3
+}
+
+/**
+ * @deprecated This enum conflated the trip-level and stop-level protobuf enums,
+ * whose numeric values differ (a stop-level SKIPPED (1) decoded as ADDED).
+ * Use {@link TripScheduleRelationship} for trips and
+ * {@link StopTimeScheduleRelationship} for stop time updates.
+ */
+export const ScheduleRelationship = TripScheduleRelationship;
+/** @deprecated Use TripScheduleRelationship or StopTimeScheduleRelationship. */
+export type ScheduleRelationship = TripScheduleRelationship;
 
 export enum VehicleStopStatus {
   INCOMING_AT = 0,
@@ -86,7 +110,7 @@ export interface EntitySelector {
     direction_id?: number;
     start_time?: string;
     start_date?: string;
-    schedule_relationship?: ScheduleRelationship;
+    schedule_relationship?: TripScheduleRelationship;
   };
   stop_id?: string;
 }
@@ -147,7 +171,7 @@ export interface StopTimeUpdate {
   stop_id?: string;
   arrival?: StopTimeEvent;
   departure?: StopTimeEvent;
-  schedule_relationship?: ScheduleRelationship;
+  schedule_relationship?: StopTimeScheduleRelationship;
   trip_id?: string;              // Present when queried from database
   rt_last_updated?: number;      // Present when queried from database (UNIX timestamp)
 }
@@ -159,7 +183,7 @@ export interface TripUpdate {
   stop_time_update: StopTimeUpdate[];
   timestamp?: number;
   delay?: number;
-  schedule_relationship?: ScheduleRelationship;
+  schedule_relationship?: TripScheduleRelationship;
   rt_last_updated: number; // UNIX timestamp
 }
 
@@ -170,14 +194,14 @@ export interface StopTimeRealtime {
   arrival_time?: number;       // UNIX timestamp (absolute time)
   departure_delay?: number;    // seconds
   departure_time?: number;     // UNIX timestamp (absolute time)
-  schedule_relationship?: ScheduleRelationship;
+  schedule_relationship?: StopTimeScheduleRelationship;
 }
 
 export interface TripRealtime {
   vehicle_position?: VehiclePosition | null;
   trip_update?: {
     delay?: number;
-    schedule_relationship?: ScheduleRelationship;
+    schedule_relationship?: TripScheduleRelationship;
   } | null;
 }
 
