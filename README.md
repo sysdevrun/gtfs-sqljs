@@ -163,6 +163,7 @@ All methods support flexible filtering with both single values and arrays:
 - `getStopTimes(filters?)` - Get stop times (filters: tripId, stopId, routeId, serviceIds, directionId, agencyId, includeRealtime, limit, date)
 - `getShapes(filters?)` - Get shape points (filters: shapeId, routeId, tripId, limit)
 - `getShapesToGeojson(filters?, precision?)` - Get shapes as GeoJSON FeatureCollection (same filters, precision default: 6)
+- `getTripSchedules(filters)` - Get display-ready trip schedules with realtime resolved (filters: tripId, routeId, directionId, date (required), now, displayMode, timezone) — see [Trip schedules](#trip-schedules-display-ready-stop-times)
 - `buildOrderedStopList(tripIds)` - Build an ordered list of stops from multiple trips (handles express/local variations)
 
 #### Calendar Methods
@@ -183,6 +184,51 @@ All methods support flexible filtering with both single values and arrays:
 - `getVehiclePositions(filters?)` - Get vehicle positions (filters: tripId, routeId, vehicleId, limit)
 - `getTripUpdates(filters?)` - Get trip updates (filters: tripId, routeId, limit)
 - `getStopTimeUpdates(filters?)` - Get stop time updates (filters: tripId, stopId, stopSequence, limit)
+
+### Trip schedules (display-ready stop times)
+
+Rendering stop times correctly is surprisingly subtle: GTFS times are `HH:MM:SS` strings in the **agency's timezone** that can exceed `24:00:00` for trips past midnight, and GTFS-RT feeds may send a delay, an absolute time, or both — for the arrival, the departure, or only one stop of the whole trip. `getTripSchedules()` resolves all of it up front:
+
+```typescript
+const [schedule] = await gtfs.getTripSchedules({
+  tripId: 'TRIP_1',       // and/or routeId (+ optional directionId)
+  date: '20260713',       // service date, YYYYMMDD — required
+  // displayMode: 'arrival',  // default 'departure'
+  // timezone: 'Europe/Paris', // default: the trip's agency_timezone
+  // now: 1780000000,          // reference time for RT staleness (unix seconds)
+});
+
+schedule.timezone;        // IANA timezone used for epoch computation
+schedule.canceled;        // trip canceled in the realtime feed
+schedule.trip_delay;      // trip-level delay, if the feed provides one
+schedule.has_realtime;
+
+for (const stop of schedule.stops) {
+  stop.stop_name;                     // joined from stops.txt — no second query
+  stop.scheduled_departure_seconds;   // seconds since start of service day (can exceed 86400)
+  stop.scheduled_departure_epoch;     // unix seconds, DST-safe (noon-minus-12h rule)
+  stop.rt_departure_epoch;            // realtime estimate, unix seconds
+  stop.departure_delay;               // seconds; 0 means explicitly on time
+  stop.rt_source;                     // 'exact' | 'propagated' | 'trip_delay' | 'none'
+  stop.skipped; stop.no_data;         // GTFS-RT SKIPPED / NO_DATA flags
+  stop.display_epoch;                 // the one time to show: realtime if known,
+                                      // departure (arrival at the terminus)
+  stop.display_is_realtime;
+  // Render in any timezone:
+  new Date(stop.display_epoch! * 1000).toLocaleTimeString(undefined, { timeZone: schedule.timezone });
+}
+```
+
+Realtime resolution follows the GTFS-RT spec: absolute times and delays are cross-computed, an arrival-only update covers the departure (and vice versa), a stop's delay propagates to all later stops until the next update, and the trip-level delay fills the remaining gaps. Updates matched by `stop_id` only (without `stop_sequence`) are supported.
+
+Queries are batched — requesting one trip or a whole route's day costs the same five indexed queries.
+
+The underlying pure functions are exported for use without a database (e.g. on data you already fetched):
+
+- `parseGtfsTime('25:30:00')` → `91800` — seconds since start of service day, `undefined` if missing/malformed
+- `gtfsTimeToEpoch(daySeconds, '20260713', 'Europe/Paris')` → unix seconds; zero-dependency IANA timezone handling via `Intl`, correct across DST changes
+- `serviceDayStartEpoch(date, timezone)` — epoch of "noon minus 12h" on the service date
+- `resolveRealtime(stopTimes, stopTimeUpdates, tripUpdate, options)` — the full resolution engine as a pure function
 
 #### Database Methods
 - `export()` - Export database to ArrayBuffer (includes RT data)
@@ -211,8 +257,11 @@ import type {
   // GTFS-RT types
   Alert, VehiclePosition, TripWithRealtime, StopTimeWithRealtime,
   AlertFilters, VehiclePositionFilters,
+  // Trip schedules
+  TripSchedule, TripScheduleStop, TripScheduleFilters,
+  ResolvedStopTime, ResolveRealtimeOptions, RealtimeSource,
   // GTFS-RT enums
-  AlertCause, AlertEffect, ScheduleRelationship,
+  AlertCause, AlertEffect, TripScheduleRelationship, StopTimeScheduleRelationship,
   // Progress tracking types
   ProgressInfo, ProgressCallback
 } from 'gtfs-sqljs';

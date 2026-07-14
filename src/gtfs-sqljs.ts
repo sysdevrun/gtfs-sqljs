@@ -28,6 +28,7 @@ import {
 } from './queries/calendar';
 import { getTrips, type TripFilters, type TripWithRealtime } from './queries/trips';
 import { getStopTimes, buildOrderedStopList, type StopTimeFilters, type StopTimeWithRealtime } from './queries/stop-times';
+import { getTripSchedules, type TripScheduleFilters, type TripSchedule, type TripScheduleStop } from './queries/trip-schedules';
 import { buildGraph, type Graph } from './queries/graph';
 import { getShapes, getShapesToGeojson, type ShapeFilters, type GeoJsonFeatureCollection } from './queries/shapes';
 import { getAlerts as getAlertsQuery, getAllAlerts, type AlertFilters } from './queries/rt-alerts';
@@ -40,9 +41,9 @@ import type { Agency, Stop, Route, Trip, StopTime, Calendar, CalendarDate, Shape
 import type { Alert, VehiclePosition, TripUpdate, StopTimeUpdate } from './types/gtfs-rt';
 
 // Export filter types for users
-export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, ShapeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters };
+export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, ShapeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters, TripScheduleFilters };
 // Export RT types
-export type { Alert, VehiclePosition, TripUpdate, TripWithRealtime, StopTimeWithRealtime };
+export type { Alert, VehiclePosition, TripUpdate, TripWithRealtime, StopTimeWithRealtime, TripSchedule, TripScheduleStop };
 // Export GeoJSON types
 export type { GeoJsonFeatureCollection };
 
@@ -757,6 +758,20 @@ export class GtfsSqlJs {
     }
 
     return getStopTimes(this.db, finalFilters, this.stalenessThreshold);
+  }
+
+  /**
+   * Get display-ready schedules for one or more trips.
+   *
+   * Scheduled and realtime times come fully pre-computed: seconds since the
+   * start of the service day, unix epochs (agency-timezone aware, past-midnight
+   * times handled), resolved delays with spec-compliant propagation, skip and
+   * cancellation flags, and stop names joined in. Requires `tripId` and/or
+   * `routeId`, plus the service `date`.
+   */
+  async getTripSchedules(filters: TripScheduleFilters): Promise<TripSchedule[]> {
+    if (!this.db) throw new Error('Database not initialized');
+    return getTripSchedules(this.db, filters, this.stalenessThreshold);
   }
 
   /**

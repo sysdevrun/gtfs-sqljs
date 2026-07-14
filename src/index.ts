@@ -23,8 +23,21 @@ export {
   type TripUpdate,
   type TripWithRealtime,
   type StopTimeWithRealtime,
+  type TripScheduleFilters,
+  type TripSchedule,
+  type TripScheduleStop,
   type GeoJsonFeatureCollection
 } from './gtfs-sqljs';
+
+// Export time helpers and the realtime resolution engine (pure functions)
+export { parseGtfsTime, gtfsTimeToEpoch, serviceDayStartEpoch } from './time/gtfs-time';
+export {
+  resolveRealtime,
+  type ResolvedStopTime,
+  type ResolvedStopTimeFields,
+  type ResolveRealtimeOptions,
+  type RealtimeSource,
+} from './time/resolve-realtime';
 
 // Export adapter surface (types + error class)
 export type {

@@ -318,6 +318,44 @@ gtfs.setStalenessThreshold(60);
 await gtfs.clearRealtimeData();
 ```
 
+## Trip schedules — display-ready stop times (v0.8.0+)
+
+Prefer `getTripSchedules()` over hand-combining `getStopTimes` + `includeRealtime` when displaying times to users. It pre-computes everything: day-seconds (past-midnight times > 86400), unix epochs in the agency's timezone (DST-safe), realtime resolution per the GTFS-RT spec (delay ↔ absolute time cross-computed, arrival ↔ departure borrowed, propagation to later stops, trip-level delay fallback, `stop_id`-only matching), and joins stop names in. Batched: one trip or a whole route's day costs the same five indexed queries.
+
+```typescript
+const schedules = await gtfs.getTripSchedules({
+  routeId: 'ROUTE_1',        // and/or tripId (string | string[]), + optional directionId
+  date: '20260713',          // service date YYYYMMDD — REQUIRED (drives epoch math)
+  // displayMode: 'arrival', // default 'departure': departure shown, arrival at terminus
+  // timezone: 'UTC',        // override; default = trip's agency_timezone
+  // now: 1780000000,        // unix seconds, for RT staleness (replay/testing)
+});
+
+for (const schedule of schedules) {   // ordered by first-stop scheduled time
+  schedule.timezone;      // IANA tz used for epochs
+  schedule.canceled;      // trip canceled in RT feed
+  schedule.trip_delay;    // TripUpdate.delay if provided
+  schedule.has_realtime;
+
+  for (const stop of schedule.stops) {  // ordered by stop_sequence
+    stop.stop_name;                              // joined — no extra query needed
+    stop.scheduled_departure_seconds;            // since service-day start, can exceed 86400
+    stop.scheduled_departure_epoch;              // unix seconds
+    stop.rt_departure_epoch; stop.departure_delay; // realtime; delay 0 = explicitly on time
+    stop.rt_source;                              // 'exact' | 'propagated' | 'trip_delay' | 'none'
+    stop.skipped; stop.no_data;                  // GTFS-RT SKIPPED / NO_DATA
+    stop.display_epoch; stop.display_is_realtime; stop.display_delay;
+    stop.is_first; stop.is_last;
+    // Render in any timezone:
+    new Date(stop.display_epoch! * 1000).toLocaleTimeString(undefined, { timeZone: schedule.timezone });
+  }
+}
+```
+
+Pure helpers (no database needed) are also exported: `parseGtfsTime('25:30:00') → 91800` (undefined on missing/malformed), `gtfsTimeToEpoch(daySeconds, 'YYYYMMDD', ianaTz)`, `serviceDayStartEpoch(date, tz)` ("noon minus 12h" rule), and `resolveRealtime(stopTimes, stopTimeUpdates, tripUpdate, { serviceDate, timezone, ... })` — the engine behind `getTripSchedules`.
+
+**Breaking in v0.8.0:** `ScheduleRelationship` split into `TripScheduleRelationship` (SCHEDULED/ADDED/UNSCHEDULED/CANCELED) and `StopTimeScheduleRelationship` (SCHEDULED=0, SKIPPED=1, NO_DATA=2, UNSCHEDULED=3 — stop-level numeric values differ from trip-level!). The old name remains as a deprecated alias of the trip-level enum; its `SKIPPED`/`NO_DATA` members are gone (they had wrong values).
+
 ## Database operations
 
 ```typescript
@@ -378,8 +416,13 @@ import {
   type AlertFilters, type VehiclePositionFilters, type TripUpdateFilters,
   // Merged types
   type TripWithRealtime, type StopTimeWithRealtime,
+  // Trip schedules (v0.8.0+)
+  type TripSchedule, type TripScheduleStop, type TripScheduleFilters,
+  type ResolvedStopTime, type ResolveRealtimeOptions, type RealtimeSource,
+  parseGtfsTime, gtfsTimeToEpoch, serviceDayStartEpoch, resolveRealtime,
   // Enums
-  ScheduleRelationship, VehicleStopStatus, AlertCause, AlertEffect,
+  TripScheduleRelationship, StopTimeScheduleRelationship,
+  VehicleStopStatus, AlertCause, AlertEffect,
   PickupDropOffType,
   // GeoJSON
   type GeoJsonFeatureCollection,

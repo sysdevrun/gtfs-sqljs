@@ -2,7 +2,7 @@ import initSqlJs from 'sql.js';
 import type { SqlJsStatic } from 'sql.js';
 import { GtfsSqlJs } from 'gtfs-sqljs';
 import { createSqlJsAdapter } from 'gtfs-sqljs/adapters/sql-js';
-import type { Route, Trip, StopTime, Agency, Alert, VehiclePosition, TripWithRealtime, StopTimeWithRealtime } from 'gtfs-sqljs';
+import type { Route, Trip, StopTime, Agency, Alert, VehiclePosition, TripWithRealtime } from 'gtfs-sqljs';
 
 let gtfs: GtfsSqlJs;
 let selectedDate: string;
@@ -345,56 +345,57 @@ async function renderRoutes() {
   const stopTimesListEl = document.getElementById('stop-times-list')!;
   const selectedTripNameEl = document.getElementById('selected-trip-name')!;
 
-  // Get stop times for this trip (with realtime data)
-  const stopTimes = (await gtfs.getStopTimes({
-    tripId: tripId,
-    includeRealtime: true
-  })) as StopTimeWithRealtime[];
+  // One call: stop names joined, scheduled + realtime times pre-computed.
+  // display_epoch is the departure (arrival at the terminus), realtime when known.
+  const [schedule] = await gtfs.getTripSchedules({ tripId, date: selectedDate });
 
-  if (stopTimes.length === 0) {
+  if (!schedule || schedule.stops.length === 0) {
     stopTimesListEl.innerHTML = '<p>No stop times found for this trip</p>';
     stopTimesSectionEl.style.display = 'block';
     selectedTripNameEl.textContent = tripName;
     return;
   }
 
-  // Render stop times with stop names and realtime data
-  const html = (await Promise.all(stopTimes.map(async st => {
-    const stops = await gtfs.getStops({ stopId: st.stop_id });
-    const stop = stops.length > 0 ? stops[0] : null;
-    const stopName = stop ? stop.stop_name : st.stop_id;
+  // Epochs are unix timestamps: render them in the network's timezone here,
+  // or drop timeZone to show them in the viewer's local time.
+  const formatTime = (epoch: number | undefined): string =>
+    epoch === undefined ? '' : new Date(epoch * 1000).toLocaleTimeString('en-GB', {
+      timeZone: schedule.timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
 
-    const hasRealtime = st.realtime !== undefined;
-    const arrivalDelay = st.realtime?.arrival_delay;
-    const departureDelay = st.realtime?.departure_delay;
+  const canceledBanner = schedule.canceled
+    ? '<p><span class="delay-indicator delay-high">Trip canceled (realtime)</span></p>'
+    : '';
 
-    // Calculate realtime arrival if delay exists
-    let rtArrivalTime = '';
-    if (arrivalDelay !== undefined && arrivalDelay !== null) {
-      const scheduledSeconds = timeToSeconds(st.arrival_time ?? '');
-      const rtSeconds = scheduledSeconds + arrivalDelay;
-      rtArrivalTime = secondsToTime(rtSeconds);
-    }
-
-    const delayClass = arrivalDelay && arrivalDelay > 300 ? 'delay-high' :
-                       arrivalDelay && arrivalDelay > 120 ? 'delay-medium' :
-                       arrivalDelay && arrivalDelay > 0 ? 'delay-low' : '';
+  const html = canceledBanner + schedule.stops.map(stop => {
+    const delay = stop.display_delay ?? 0;
+    const delayClass = delay > 300 ? 'delay-high' :
+                       delay > 120 ? 'delay-medium' :
+                       delay > 0 ? 'delay-low' : '';
+    const scheduledEpoch = stop.is_last
+      ? stop.scheduled_arrival_epoch ?? stop.scheduled_departure_epoch
+      : stop.scheduled_departure_epoch ?? stop.scheduled_arrival_epoch;
 
     return `
-      <div class="stop-time-item ${hasRealtime ? 'has-realtime' : ''}">
-        <div class="sequence">#${st.stop_sequence}</div>
+      <div class="stop-time-item ${stop.display_is_realtime ? 'has-realtime' : ''}">
+        <div class="sequence">#${stop.stop_sequence}</div>
         <div class="time">
-          ${hasRealtime && rtArrivalTime ? `
-            <div class="rt-time ${delayClass}">${rtArrivalTime}</div>
-            <div class="scheduled-time">${st.arrival_time ?? ''}</div>
+          ${stop.skipped ? `
+            <div class="scheduled-time">skipped</div>
+          ` : stop.display_is_realtime ? `
+            <div class="rt-time ${delayClass}">${formatTime(stop.display_epoch)}</div>
+            <div class="scheduled-time">${formatTime(scheduledEpoch)}</div>
           ` : `
-            <div>${st.arrival_time ?? ''}</div>
+            <div>${formatTime(stop.display_epoch)}</div>
           `}
         </div>
-        <div class="stop-name">${escapeHtml(stopName)}</div>
+        <div class="stop-name">${escapeHtml(stop.stop_name ?? stop.stop_id)}</div>
       </div>
     `;
-  }))).join('');
+  }).join('');
 
   stopTimesListEl.innerHTML = html;
   stopTimesSectionEl.style.display = 'block';
@@ -613,19 +614,6 @@ function getContrastColor(hexColor: string): string {
 
   // Return black or white based on luminance
   return luminance > 0.5 ? '#000000' : '#ffffff';
-}
-
-// Time conversion helpers
-function timeToSeconds(time: string): number {
-  const [hours, minutes, seconds] = time.split(':').map(Number);
-  return hours * 3600 + minutes * 60 + seconds;
-}
-
-function secondsToTime(seconds: number): string {
-  const hours = Math.floor(seconds / 3600);
-  const minutes = Math.floor((seconds % 3600) / 60);
-  const secs = seconds % 60;
-  return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
 }
 
 // Start the demo
