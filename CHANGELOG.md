@@ -3,6 +3,10 @@
 ## Upcoming release
 
 - Fix: `ProgressInfo` and `ProgressCallback` types are now exported from the package entry point, as documented in the README (`import { type ProgressInfo } from 'gtfs-sqljs'` previously failed).
+- **Add `getCalendars(filters?)`** — bulk read of the `calendar` table (filters: `serviceId` single value or array, `limit`). `getCalendarByServiceId()` remains as a convenience wrapper. ([#46](https://github.com/sysdevrun/gtfs-sqljs/issues/46))
+- **`getCalendarDates()` no longer requires a service id** — it now accepts an optional filters object (`serviceId`, `date`, `limit`) and returns the whole `calendar_dates` table when called without arguments. The legacy `getCalendarDates('SERVICE_ID')` string form is still accepted. ([#46](https://github.com/sysdevrun/gtfs-sqljs/issues/46))
+- **Add `getFeedInfo()`** — returns the `feed_info` rows (an array, since the spec allows multiple rows). Useful for `feed_start_date`/`feed_end_date` bounds and `feed_version` display/cache keys. ([#46](https://github.com/sysdevrun/gtfs-sqljs/issues/46))
+- **Add `getFrequencies(filters?)`** — read the `frequencies` table (filters: `tripId` single value or array, `limit`), e.g. to detect frequency-based trips whose `stop_times` are offsets from `start_time`. `exact_times: 0` is preserved (not coerced to `undefined`). ([#46](https://github.com/sysdevrun/gtfs-sqljs/issues/46))
 
 ## 0.8.0
 

@@ -252,9 +252,21 @@ const geojson = await gtfs.getShapesToGeojson({ routeId: 'ROUTE_1' });
 
 // Calendar
 const serviceIds = await gtfs.getActiveServiceIds('20240115'); // YYYYMMDD
+const calendars = await gtfs.getCalendars();                   // whole calendar table
+const someCalendars = await gtfs.getCalendars({ serviceId: ['WEEKDAY', 'WEEKEND'] });
 const calendar = await gtfs.getCalendarByServiceId('WEEKDAY');
-const exceptions = await gtfs.getCalendarDates('WEEKDAY');
+const allExceptions = await gtfs.getCalendarDates();           // whole calendar_dates table
+const exceptions = await gtfs.getCalendarDates({ serviceId: 'WEEKDAY' });
 const exceptionsForDate = await gtfs.getCalendarDatesForDate('20240115');
+
+// Feed info (array — the spec allows multiple rows, e.g. translations)
+const [feedInfo] = await gtfs.getFeedInfo();
+feedInfo?.feed_start_date; feedInfo?.feed_end_date; feedInfo?.feed_version;
+
+// Frequencies — if a trip appears here, its stop_times are offsets from each
+// start_time, not absolute times (exact_times 0 or undefined = frequency-based)
+const frequencies = await gtfs.getFrequencies();
+const tripFrequencies = await gtfs.getFrequencies({ tripId: 'TRIP_1' });
 
 // Build ordered stop list across multiple trip variants (express/local, etc.)
 const orderedStops = await gtfs.buildOrderedStopList(['TRIP_1', 'TRIP_2', 'TRIP_3']);

@@ -173,6 +173,26 @@ export async function createTestDatabase(SQL: SqlJsStatic): Promise<ArrayBuffer>
   db.run('UPDATE trips SET shape_id = ? WHERE trip_id = ?', ['SHAPE1', 'TRIP3']);
   db.run('UPDATE trips SET shape_id = ? WHERE trip_id = ?', ['SHAPE2', 'TRIP4']);
 
+  // Feed info
+  db.run(
+    'INSERT INTO feed_info (feed_publisher_name, feed_publisher_url, feed_lang, feed_start_date, feed_end_date, feed_version) VALUES (?, ?, ?, ?, ?, ?)',
+    ['Test Transit Publisher', 'https://test-transit.example.com', 'en', '20240101', '20241231', '2024.1']
+  );
+
+  // Frequencies (TRIP1 is frequency-based in the morning)
+  db.run(
+    'INSERT INTO frequencies (trip_id, start_time, end_time, headway_secs, exact_times) VALUES (?, ?, ?, ?, ?)',
+    ['TRIP1', '06:00:00', '09:00:00', 600, 0]
+  );
+  db.run(
+    'INSERT INTO frequencies (trip_id, start_time, end_time, headway_secs) VALUES (?, ?, ?, ?)',
+    ['TRIP1', '09:00:00', '12:00:00', 900]
+  );
+  db.run(
+    'INSERT INTO frequencies (trip_id, start_time, end_time, headway_secs, exact_times) VALUES (?, ?, ?, ?, ?)',
+    ['TRIP4', '07:00:00', '10:00:00', 300, 1]
+  );
+
   // Export database
   const data = db.export();
   db.close();

@@ -107,6 +107,97 @@ describe('GtfsSqlJs', () => {
       const serviceIds = await gtfs.getActiveServiceIds('21000101');
       expect(serviceIds.length).toBe(0);
     });
+
+    it('should get all calendars', async () => {
+      const calendars = await gtfs.getCalendars();
+      expect(calendars.length).toBe(2);
+      expect(calendars.map((c) => c.service_id).sort()).toEqual(['WEEKDAY', 'WEEKEND']);
+    });
+
+    it('should get calendars filtered by service ID', async () => {
+      const calendars = await gtfs.getCalendars({ serviceId: 'WEEKDAY' });
+      expect(calendars.length).toBe(1);
+      expect(calendars[0].service_id).toBe('WEEKDAY');
+      expect(calendars[0].monday).toBe(1);
+      expect(calendars[0].saturday).toBe(0);
+    });
+
+    it('should get calendars by service ID array', async () => {
+      const calendars = await gtfs.getCalendars({ serviceId: ['WEEKDAY', 'WEEKEND'] });
+      expect(calendars.length).toBe(2);
+    });
+
+    it('should respect limit on getCalendars', async () => {
+      const calendars = await gtfs.getCalendars({ limit: 1 });
+      expect(calendars.length).toBe(1);
+    });
+
+    it('should get all calendar dates without filters', async () => {
+      const dates = await gtfs.getCalendarDates();
+      expect(dates.length).toBe(2);
+    });
+
+    it('should get calendar dates filtered by service ID', async () => {
+      const dates = await gtfs.getCalendarDates({ serviceId: 'WEEKDAY' });
+      expect(dates.length).toBe(1);
+      expect(dates[0].service_id).toBe('WEEKDAY');
+      expect(dates[0].exception_type).toBe(2);
+    });
+
+    it('should get calendar dates filtered by date', async () => {
+      const dates = await gtfs.getCalendarDates({ date: '20240704' });
+      expect(dates.length).toBe(2);
+    });
+
+    it('should still accept legacy string form of getCalendarDates', async () => {
+      const dates = await gtfs.getCalendarDates('WEEKEND');
+      expect(dates.length).toBe(1);
+      expect(dates[0].service_id).toBe('WEEKEND');
+      expect(dates[0].exception_type).toBe(1);
+    });
+  });
+
+  describe('Feed info methods', () => {
+    it('should get feed info', async () => {
+      const feedInfos = await gtfs.getFeedInfo();
+      expect(feedInfos.length).toBe(1);
+      expect(feedInfos[0].feed_publisher_name).toBe('Test Transit Publisher');
+      expect(feedInfos[0].feed_lang).toBe('en');
+      expect(feedInfos[0].feed_start_date).toBe('20240101');
+      expect(feedInfos[0].feed_end_date).toBe('20241231');
+      expect(feedInfos[0].feed_version).toBe('2024.1');
+      expect(feedInfos[0].feed_contact_email).toBeUndefined();
+    });
+  });
+
+  describe('Frequency methods', () => {
+    it('should get all frequencies', async () => {
+      const frequencies = await gtfs.getFrequencies();
+      expect(frequencies.length).toBe(3);
+    });
+
+    it('should get frequencies filtered by trip ID', async () => {
+      const frequencies = await gtfs.getFrequencies({ tripId: 'TRIP1' });
+      expect(frequencies.length).toBe(2);
+      expect(frequencies[0].start_time).toBe('06:00:00');
+      expect(frequencies[0].headway_secs).toBe(600);
+    });
+
+    it('should preserve exact_times 0 and map null to undefined', async () => {
+      const frequencies = await gtfs.getFrequencies({ tripId: 'TRIP1' });
+      expect(frequencies[0].exact_times).toBe(0);
+      expect(frequencies[1].exact_times).toBeUndefined();
+    });
+
+    it('should get frequencies by trip ID array with limit', async () => {
+      const frequencies = await gtfs.getFrequencies({ tripId: ['TRIP1', 'TRIP4'], limit: 2 });
+      expect(frequencies.length).toBe(2);
+    });
+
+    it('should return empty array for trip without frequencies', async () => {
+      const frequencies = await gtfs.getFrequencies({ tripId: 'TRIP2' });
+      expect(frequencies.length).toBe(0);
+    });
   });
 
   describe('Trip methods', () => {

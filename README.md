@@ -169,8 +169,13 @@ All methods support flexible filtering with both single values and arrays:
 #### Calendar Methods
 - `getActiveServiceIds(date)` - Get active service IDs for a date (YYYYMMDD format)
 - `getCalendars(filters?)` - Get calendars (filters: serviceId, limit)
-- `getCalendarDates(serviceId)` - Get calendar date exceptions for a service
+- `getCalendarByServiceId(serviceId)` - Get a single calendar entry
+- `getCalendarDates(filters?)` - Get calendar date exceptions (filters: serviceId, date, limit; a plain serviceId string is still accepted)
 - `getCalendarDatesForDate(date)` - Get calendar exceptions for a specific date
+
+#### Feed Info and Frequency Methods
+- `getFeedInfo()` - Get feed_info rows (array — the spec allows multiple rows)
+- `getFrequencies(filters?)` - Get headway-based service patterns (filters: tripId, limit). If a trip appears here, its stop_times are offsets from each `start_time` rather than absolute times.
 
 #### GTFS Realtime Methods
 - `fetchRealtimeData(urls?)` - Fetch and load RT data from protobuf feeds

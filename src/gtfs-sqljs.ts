@@ -22,10 +22,15 @@ import { getStops, type StopFilters } from './queries/stops';
 import { getRoutes, type RouteFilters } from './queries/routes';
 import {
   getActiveServiceIds,
+  getCalendars,
   getCalendarByServiceId,
   getCalendarDates,
   getCalendarDatesForDate,
+  type CalendarFilters,
+  type CalendarDateFilters,
 } from './queries/calendar';
+import { getFeedInfo } from './queries/feed-info';
+import { getFrequencies, type FrequencyFilters } from './queries/frequencies';
 import { getTrips, type TripFilters, type TripWithRealtime } from './queries/trips';
 import { getStopTimes, buildOrderedStopList, type StopTimeFilters, type StopTimeWithRealtime } from './queries/stop-times';
 import { getTripSchedules, type TripScheduleFilters, type TripSchedule, type TripScheduleStop } from './queries/trip-schedules';
@@ -37,11 +42,11 @@ import { getTripUpdates, getAllTripUpdates, type TripUpdateFilters } from './que
 import { getStopTimeUpdates, getAllStopTimeUpdates, type StopTimeUpdateFilters } from './queries/rt-stop-time-updates';
 
 // Types
-import type { Agency, Stop, Route, Trip, StopTime, Calendar, CalendarDate, Shape } from './types/gtfs';
+import type { Agency, Stop, Route, Trip, StopTime, Calendar, CalendarDate, Shape, FeedInfo, Frequency } from './types/gtfs';
 import type { Alert, VehiclePosition, TripUpdate, StopTimeUpdate } from './types/gtfs-rt';
 
 // Export filter types for users
-export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, ShapeFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters, TripScheduleFilters };
+export type { AgencyFilters, StopFilters, RouteFilters, TripFilters, StopTimeFilters, ShapeFilters, CalendarFilters, CalendarDateFilters, FrequencyFilters, AlertFilters, VehiclePositionFilters, TripUpdateFilters, StopTimeUpdateFilters, TripScheduleFilters };
 // Export RT types
 export type { Alert, VehiclePosition, TripUpdate, TripWithRealtime, StopTimeWithRealtime, TripSchedule, TripScheduleStop };
 // Export GeoJSON types
@@ -678,6 +683,15 @@ export class GtfsSqlJs {
   }
 
   /**
+   * Get calendar entries with optional filters
+   * Pass serviceId filter to get specific calendars
+   */
+  async getCalendars(filters?: CalendarFilters): Promise<Calendar[]> {
+    if (!this.db) throw new Error('Database not initialized');
+    return getCalendars(this.db, filters);
+  }
+
+  /**
    * Get calendar entry by service_id
    */
   async getCalendarByServiceId(serviceId: string): Promise<Calendar | null> {
@@ -686,11 +700,18 @@ export class GtfsSqlJs {
   }
 
   /**
-   * Get calendar date exceptions for a service
+   * Get calendar date exceptions with optional filters
+   * Accepts a filters object; a plain service_id string is still supported
+   * for backward compatibility.
    */
-  async getCalendarDates(serviceId: string): Promise<CalendarDate[]> {
+  async getCalendarDates(filters?: CalendarDateFilters): Promise<CalendarDate[]>;
+  async getCalendarDates(serviceId: string): Promise<CalendarDate[]>;
+  async getCalendarDates(filtersOrServiceId?: CalendarDateFilters | string): Promise<CalendarDate[]> {
     if (!this.db) throw new Error('Database not initialized');
-    return getCalendarDates(this.db, serviceId);
+    const filters = typeof filtersOrServiceId === 'string'
+      ? { serviceId: filtersOrServiceId }
+      : filtersOrServiceId;
+    return getCalendarDates(this.db, filters);
   }
 
   /**
@@ -699,6 +720,27 @@ export class GtfsSqlJs {
   async getCalendarDatesForDate(date: string): Promise<CalendarDate[]> {
     if (!this.db) throw new Error('Database not initialized');
     return getCalendarDatesForDate(this.db, date);
+  }
+
+  // ==================== Feed Info Methods ====================
+
+  /**
+   * Get feed_info rows (the GTFS spec allows multiple rows, e.g. translations)
+   */
+  async getFeedInfo(): Promise<FeedInfo[]> {
+    if (!this.db) throw new Error('Database not initialized');
+    return getFeedInfo(this.db);
+  }
+
+  // ==================== Frequency Methods ====================
+
+  /**
+   * Get frequencies with optional filters
+   * Pass tripId filter to get frequencies for specific trips
+   */
+  async getFrequencies(filters?: FrequencyFilters): Promise<Frequency[]> {
+    if (!this.db) throw new Error('Database not initialized');
+    return getFrequencies(this.db, filters);
   }
 
   // ==================== Trip Methods ====================

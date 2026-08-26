@@ -5,6 +5,17 @@
 import type { GtfsDatabase, Row } from '../adapters/types';
 import type { Calendar, CalendarDate } from '../types/gtfs';
 
+export interface CalendarFilters {
+  serviceId?: string | string[];
+  limit?: number;
+}
+
+export interface CalendarDateFilters {
+  serviceId?: string | string[];
+  date?: string;
+  limit?: number;
+}
+
 /**
  * Get active service IDs for a given date
  */
@@ -57,6 +68,50 @@ export async function getActiveServiceIds(db: GtfsDatabase, date: string): Promi
 }
 
 /**
+ * Get calendar entries with optional filters
+ * - Filters support both single values and arrays
+ */
+export async function getCalendars(db: GtfsDatabase, filters: CalendarFilters = {}): Promise<Calendar[]> {
+  const { serviceId, limit } = filters;
+
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (serviceId) {
+    const serviceIds = Array.isArray(serviceId) ? serviceId : [serviceId];
+    if (serviceIds.length > 0) {
+      const placeholders = serviceIds.map(() => '?').join(', ');
+      conditions.push(`service_id IN (${placeholders})`);
+      params.push(...serviceIds);
+    }
+  }
+
+  let sql = 'SELECT * FROM calendar';
+  if (conditions.length > 0) {
+    sql += ' WHERE ' + conditions.join(' AND ');
+  }
+  sql += ' ORDER BY service_id';
+  if (limit) {
+    sql += ' LIMIT ?';
+    params.push(limit);
+  }
+
+  const stmt = await db.prepare(sql);
+  if (params.length > 0) {
+    await stmt.bind(params);
+  }
+
+  const calendars: Calendar[] = [];
+  while (await stmt.step()) {
+    const row = await stmt.getAsObject();
+    calendars.push(rowToCalendar(row));
+  }
+
+  await stmt.free();
+  return calendars;
+}
+
+/**
  * Get calendar entry by service_id
  */
 export async function getCalendarByServiceId(db: GtfsDatabase, serviceId: string): Promise<Calendar | null> {
@@ -74,11 +129,43 @@ export async function getCalendarByServiceId(db: GtfsDatabase, serviceId: string
 }
 
 /**
- * Get calendar date exceptions for a service
+ * Get calendar date exceptions with optional filters
+ * - Filters support both single values and arrays
  */
-export async function getCalendarDates(db: GtfsDatabase, serviceId: string): Promise<CalendarDate[]> {
-  const stmt = await db.prepare('SELECT * FROM calendar_dates WHERE service_id = ? ORDER BY date');
-  await stmt.bind([serviceId]);
+export async function getCalendarDates(db: GtfsDatabase, filters: CalendarDateFilters = {}): Promise<CalendarDate[]> {
+  const { serviceId, date, limit } = filters;
+
+  const conditions: string[] = [];
+  const params: (string | number)[] = [];
+
+  if (serviceId) {
+    const serviceIds = Array.isArray(serviceId) ? serviceId : [serviceId];
+    if (serviceIds.length > 0) {
+      const placeholders = serviceIds.map(() => '?').join(', ');
+      conditions.push(`service_id IN (${placeholders})`);
+      params.push(...serviceIds);
+    }
+  }
+
+  if (date) {
+    conditions.push('date = ?');
+    params.push(date);
+  }
+
+  let sql = 'SELECT * FROM calendar_dates';
+  if (conditions.length > 0) {
+    sql += ' WHERE ' + conditions.join(' AND ');
+  }
+  sql += ' ORDER BY service_id, date';
+  if (limit) {
+    sql += ' LIMIT ?';
+    params.push(limit);
+  }
+
+  const stmt = await db.prepare(sql);
+  if (params.length > 0) {
+    await stmt.bind(params);
+  }
 
   const dates: CalendarDate[] = [];
   while (await stmt.step()) {
@@ -94,17 +181,7 @@ export async function getCalendarDates(db: GtfsDatabase, serviceId: string): Pro
  * Get calendar date exceptions for a specific date
  */
 export async function getCalendarDatesForDate(db: GtfsDatabase, date: string): Promise<CalendarDate[]> {
-  const stmt = await db.prepare('SELECT * FROM calendar_dates WHERE date = ?');
-  await stmt.bind([date]);
-
-  const dates: CalendarDate[] = [];
-  while (await stmt.step()) {
-    const row = await stmt.getAsObject();
-    dates.push(rowToCalendarDate(row));
-  }
-
-  await stmt.free();
-  return dates;
+  return getCalendarDates(db, { date });
 }
 
 /**
