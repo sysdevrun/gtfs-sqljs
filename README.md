@@ -57,6 +57,8 @@ This project is greatly inspired by [node-gtfs](https://github.com/BlinkTagInc/n
 npm install gtfs-sqljs
 ```
 
+Requires Node.js 20+ (in Node environments; browsers and React Native are unaffected).
+
 Install the adapter(s) you want as peer dependencies. Install one or both depending on where the library runs:
 
 ```bash
@@ -101,6 +103,8 @@ const stopTimes = await gtfs.getStopTimes({ tripId: trips[0].trip_id });
 // Clean up
 await gtfs.close();
 ```
+
+> **Bundler note:** when bundling the sql.js adapter for the browser, vite/rollup may warn that `fs`, `path`, and `crypto` "have been externalized for browser compatibility", pointing at `sql.js/dist/sql-wasm.js`. This comes from sql.js's UMD build (its Node-only branch); the warning is harmless — that code never runs in a browser — and cannot be fixed from gtfs-sqljs. To silence it, alias those modules to an empty stub in your bundler config.
 
 ### better-sqlite3 (Node native)
 

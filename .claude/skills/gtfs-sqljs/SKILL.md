@@ -8,7 +8,7 @@ user-invocable: false
 
 # gtfs-sqljs
 
-TypeScript library for loading GTFS (General Transit Feed Specification) transit data into a SQLite database through a pluggable adapter. Works in browser, Node.js (18+), and React Native (via op-sqlite / expo-sqlite adapters). ESM-only.
+TypeScript library for loading GTFS (General Transit Feed Specification) transit data into a SQLite database through a pluggable adapter. Works in browser, Node.js (20+), and React Native (via op-sqlite / expo-sqlite adapters). ESM-only.
 
 Starting with **v0.6.0**, the library speaks to a small async `GtfsDatabase` interface. The core package no longer imports `sql.js` — you pick an adapter. All query methods are async and return `Promise<T>`.
 
@@ -46,6 +46,8 @@ import sqlWasmUrl from 'sql.js/dist/sql-wasm.wasm?url';
 const adapter = await createSqlJsAdapter({ locateFile: () => sqlWasmUrl });
 const gtfs = await GtfsSqlJs.fromZip('https://example.com/gtfs.zip', { adapter });
 ```
+
+Vite may warn that `fs`/`path`/`crypto` "have been externalized for browser compatibility" in `sql.js/dist/sql-wasm.js` — harmless (sql.js's UMD Node-only branch, never runs in the browser, not fixable from gtfs-sqljs). Silence with a `resolve.alias` stub if desired.
 
 ### Webpack
 
@@ -472,7 +474,7 @@ If the active adapter cannot serialize in-memory (`ExportNotSupportedError`, typ
 
 - All query methods, `export()`, and `close()` are `async` — remember `await`. TypeScript catches missing awaits; JavaScript does not.
 - Dates use YYYYMMDD string format (e.g., `'20240115'`).
-- ESM-only — use `import`, not `require`. Requires Node.js 18+.
+- ESM-only — use `import`, not `require`. Requires Node.js 20+.
 - Always `await gtfs.close()` when done.
 - `fromZip()` accepts URLs only (not local file paths) — use `fromZipData()` for pre-loaded data.
 - `skipFiles` skips files during ZIP extraction to reduce memory (e.g., `['shapes.txt']`).

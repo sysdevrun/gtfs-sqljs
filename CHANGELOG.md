@@ -2,6 +2,9 @@
 
 ## Upcoming release
 
+- **Breaking: drop Node.js 18 support (`engines.node` is now `>=20.0.0`).** The `await import('node:crypto')` fallback for Node 18's missing `globalThis.crypto` is removed from the cache checksum code. This also fixes vite emitting `Module "crypto" has been externalized for browser compatibility` for the core `gtfs-sqljs` entry when bundling for the browser. Node 18 has been EOL since April 2025.
+- README: document that the remaining vite `fs`/`path`/`crypto` warnings pointing at `sql.js/dist/sql-wasm.js` come from sql.js's UMD build, are harmless in the browser, and cannot be fixed from gtfs-sqljs.
+
 - Fix: `ProgressInfo` and `ProgressCallback` types are now exported from the package entry point, as documented in the README (`import { type ProgressInfo } from 'gtfs-sqljs'` previously failed).
 - **Add `getCalendars(filters?)`** — bulk read of the `calendar` table (filters: `serviceId` single value or array, `limit`). `getCalendarByServiceId()` remains as a convenience wrapper. ([#46](https://github.com/sysdevrun/gtfs-sqljs/issues/46))
 - **`getCalendarDates()` no longer requires a service id** — it now accepts an optional filters object (`serviceId`, `date`, `limit`) and returns the whole `calendar_dates` table when called without arguments. The legacy `getCalendarDates('SERVICE_ID')` string form is still accepted. ([#46](https://github.com/sysdevrun/gtfs-sqljs/issues/46))

@@ -2,27 +2,20 @@ interface WebCryptoLike {
   subtle: { digest(algo: string, data: ArrayBuffer): Promise<ArrayBuffer> };
 }
 
-let cachedCrypto: WebCryptoLike | null = null;
-
-async function getCrypto(): Promise<WebCryptoLike> {
-  if (cachedCrypto) return cachedCrypto;
+function getCrypto(): WebCryptoLike {
   const g = (globalThis as unknown as { crypto?: WebCryptoLike }).crypto;
-  if (g && g.subtle) {
-    cachedCrypto = g;
-    return g;
+  if (!g || !g.subtle) {
+    throw new Error(
+      'Web Crypto API not available: gtfs-sqljs requires Node.js 20+, a browser, or a runtime exposing globalThis.crypto (React Native needs a webcrypto polyfill)'
+    );
   }
-  // Node.js 18 does not expose `crypto` as a global; fall back to the
-  // `webcrypto` export of `node:crypto`. Browser/RN bundles never hit this
-  // branch because `globalThis.crypto` is always defined there.
-  const nodeCrypto = await import('node:crypto');
-  cachedCrypto = nodeCrypto.webcrypto as unknown as WebCryptoLike;
-  return cachedCrypto;
+  return g;
 }
 
 /**
  * Compute SHA-256 checksum of data.
- * Uses the global Web Crypto API (browsers, Node.js 19+, React Native via a
- * polyfill) and falls back to `node:crypto`'s webcrypto on Node 18.
+ * Uses the global Web Crypto API (browsers, Node.js 20+, React Native via a
+ * polyfill).
  */
 export async function computeChecksum(data: ArrayBuffer | Uint8Array): Promise<string> {
   let buffer: ArrayBuffer;
@@ -34,7 +27,7 @@ export async function computeChecksum(data: ArrayBuffer | Uint8Array): Promise<s
     new Uint8Array(copy).set(data);
     buffer = copy;
   }
-  const c = await getCrypto();
+  const c = getCrypto();
   const hashBuffer = await c.subtle.digest('SHA-256', buffer);
   const hashArray = Array.from(new Uint8Array(hashBuffer));
   const hashHex = hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
