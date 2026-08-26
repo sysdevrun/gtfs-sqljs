@@ -8,6 +8,8 @@ export {
   GtfsSqlJs,
   type GtfsSqlJsOptions,
   type GtfsSqlJsAttachOptions,
+  type ProgressInfo,
+  type ProgressCallback,
   type AgencyFilters,
   type StopFilters,
   type RouteFilters,
