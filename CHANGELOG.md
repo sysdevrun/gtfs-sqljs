@@ -2,14 +2,16 @@
 
 ## Upcoming release
 
+## 0.9.0
+
 - **Breaking: drop Node.js 18 support (`engines.node` is now `>=20.0.0`).** The `await import('node:crypto')` fallback for Node 18's missing `globalThis.crypto` is removed from the cache checksum code. This also fixes vite emitting `Module "crypto" has been externalized for browser compatibility` for the core `gtfs-sqljs` entry when bundling for the browser. Node 18 has been EOL since April 2025.
-- README: document that the remaining vite `fs`/`path`/`crypto` warnings pointing at `sql.js/dist/sql-wasm.js` come from sql.js's UMD build, are harmless in the browser, and cannot be fixed from gtfs-sqljs.
-- CI: test matrix is now Node 20.x / 22.x / 24.x (was 18.x / 20.x / 21.x), matching the new `engines` range. GitHub Actions bumped across workflows (`checkout`/`setup-node`/`upload-artifact` to v7, `configure-pages` to v6, `upload-pages-artifact`/`deploy-pages` to v5).
-- Fix: `ProgressInfo` and `ProgressCallback` types are now exported from the package entry point, as documented in the README (`import { type ProgressInfo } from 'gtfs-sqljs'` previously failed).
 - **Add `getCalendars(filters?)`** — bulk read of the `calendar` table (filters: `serviceId` single value or array, `limit`). `getCalendarByServiceId()` remains as a convenience wrapper. ([#46](https://github.com/sysdevrun/gtfs-sqljs/issues/46))
 - **`getCalendarDates()` no longer requires a service id** — it now accepts an optional filters object (`serviceId`, `date`, `limit`) and returns the whole `calendar_dates` table when called without arguments. The legacy `getCalendarDates('SERVICE_ID')` string form is still accepted. ([#46](https://github.com/sysdevrun/gtfs-sqljs/issues/46))
 - **Add `getFeedInfo()`** — returns the `feed_info` rows (an array, since the spec allows multiple rows). Useful for `feed_start_date`/`feed_end_date` bounds and `feed_version` display/cache keys. ([#46](https://github.com/sysdevrun/gtfs-sqljs/issues/46))
 - **Add `getFrequencies(filters?)`** — read the `frequencies` table (filters: `tripId` single value or array, `limit`), e.g. to detect frequency-based trips whose `stop_times` are offsets from `start_time`. `exact_times: 0` is preserved (not coerced to `undefined`). ([#46](https://github.com/sysdevrun/gtfs-sqljs/issues/46))
+- Fix: `ProgressInfo` and `ProgressCallback` types are now exported from the package entry point, as documented in the README (`import { type ProgressInfo } from 'gtfs-sqljs'` previously failed).
+- README: document that the remaining vite `fs`/`path`/`crypto` warnings pointing at `sql.js/dist/sql-wasm.js` come from sql.js's UMD build, are harmless in the browser, and cannot be fixed from gtfs-sqljs.
+- CI: test matrix is now Node 20.x / 22.x / 24.x (was 18.x / 20.x / 21.x), matching the new `engines` range. GitHub Actions bumped across workflows (`checkout`/`setup-node`/`upload-artifact` to v7, `configure-pages` to v6, `upload-pages-artifact`/`deploy-pages` to v5).
 
 ## 0.8.0
 
